@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Activity,
   Boxes,
@@ -10,18 +12,20 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const items = [
-  { label: "Overview", icon: LayoutDashboard, active: true, href: "/" },
-  { label: "Control runs", icon: Activity },
-  { label: "Controls", icon: ShieldCheck },
-  { label: "Exceptions", icon: TriangleAlert },
-  { label: "Root causes", icon: GitBranch },
-  { label: "Agreements", icon: FileCheck2 },
+  { label: "Overview", icon: LayoutDashboard, href: "/" },
+  { label: "Control runs", icon: Activity, href: "/" },
+  { label: "Controls", icon: ShieldCheck, href: "/runs/RUN_NOVACART_AUG_2026/coverage" },
+  { label: "Exceptions", icon: TriangleAlert, href: "/exceptions" },
+  { label: "Root causes", icon: GitBranch, href: "/root-causes/RC_MDR_01" },
+  { label: "Agreements", icon: FileCheck2, href: "/agreements" },
   { label: "Data sources", icon: Boxes, href: "/data" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[236px_1fr]">
       <aside className="hidden min-h-screen bg-[#112a2b] px-4 py-5 text-white lg:flex lg:flex-col">
@@ -35,7 +39,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </span>
         </Link>
         <nav className="space-y-1">
-          {items.map(({ label, icon: Icon, active, href }) => (
+          {items.map(({ label, icon: Icon, href }) => {
+            const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+            return (
             <Link
               key={label}
               href={href ?? "#"}
@@ -45,7 +51,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Icon size={16} /> {label}
             </Link>
-          ))}
+            );
+          })}
         </nav>
         <div className="mt-auto rounded-xl border border-white/10 bg-white/[0.055] p-3.5">
           <div className="mb-2 flex items-center gap-2 text-xs font-medium">
@@ -69,3 +76,4 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+"use client";

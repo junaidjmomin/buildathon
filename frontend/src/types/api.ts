@@ -39,10 +39,15 @@ export interface Violation {
 export interface RootCause {
   id: string;
   title: string;
+  category: string;
   affected_count: number;
   verified_impact: string;
   expected_value: string;
   observed_value: string;
+  hypothesis: string | null;
+  verification_status: string;
+  primary_violation_count: number;
+  downstream_effect_count: number;
 }
 
 export interface ExpectedActualResponse {
@@ -61,6 +66,9 @@ export interface ExpectedActualResponse {
   gateway_net: string;
   bank_credit: string | null;
   expected_net: string;
+  applied_control_id: string;
+  applied_control_version: number;
+  applied_control_effective_period: string;
   evidence: Array<{
     title: string;
     control: string;
@@ -181,4 +189,144 @@ export interface RazorpaySyncSummary {
   events_created: number;
   edges_created: number;
   synced_at: string;
+}
+
+export interface Control {
+  id: string;
+  name: string;
+  control_type: string;
+  expected: string;
+  scope: string;
+  source: string;
+  source_clause: string;
+  status: string;
+  agreement_id: string;
+  clause_id: string | null;
+  logical_control_key: string;
+  version: number;
+  effective_from: string;
+  effective_to: string | null;
+  supersedes_control_id: string | null;
+  parameters: Record<string, unknown>;
+  conditions: string[];
+  extraction_method: string;
+  approved_at: string | null;
+}
+
+export interface AgreementClause {
+  id: string;
+  reference: string;
+  page: number;
+  heading: string;
+  text: string;
+  effective_from: string;
+  effective_to: string | null;
+}
+
+export interface Agreement {
+  id: string;
+  merchant: string;
+  title: string;
+  status: string;
+  effective_from: string;
+  effective_to: string | null;
+  source_type: string;
+  content_hash: string;
+  clauses: AgreementClause[];
+}
+
+export interface ControlProposal {
+  id: string;
+  agreement_id: string;
+  clause_id: string;
+  control_id: string;
+  status: string;
+  confidence: string;
+  rationale: string;
+  source_excerpt: string;
+  extraction_method: string;
+  proposed_control: Control;
+}
+
+export interface ControlCoverageSummary {
+  run_id: string;
+  total_material_edges: number;
+  governed_edges: number;
+  partially_governed_edges: number;
+  ungoverned_edges: number;
+  coverage_percentage: string;
+  items: Array<{
+    id: string;
+    relationship: string;
+    description: string;
+    material_edge_count: number;
+    governed_edge_count: number;
+    status: "GOVERNED" | "PARTIALLY_GOVERNED" | "UNGOVERNED";
+    control_ids: string[];
+    blind_spot: string | null;
+  }>;
+}
+
+export type ExceptionCaseStatus = "OPEN" | "VERIFIED" | "ESCALATED" | "RESOLVED";
+
+export interface ExceptionCase {
+  id: string;
+  run_id: string;
+  title: string;
+  payment_id: string;
+  primary_violation_id: string;
+  violation_ids: string[];
+  status: ExceptionCaseStatus;
+  verified_impact: string;
+  evidence: Array<{
+    id: string;
+    kind: string;
+    title: string;
+    summary: string;
+    source_id: string;
+    verified: boolean;
+  }>;
+  audit_trail: Array<{
+    from_status: ExceptionCaseStatus | null;
+    to_status: ExceptionCaseStatus;
+    actor: string;
+    note: string;
+    occurred_at: string;
+  }>;
+  created_at: string;
+  updated_at: string;
+  resolution_note: string | null;
+}
+
+export interface UnresolvedMatch {
+  payment_id: string;
+  status: "UNRESOLVED";
+  amount: string;
+  settlement_id: string;
+  missing_evidence: string;
+  candidate_bank_references: string[];
+  safe_conclusion: string;
+}
+
+export interface HypothesisResponse {
+  root_cause_id: string;
+  hypothesis: string;
+  status: string;
+}
+
+export interface HypothesisVerification {
+  root_cause_id: string;
+  status: "PROVEN" | "REJECTED" | "UNRESOLVED";
+  classification: string;
+  checks: Array<{ label: string; value: string; result: string }>;
+  conclusion: string;
+}
+
+export interface McpEvidenceCapability {
+  enabled: boolean;
+  authoritative: false;
+  provider: string;
+  allowed_tools: string[];
+  prohibited_tool_classes: string[];
+  result_policy: string;
 }

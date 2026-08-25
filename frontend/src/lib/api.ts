@@ -1,14 +1,22 @@
 import type {
+  Agreement,
   ControlBacktest,
+  ControlCoverageSummary,
+  ControlProposal,
   CounterfactualSettlement,
   DemoLoadResponse,
+  ExceptionCase,
   ExpectedActualResponse,
+  HypothesisResponse,
+  HypothesisVerification,
+  McpEvidenceCapability,
   MutationTestSummary,
   PaymentGraph,
   RootCause,
   RazorpayConnectionStatus,
   RazorpaySyncSummary,
   RunSummary,
+  UnresolvedMatch,
   Violation,
   ViolationLineageResponse,
 } from "@/types/api";
@@ -43,6 +51,31 @@ export const api = {
     request<ViolationLineageResponse>(`/runs/${runId}/payments/${paymentId}/lineage`),
   counterfactual: (runId: string, paymentId: string) =>
     request<CounterfactualSettlement>(`/runs/${runId}/payments/${paymentId}/counterfactual`),
+  agreements: () => request<Agreement[]>("/agreements"),
+  agreementProposals: (agreementId: string) =>
+    request<ControlProposal[]>(`/agreements/${agreementId}/control-proposals`),
+  extractAgreementControls: (agreementId: string) =>
+    request<ControlProposal[]>(`/agreements/${agreementId}/extract-controls`, { method: "POST" }),
+  controlCoverage: (runId: string) =>
+    request<ControlCoverageSummary>(`/runs/${runId}/control-coverage`),
+  exceptionCases: (runId: string) =>
+    request<ExceptionCase[]>(`/runs/${runId}/cases`),
+  unresolvedMatches: (runId: string) =>
+    request<UnresolvedMatch[]>(`/runs/${runId}/unresolved`),
+  transitionCase: (caseId: string, action: "verify" | "escalate" | "resolve", note = "") =>
+    request<ExceptionCase>(`/cases/${caseId}/${action}`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+  rootCause: (rootCauseId: string) => request<RootCause>(`/root-causes/${rootCauseId}`),
+  generateHypothesis: (rootCauseId: string) =>
+    request<HypothesisResponse>(`/root-causes/${rootCauseId}/generate-hypothesis`, {
+      method: "POST",
+    }),
+  verifyHypothesis: (rootCauseId: string) =>
+    request<HypothesisVerification>(`/root-causes/${rootCauseId}/verify-hypothesis`, {
+      method: "POST",
+    }),
   razorpayStatus: () =>
     request<RazorpayConnectionStatus>("/integrations/razorpay/status"),
   syncRazorpay: () =>
@@ -50,4 +83,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ year: 2026, month: 8 }),
     }),
+  razorpayMcpCapability: () =>
+    request<McpEvidenceCapability>("/integrations/razorpay/mcp-evidence-capability"),
 };
