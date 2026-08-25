@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class ApiModel(BaseModel):
-    model_config = ConfigDict(json_encoders={Decimal: lambda value: f"{value:.2f}"})
+    pass
 
 
 class EvaluationStatus(str, Enum):
@@ -38,6 +38,142 @@ class Control(ApiModel):
     source: str
     source_clause: str
     status: str = "APPROVED"
+    agreement_id: str = "AGR_NOVACART_2026"
+    clause_id: str | None = None
+    logical_control_key: str = ""
+    version: int = 1
+    effective_from: date = date(2026, 1, 1)
+    effective_to: date | None = None
+    supersedes_control_id: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    conditions: list[str] = Field(default_factory=list)
+    extraction_method: str = "HUMAN_APPROVED"
+    approved_at: datetime | None = None
+
+
+class AgreementClause(ApiModel):
+    id: str
+    reference: str
+    page: int
+    heading: str
+    text: str
+    effective_from: date
+    effective_to: date | None = None
+
+
+class Agreement(ApiModel):
+    id: str
+    merchant: str
+    title: str
+    status: str
+    effective_from: date
+    effective_to: date | None = None
+    source_type: str
+    content_hash: str
+    clauses: list[AgreementClause]
+
+
+class ControlProposal(ApiModel):
+    id: str
+    agreement_id: str
+    clause_id: str
+    control_id: str
+    status: str
+    confidence: Decimal
+    rationale: str
+    source_excerpt: str
+    extraction_method: str
+    proposed_control: Control
+
+
+class CoverageStatus(str, Enum):
+    GOVERNED = "GOVERNED"
+    PARTIALLY_GOVERNED = "PARTIALLY_GOVERNED"
+    UNGOVERNED = "UNGOVERNED"
+
+
+class ControlCoverageItem(ApiModel):
+    id: str
+    relationship: str
+    description: str
+    material_edge_count: int
+    governed_edge_count: int
+    status: CoverageStatus
+    control_ids: list[str]
+    blind_spot: str | None = None
+
+
+class ControlCoverageSummary(ApiModel):
+    run_id: str
+    total_material_edges: int
+    governed_edges: int
+    partially_governed_edges: int
+    ungoverned_edges: int
+    coverage_percentage: Decimal
+    items: list[ControlCoverageItem]
+
+
+class ExceptionCaseStatus(str, Enum):
+    OPEN = "OPEN"
+    VERIFIED = "VERIFIED"
+    ESCALATED = "ESCALATED"
+    RESOLVED = "RESOLVED"
+
+
+class CaseAuditEntry(ApiModel):
+    from_status: ExceptionCaseStatus | None
+    to_status: ExceptionCaseStatus
+    actor: str
+    note: str
+    occurred_at: datetime
+
+
+class CaseEvidence(ApiModel):
+    id: str
+    kind: str
+    title: str
+    summary: str
+    source_id: str
+    verified: bool
+
+
+class ExceptionCase(ApiModel):
+    id: str
+    run_id: str
+    title: str
+    payment_id: str
+    primary_violation_id: str
+    violation_ids: list[str]
+    status: ExceptionCaseStatus
+    verified_impact: Decimal
+    evidence: list[CaseEvidence]
+    audit_trail: list[CaseAuditEntry]
+    created_at: datetime
+    updated_at: datetime
+    resolution_note: str | None = None
+
+
+class CaseTransitionRequest(ApiModel):
+    note: str = ""
+
+
+class UnresolvedMatch(ApiModel):
+    payment_id: str
+    status: EvaluationStatus = EvaluationStatus.UNRESOLVED
+    amount: Decimal
+    settlement_id: str
+    missing_evidence: str
+    candidate_bank_references: list[str]
+    safe_conclusion: str
+
+
+class McpEvidenceCapability(ApiModel):
+    enabled: bool
+    authoritative: bool = False
+    provider: str
+    allowed_tools: list[str]
+    prohibited_tool_classes: list[str]
+    result_policy: str
 
 
 class PaymentLifecycle(ApiModel):
@@ -59,6 +195,8 @@ class PaymentLifecycle(ApiModel):
     actual_net: Decimal
     bank_credit: Decimal | None
     status: str = "captured"
+    chargeback_fee: Decimal = Decimal("0")
+    chargeback_fee_deductions: int = 0
 
 
 class ExpectedActualRow(ApiModel):
@@ -91,6 +229,9 @@ class ExpectedActualResponse(ApiModel):
     bank_credit: Decimal | None
     expected_net: Decimal
     evidence: list[Evidence]
+    applied_control_id: str
+    applied_control_version: int
+    applied_control_effective_period: str
 
 
 class Violation(ApiModel):
@@ -121,6 +262,8 @@ class RootCause(ApiModel):
     hypothesis: str | None = None
     verification_status: str = "NOT_TESTED"
     verification_evidence: dict[str, Any] | None = None
+    primary_violation_count: int = 0
+    downstream_effect_count: int = 0
 
 
 class StatusBreakdown(ApiModel):
@@ -202,3 +345,173 @@ class HypothesisVerification(ApiModel):
     checks: list[dict[str, str]]
     conclusion: str
 
+
+class MutationType(str, Enum):
+    MDR_RATE_INCREASE = "MDR_RATE_INCREASE"
+    GST_BASE_CORRUPTION = "GST_BASE_CORRUPTION"
+    DUPLICATE_REFUND_DEDUCTION = "DUPLICATE_REFUND_DEDUCTION"
+    SETTLEMENT_DELAY = "SETTLEMENT_DELAY"
+    UNSUPPORTED_FEE = "UNSUPPORTED_FEE"
+    FAILED_PAYMENT_SETTLED = "FAILED_PAYMENT_SETTLED"
+    REFUND_EXCEEDS_PAYMENT = "REFUND_EXCEEDS_PAYMENT"
+    DUPLICATE_CHARGEBACK_FEE = "DUPLICATE_CHARGEBACK_FEE"
+    PAYMENT_METHOD_RECLASSIFICATION = "PAYMENT_METHOD_RECLASSIFICATION"
+
+
+class BlindSpotReason(str, Enum):
+    NO_APPLICABLE_CONTROL = "NO_APPLICABLE_CONTROL"
+    CONTROL_LOGIC_FAILED = "CONTROL_LOGIC_FAILED"
+    UNGOVERNED_LIFECYCLE_EDGE = "UNGOVERNED_LIFECYCLE_EDGE"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+
+
+class MutationResult(ApiModel):
+    id: str
+    mutation_type: MutationType
+    target_event_id: str
+    description: str
+    detected: bool
+    expected_control_type: ControlType
+    detected_by_control_types: list[ControlType]
+    blind_spot_reason: BlindSpotReason | None = None
+
+
+class MutationCoverage(ApiModel):
+    mutation_type: MutationType
+    injected: int
+    detected: int
+    detection_rate: Decimal
+
+
+class MutationTestSummary(ApiModel):
+    id: str
+    source_run_id: str
+    status: str
+    mutation_count: int
+    detected_count: int
+    missed_count: int
+    mutation_detection_rate: Decimal
+    false_positive_count: int
+    blind_spot_count: int
+    canonical_data_unchanged: bool
+    coverage: list[MutationCoverage]
+    results: list[MutationResult]
+    created_at: datetime
+
+
+class BacktestMetrics(ApiModel):
+    detected_count: int
+    mutation_count: int
+    mutation_detection_rate: Decimal
+    false_positive_count: int
+
+
+class ControlBacktest(ApiModel):
+    control_id: str
+    status: str
+    candidate_status: str
+    historical_false_positives: int
+    before: BacktestMetrics
+    after: BacktestMetrics
+    detection_rate_delta: Decimal
+    false_positive_delta: int
+    newly_detected_mutation_ids: list[str]
+    canonical_data_unchanged: bool
+
+
+class LineageType(str, Enum):
+    PRIMARY = "PRIMARY"
+    DOWNSTREAM = "DOWNSTREAM"
+
+
+class ViolationLineageNode(ApiModel):
+    id: str
+    category: str
+    lineage_type: LineageType
+    parent_violation_id: str | None
+    root_violation_id: str
+    expected: Decimal
+    actual: Decimal
+    difference: Decimal
+    financial_impact: Decimal
+    causal_evidence: str
+
+
+class ViolationLineageResponse(ApiModel):
+    payment_id: str
+    primary_violation_count: int
+    downstream_effect_count: int
+    nodes: list[ViolationLineageNode]
+
+
+class CashFlow(ApiModel):
+    gross: Decimal
+    mdr: Decimal
+    gst: Decimal
+    refunds: Decimal
+    other_fees: Decimal
+    net: Decimal
+
+
+class CounterfactualDriver(ApiModel):
+    type: str
+    amount: Decimal
+
+
+class CounterfactualSettlement(ApiModel):
+    payment_id: str
+    actual: CashFlow
+    expected: CashFlow
+    difference: Decimal
+    drivers: list[CounterfactualDriver]
+
+
+class FinancialEvent(ApiModel):
+    id: str
+    run_id: str
+    source: str
+    external_id: str
+    event_type: str
+    amount: Decimal
+    currency: str
+    timestamp: datetime
+    status: str | None = None
+    raw_payload: dict[str, Any]
+    normalized_payload: dict[str, Any]
+
+
+class CanonicalEventEdge(ApiModel):
+    id: str
+    run_id: str
+    from_event_id: str
+    to_event_id: str
+    relationship: str
+    confidence: Decimal
+    method: str
+    evidence: dict[str, Any]
+
+
+class RazorpayConnectionStatus(ApiModel):
+    configured: bool
+    mode: str
+    connected: bool
+    last_sync_status: str
+    last_synced_at: datetime | None = None
+
+
+class RazorpaySyncRequest(ApiModel):
+    year: int
+    month: int
+    day: int | None = None
+
+
+class RazorpaySyncSummary(ApiModel):
+    sync_id: str
+    status: str
+    payments_imported: int
+    refunds_imported: int
+    settlements_imported: int
+    reconciliation_records_imported: int
+    events_created: int
+    edges_created: int
+    synced_at: datetime

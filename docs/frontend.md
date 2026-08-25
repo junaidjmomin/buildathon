@@ -1462,3 +1462,52 @@ TemporalReplayComparison
 - counterfactual settlement renders actual vs correct cash flows
 - control coverage can expose an ungoverned edge
 - time-versioned controls are visible
+
+---
+
+# Razorpay Data Source — Post-Core UI
+
+Add a data-source selector after mutation testing, lineage and hypothesis
+verification are stable:
+
+```text
+NovaCart Demo Dataset
+Razorpay Test Account
+Upload Files
+```
+
+The Razorpay path uses a backend-owned connection. The frontend must never ask
+for, store or display the API secret.
+
+Required states:
+
+```text
+[Connect Razorpay]
+[Sync Razorpay]
+
+Payments imported                 500
+Refunds imported                   47
+Settlements imported               84
+Reconciliation records imported   631
+Last sync                    Complete
+```
+
+After sync, Razorpay events enter the same control-run flow and screens as
+uploaded or synthetic events. Do not build Razorpay-only transaction,
+settlement or exception screens.
+
+The UI must preserve the product contrast:
+
+```text
+RAZORPAY ACTUAL
+fee · tax · settlement · UTR
+
+vs
+
+SL3DGE EXPECTED
+approved contractual controls
+```
+
+Connection failures must leave the deterministic NovaCart demo available.
+Razorpay sync is read-only; the UI must expose no payment, refund or settlement
+initiation action.

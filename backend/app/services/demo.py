@@ -5,70 +5,41 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from time import perf_counter
 
-from app.controls.engine import DOMESTIC_MDR_RATE, evaluate_payment
+from app.controls.engine import evaluate_payment
 from app.core.money import money
 from app.domain.models import (
+    CaseAuditEntry,
+    CaseEvidence,
     ConfusionMatrix,
-    Control,
     ControlType,
+    CounterfactualDriver,
+    CounterfactualSettlement,
     DemoLoadResponse,
     EvaluationStatus,
     Evidence,
+    ExceptionCase,
+    ExceptionCaseStatus,
     ExpectedActualResponse,
     ExpectedActualRow,
     GraphEdge,
     GraphNode,
     HypothesisResponse,
     HypothesisVerification,
+    LineageType,
     PaymentGraph,
     PaymentLifecycle,
     RootCause,
     RunSummary,
     StatusBreakdown,
+    UnresolvedMatch,
     Violation,
+    ViolationLineageNode,
+    ViolationLineageResponse,
 )
+from app.services.governance import governance
 from app.synthetic.generator import DEMO_SEED, KNOWN_PAYMENT_ID, SyntheticDataset, generate_dataset
 
 DEMO_RUN_ID = "RUN_NOVACART_AUG_2026"
-
-CONTROLS = [
-    Control(
-        id="CTRL_MDR_DOMESTIC",
-        name="Domestic Card MDR",
-        control_type=ControlType.MDR_RATE,
-        expected="1.55%",
-        scope="Card · Domestic",
-        source="NovaCart Merchant Agreement",
-        source_clause="Page 4 · Clause 4.2",
-    ),
-    Control(
-        id="CTRL_GST_FEE",
-        name="GST on Processing Fee",
-        control_type=ControlType.GST_ON_FEE,
-        expected="18%",
-        scope="Processing fee",
-        source="NovaCart Merchant Agreement",
-        source_clause="Page 4 · Clause 4.3",
-    ),
-    Control(
-        id="CTRL_SETTLEMENT_SLA",
-        name="Standard Settlement SLA",
-        control_type=ControlType.SETTLEMENT_SLA,
-        expected="T+2 business days",
-        scope="Captured payments",
-        source="NovaCart Merchant Agreement",
-        source_clause="Page 6 · Clause 6.1",
-    ),
-    Control(
-        id="CTRL_REFUND",
-        name="Refund Principal Integrity",
-        control_type=ControlType.REFUND_INTEGRITY,
-        expected="Deduct once",
-        scope="Successful refunds",
-        source="NovaCart Merchant Agreement",
-        source_clause="Page 7 · Clause 7.2",
-    ),
-]
 
 
 class DemoStore:
@@ -77,12 +48,15 @@ class DemoStore:
         self.summary: RunSummary | None = None
         self.violations: list[Violation] = []
         self.root_causes: list[RootCause] = []
+        self.cases: list[ExceptionCase] = []
 
     def load(self) -> DemoLoadResponse:
         started = perf_counter()
+        governance.reset()
         self.dataset = generate_dataset(DEMO_SEED)
         self.violations = self._build_violations(self.dataset)
         self.root_causes = self._build_root_causes(self.violations)
+        self.cases = self._build_cases()
         self.summary = self._build_summary(self.dataset, started)
         return DemoLoadResponse(
             run_id=DEMO_RUN_ID,
@@ -198,9 +172,79 @@ class DemoStore:
                     observed_value=observed,
                     first_seen=min(item.occurred_at for item in items),
                     last_seen=max(item.occurred_at for item in items),
+                    primary_violation_count=len(items),
+                    downstream_effect_count=(len(items) * 3 if root_id == "RC_MDR_01" else 0),
                 )
             )
         return sorted(roots, key=lambda root: root.verified_impact, reverse=True)
+
+    def _build_cases(self) -> list[ExceptionCase]:
+        primary = next(
+            violation for violation in self.violations if violation.payment_id == KNOWN_PAYMENT_ID
+        )
+        now = datetime.now(timezone.utc)
+        return [
+            ExceptionCase(
+                id="CASE_PAY_82HD9",
+                run_id=DEMO_RUN_ID,
+                title="Domestic card MDR overcharge",
+                payment_id=KNOWN_PAYMENT_ID,
+                primary_violation_id=primary.id,
+                violation_ids=[primary.id],
+                status=ExceptionCaseStatus.OPEN,
+                verified_impact=primary.financial_impact,
+                evidence=[
+                    CaseEvidence(
+                        id="EVIDENCE_AGREEMENT_4_2",
+                        kind="APPROVED_CONTROL",
+                        title="Approved domestic MDR control",
+                        summary=(
+                            "Clause 4.2 fixes domestic-card MDR at 1.55% for this capture date."
+                        ),
+                        source_id="CTRL_MDR_DOMESTIC",
+                        verified=True,
+                    ),
+                    CaseEvidence(
+                        id="EVIDENCE_RAZORPAY_ACTUAL",
+                        kind="OBSERVED_EVENT",
+                        title="Observed fee and tax",
+                        summary="Gateway records show ₹175.00 MDR and ₹31.50 GST.",
+                        source_id=KNOWN_PAYMENT_ID,
+                        verified=True,
+                    ),
+                    CaseEvidence(
+                        id="EVIDENCE_COUNTERFACTUAL",
+                        kind="DETERMINISTIC_CALCULATION",
+                        title="Counterfactual settlement",
+                        summary="Approved controls reconstruct ₹9,817.10 instead of ₹9,793.50.",
+                        source_id=f"CF_{KNOWN_PAYMENT_ID}",
+                        verified=True,
+                    ),
+                    CaseEvidence(
+                        id="EVIDENCE_LINEAGE",
+                        kind="VIOLATION_LINEAGE",
+                        title="Primary and downstream lineage",
+                        summary=(
+                            "Excess MDR is primary; GST, settlement and bank differences "
+                            "are downstream."
+                        ),
+                        source_id=f"LIN_{KNOWN_PAYMENT_ID}_MDR",
+                        verified=True,
+                    ),
+                ],
+                audit_trail=[
+                    CaseAuditEntry(
+                        from_status=None,
+                        to_status=ExceptionCaseStatus.OPEN,
+                        actor="sl3dge-control-engine",
+                        note="Case opened from a deterministic primary violation.",
+                        occurred_at=now,
+                    )
+                ],
+                created_at=now,
+                updated_at=now,
+            )
+        ]
 
     def _build_summary(self, dataset: SyntheticDataset, started: float) -> RunSummary:
         unresolved = sum(1 for value in dataset.ground_truth.values() if value == "UNRESOLVED")
@@ -267,6 +311,7 @@ class DemoStore:
     def expected_actual(self, payment_id: str) -> ExpectedActualResponse:
         payment = self._payment(payment_id)
         result = evaluate_payment(payment)
+        applied_mdr = governance.effective_control("DOMESTIC_CARD_MDR", payment.captured_at.date())
         refund_status = (
             EvaluationStatus.PASS
             if payment.refund_amount == payment.refund_deduction
@@ -329,13 +374,13 @@ class DemoStore:
         evidence = [
             Evidence(
                 title="Domestic card MDR",
-                control="CTRL_MDR_DOMESTIC",
+                control=applied_mdr.id,
                 calculation=f"₹{payment.amount:.2f} × 1.55% = ₹{result.expected_fee:.2f}",
                 expected=result.expected_fee,
                 actual=payment.actual_fee,
                 difference=money(payment.actual_fee - result.expected_fee),
-                source="NovaCart Merchant Agreement",
-                source_clause="Page 4 · Clause 4.2",
+                source=applied_mdr.source,
+                source_clause=applied_mdr.source_clause,
             ),
             Evidence(
                 title="GST on valid processing fee",
@@ -359,6 +404,12 @@ class DemoStore:
             bank_credit=payment.bank_credit,
             expected_net=result.expected_net,
             evidence=evidence,
+            applied_control_id=applied_mdr.id,
+            applied_control_version=applied_mdr.version,
+            applied_control_effective_period=(
+                f"{applied_mdr.effective_from.isoformat()} → "
+                f"{applied_mdr.effective_to.isoformat() if applied_mdr.effective_to else 'open'}"
+            ),
         )
 
     def graph(self, payment_id: str) -> PaymentGraph:
@@ -366,7 +417,9 @@ class DemoStore:
         result = evaluate_payment(payment)
         nodes = [
             GraphNode(id=payment.order_id, kind="ORDER", label="Order", amount=payment.amount),
-            GraphNode(id=payment.payment_id, kind="PAYMENT", label="Payment", amount=payment.amount),
+            GraphNode(
+                id=payment.payment_id, kind="PAYMENT", label="Payment", amount=payment.amount
+            ),
             GraphNode(
                 id=f"FEE_{payment.payment_id}",
                 kind="FEE",
@@ -392,21 +445,186 @@ class DemoStore:
             ),
         ]
         edges = [
-            GraphEdge(id="E1", source=payment.order_id, target=payment.payment_id, relationship="PAID_BY", confidence=Decimal("1"), method="EXACT"),
-            GraphEdge(id="E2", source=payment.payment_id, target=f"FEE_{payment.payment_id}", relationship="CHARGED_FEE", confidence=Decimal("1"), method="RULE"),
-            GraphEdge(id="E3", source=payment.payment_id, target=f"TAX_{payment.payment_id}", relationship="CHARGED_TAX", confidence=Decimal("1"), method="RULE"),
-            GraphEdge(id="E4", source=payment.payment_id, target=payment.settlement_id, relationship="INCLUDED_IN", confidence=Decimal("1"), method="EXACT"),
+            GraphEdge(
+                id="E1",
+                source=payment.order_id,
+                target=payment.payment_id,
+                relationship="PAID_BY",
+                confidence=Decimal("1"),
+                method="EXACT",
+            ),
+            GraphEdge(
+                id="E2",
+                source=payment.payment_id,
+                target=f"FEE_{payment.payment_id}",
+                relationship="CHARGED_FEE",
+                confidence=Decimal("1"),
+                method="RULE",
+            ),
+            GraphEdge(
+                id="E3",
+                source=payment.payment_id,
+                target=f"TAX_{payment.payment_id}",
+                relationship="CHARGED_TAX",
+                confidence=Decimal("1"),
+                method="RULE",
+            ),
+            GraphEdge(
+                id="E4",
+                source=payment.payment_id,
+                target=payment.settlement_id,
+                relationship="INCLUDED_IN",
+                confidence=Decimal("1"),
+                method="EXACT",
+            ),
         ]
         if payment.bank_txn_id and payment.bank_credit is not None:
-            nodes.append(GraphNode(id=payment.bank_txn_id, kind="BANK_ENTRY", label="Bank credit", amount=payment.bank_credit, status=result.bank_status))
-            edges.append(GraphEdge(id="E5", source=payment.settlement_id, target=payment.bank_txn_id, relationship="CREDITED_AS", confidence=Decimal("1"), method="EXACT"))
+            nodes.append(
+                GraphNode(
+                    id=payment.bank_txn_id,
+                    kind="BANK_ENTRY",
+                    label="Bank credit",
+                    amount=payment.bank_credit,
+                    status=result.bank_status,
+                )
+            )
+            edges.append(
+                GraphEdge(
+                    id="E5",
+                    source=payment.settlement_id,
+                    target=payment.bank_txn_id,
+                    relationship="CREDITED_AS",
+                    confidence=Decimal("1"),
+                    method="EXACT",
+                )
+            )
         return PaymentGraph(payment_id=payment_id, nodes=nodes, edges=edges)
+
+    def lineage(self, payment_id: str) -> ViolationLineageResponse:
+        payment = self._payment(payment_id)
+        result = evaluate_payment(payment)
+        nodes: list[ViolationLineageNode] = []
+        fee_difference = money(payment.actual_fee - result.expected_fee)
+        tax_difference = money(payment.actual_tax - result.expected_tax)
+        net_difference = money(result.expected_net - payment.actual_net)
+        if fee_difference > 0:
+            root_id = f"LIN_{payment_id}_MDR"
+            nodes.append(
+                ViolationLineageNode(
+                    id=root_id,
+                    category="MDR rate violation",
+                    lineage_type=LineageType.PRIMARY,
+                    parent_violation_id=None,
+                    root_violation_id=root_id,
+                    expected=result.expected_fee,
+                    actual=payment.actual_fee,
+                    difference=fee_difference,
+                    financial_impact=fee_difference,
+                    causal_evidence="Actual MDR exceeds the approved 1.55% contractual rate.",
+                )
+            )
+            parent_id = root_id
+            if tax_difference > 0:
+                tax_id = f"LIN_{payment_id}_GST"
+                nodes.append(
+                    ViolationLineageNode(
+                        id=tax_id,
+                        category="GST downstream difference",
+                        lineage_type=LineageType.DOWNSTREAM,
+                        parent_violation_id=parent_id,
+                        root_violation_id=root_id,
+                        expected=result.expected_tax,
+                        actual=payment.actual_tax,
+                        difference=tax_difference,
+                        financial_impact=tax_difference,
+                        causal_evidence="GST was charged on the overcharged processing fee.",
+                    )
+                )
+                parent_id = tax_id
+            settlement_id = f"LIN_{payment_id}_SETTLEMENT"
+            nodes.append(
+                ViolationLineageNode(
+                    id=settlement_id,
+                    category="Expected settlement difference",
+                    lineage_type=LineageType.DOWNSTREAM,
+                    parent_violation_id=parent_id,
+                    root_violation_id=root_id,
+                    expected=result.expected_net,
+                    actual=payment.actual_net,
+                    difference=net_difference,
+                    financial_impact=Decimal("0"),
+                    causal_evidence="Excess MDR and GST reduce the resulting settlement net.",
+                )
+            )
+            if payment.bank_credit is not None:
+                nodes.append(
+                    ViolationLineageNode(
+                        id=f"LIN_{payment_id}_BANK",
+                        category="Expected bank-credit difference",
+                        lineage_type=LineageType.DOWNSTREAM,
+                        parent_violation_id=settlement_id,
+                        root_violation_id=root_id,
+                        expected=result.expected_net,
+                        actual=payment.bank_credit,
+                        difference=money(result.expected_net - payment.bank_credit),
+                        financial_impact=Decimal("0"),
+                        causal_evidence="The bank correctly mirrors the already-wrong settlement.",
+                    )
+                )
+        return ViolationLineageResponse(
+            payment_id=payment_id,
+            primary_violation_count=sum(node.lineage_type == LineageType.PRIMARY for node in nodes),
+            downstream_effect_count=sum(
+                node.lineage_type == LineageType.DOWNSTREAM for node in nodes
+            ),
+            nodes=nodes,
+        )
+
+    def counterfactual(self, payment_id: str) -> CounterfactualSettlement:
+        payment = self._payment(payment_id)
+        result = evaluate_payment(payment)
+        drivers: list[CounterfactualDriver] = []
+        excess_fee = money(max(payment.actual_fee - result.expected_fee, Decimal("0")))
+        excess_tax = money(max(payment.actual_tax - result.expected_tax, Decimal("0")))
+        excess_refund = money(max(payment.refund_deduction - result.expected_refund, Decimal("0")))
+        if excess_fee:
+            drivers.append(CounterfactualDriver(type="EXCESS_MDR", amount=excess_fee))
+        if excess_tax:
+            drivers.append(CounterfactualDriver(type="EXCESS_GST", amount=excess_tax))
+        if excess_refund:
+            drivers.append(
+                CounterfactualDriver(type="EXCESS_REFUND_DEDUCTION", amount=excess_refund)
+            )
+        if payment.unsupported_fee:
+            drivers.append(
+                CounterfactualDriver(type="UNSUPPORTED_FEE", amount=payment.unsupported_fee)
+            )
+        return CounterfactualSettlement(
+            payment_id=payment_id,
+            actual={
+                "gross": payment.amount,
+                "mdr": payment.actual_fee,
+                "gst": payment.actual_tax,
+                "refunds": payment.refund_deduction,
+                "other_fees": payment.unsupported_fee,
+                "net": payment.actual_net,
+            },
+            expected={
+                "gross": payment.amount,
+                "mdr": result.expected_fee,
+                "gst": result.expected_tax,
+                "refunds": result.expected_refund,
+                "other_fees": Decimal("0"),
+                "net": result.expected_net,
+            },
+            difference=money(result.expected_net - payment.actual_net),
+            drivers=drivers,
+        )
 
     def generate_hypothesis(self, root_cause_id: str) -> HypothesisResponse:
         root = self.get_root_cause(root_cause_id)
         hypothesis = (
-            "Domestic card MDR may have changed from 1.55% to 1.75% "
-            "beginning on 18 August 2026."
+            "Domestic card MDR may have changed from 1.55% to 1.75% beginning on 18 August 2026."
             if root.id == "RC_MDR_01"
             else f"A common upstream policy change may explain {root.title.lower()}."
         )
@@ -418,10 +636,18 @@ class DemoStore:
         root.verification_status = "REJECTED"
         checks = [
             {"label": "Approved agreement", "value": "1.55%", "result": "MATCH"},
-            {"label": "Approved amendments", "value": "No rate change found", "result": "NONE"},
+            {
+                "label": "Approved amendments",
+                "value": "Next approved change is 1.65% from 1 September",
+                "result": "NOT_EFFECTIVE",
+            },
             {"label": "Historical behaviour", "value": "1.55%", "result": "MATCH"},
             {"label": "Observed behaviour", "value": root.observed_value, "result": "DEVIATION"},
-            {"label": "Affected transactions", "value": f"{root.affected_count} / {root.affected_count}", "result": "REPRODUCED"},
+            {
+                "label": "Affected transactions",
+                "value": f"{root.affected_count} / {root.affected_count}",
+                "result": "REPRODUCED",
+            },
         ]
         root.verification_evidence = {"checks": checks}
         return HypothesisVerification(
@@ -432,6 +658,89 @@ class DemoStore:
             conclusion="Observed behaviour changed. Contractual expectation did not.",
         )
 
+    def list_cases(self) -> list[ExceptionCase]:
+        self.ensure_loaded()
+        return self.cases
+
+    def get_case(self, case_id: str) -> ExceptionCase:
+        self.ensure_loaded()
+        for case in self.cases:
+            if case.id == case_id:
+                return case
+        raise KeyError(case_id)
+
+    def transition_case(
+        self,
+        case_id: str,
+        target: ExceptionCaseStatus,
+        note: str,
+    ) -> ExceptionCase:
+        case = self.get_case(case_id)
+        allowed = {
+            ExceptionCaseStatus.OPEN: {ExceptionCaseStatus.VERIFIED},
+            ExceptionCaseStatus.VERIFIED: {
+                ExceptionCaseStatus.ESCALATED,
+                ExceptionCaseStatus.RESOLVED,
+            },
+            ExceptionCaseStatus.ESCALATED: {ExceptionCaseStatus.RESOLVED},
+            ExceptionCaseStatus.RESOLVED: set(),
+        }
+        if target not in allowed[case.status]:
+            raise RuntimeError(f"Cannot transition {case.status.value} to {target.value}")
+        if target == ExceptionCaseStatus.VERIFIED:
+            if not case.evidence or not all(item.verified for item in case.evidence):
+                raise RuntimeError("Every evidence item must be deterministically verified")
+            payment = self._payment(case.payment_id)
+            applied = governance.effective_control("DOMESTIC_CARD_MDR", payment.captured_at.date())
+            if applied.id != "CTRL_MDR_DOMESTIC":
+                raise RuntimeError("The expected historical control version was not selected")
+            note = note or (
+                "Evidence pack verified: approved v1 control, observed fee, "
+                "calculation and lineage."
+            )
+        elif not note.strip():
+            raise RuntimeError("A note is required for escalation or resolution")
+        previous = case.status
+        occurred_at = datetime.now(timezone.utc)
+        case.status = target
+        case.updated_at = occurred_at
+        if target == ExceptionCaseStatus.RESOLVED:
+            case.resolution_note = note
+        case.audit_trail.append(
+            CaseAuditEntry(
+                from_status=previous,
+                to_status=target,
+                actor="demo-reviewer",
+                note=note,
+                occurred_at=occurred_at,
+            )
+        )
+        return case
+
+    def unresolved_matches(self) -> list[UnresolvedMatch]:
+        self.ensure_loaded()
+        assert self.dataset is not None
+        unresolved: list[UnresolvedMatch] = []
+        for payment in self.dataset.payments:
+            if self.dataset.ground_truth[payment.payment_id] != "UNRESOLVED":
+                continue
+            unresolved.append(
+                UnresolvedMatch(
+                    payment_id=payment.payment_id,
+                    amount=payment.actual_net,
+                    settlement_id=payment.settlement_id,
+                    missing_evidence="No unique bank transaction reference was supplied.",
+                    candidate_bank_references=[
+                        f"BANK_CANDIDATE_{payment.payment_id}_A",
+                        f"BANK_CANDIDATE_{payment.payment_id}_B",
+                    ],
+                    safe_conclusion=(
+                        "Insufficient evidence exists to select a bank match without guessing."
+                    ),
+                )
+            )
+        return unresolved
+
     def get_root_cause(self, root_cause_id: str) -> RootCause:
         self.ensure_loaded()
         for root in self.root_causes:
@@ -441,4 +750,3 @@ class DemoStore:
 
 
 store = DemoStore()
-

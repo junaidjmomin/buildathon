@@ -1,21 +1,44 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, HTTPException
 
 from app.domain.models import (
+    Agreement,
+    CaseTransitionRequest,
     Control,
+    ControlBacktest,
+    ControlCoverageSummary,
+    ControlProposal,
+    CounterfactualSettlement,
     DemoLoadResponse,
+    ExceptionCase,
+    ExceptionCaseStatus,
     ExpectedActualResponse,
     HypothesisResponse,
     HypothesisVerification,
+    McpEvidenceCapability,
+    MutationTestSummary,
     PaymentGraph,
+    RazorpayConnectionStatus,
+    RazorpaySyncRequest,
+    RazorpaySyncSummary,
     RootCause,
     RunSummary,
+    UnresolvedMatch,
     Violation,
+    ViolationLineageResponse,
 )
-from app.services.demo import CONTROLS, DEMO_RUN_ID, store
+from app.integrations.razorpay.client import RazorpayNotConfiguredError
+from app.integrations.razorpay.mcp_evidence import capability as mcp_evidence_capability
+from app.integrations.razorpay.sync import connection_status, sync_razorpay
+from app.mutations.engine import MUTATION_TEST_ID, execute_mutation_test
+from app.services.demo import DEMO_RUN_ID, store
+from app.services.governance import AGREEMENT, CONTROLS, governance
 
 router = APIRouter(prefix="/api/v1")
+mutation_test: MutationTestSummary | None = None
 
 
 @router.get("/health")
@@ -31,6 +54,64 @@ def load_demo() -> DemoLoadResponse:
 @router.get("/controls", response_model=list[Control])
 def list_controls() -> list[Control]:
     return CONTROLS
+
+
+def _control(control_id: str) -> Control:
+    try:
+        return governance.control(control_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Control not found") from exc
+
+
+@router.get("/agreements", response_model=list[Agreement])
+def agreements() -> list[Agreement]:
+    return [AGREEMENT]
+
+
+@router.get("/agreements/{agreement_id}", response_model=Agreement)
+def agreement(agreement_id: str) -> Agreement:
+    try:
+        return governance.agreement(agreement_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Agreement not found") from exc
+
+
+@router.post(
+    "/agreements/{agreement_id}/extract-controls",
+    response_model=list[ControlProposal],
+)
+def extract_agreement_controls(agreement_id: str) -> list[ControlProposal]:
+    try:
+        return governance.proposals(agreement_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Agreement not found") from exc
+
+
+@router.get(
+    "/agreements/{agreement_id}/control-proposals",
+    response_model=list[ControlProposal],
+)
+def agreement_control_proposals(agreement_id: str) -> list[ControlProposal]:
+    try:
+        return governance.proposals(agreement_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Agreement not found") from exc
+
+
+@router.get("/controls/{logical_control_key}/versions", response_model=list[Control])
+def control_versions(logical_control_key: str) -> list[Control]:
+    versions = governance.versions(logical_control_key)
+    if not versions:
+        raise HTTPException(status_code=404, detail="Control versions not found")
+    return versions
+
+
+@router.get("/controls/{logical_control_key}/effective", response_model=Control)
+def effective_control(logical_control_key: str, at: date) -> Control:
+    try:
+        return governance.effective_control(logical_control_key, at)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/runs/{run_id}/summary", response_model=RunSummary)
@@ -59,6 +140,68 @@ def root_causes(run_id: str) -> list[RootCause]:
 
 
 @router.get(
+    "/runs/{run_id}/control-coverage",
+    response_model=ControlCoverageSummary,
+)
+def control_coverage(run_id: str) -> ControlCoverageSummary:
+    if run_id != DEMO_RUN_ID:
+        raise HTTPException(status_code=404, detail="Run not found")
+    store.ensure_loaded()
+    assert store.dataset is not None
+    return governance.coverage(run_id, store.dataset.payments)
+
+
+@router.get("/runs/{run_id}/cases", response_model=list[ExceptionCase])
+def exception_cases(run_id: str) -> list[ExceptionCase]:
+    if run_id != DEMO_RUN_ID:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return store.list_cases()
+
+
+@router.get("/runs/{run_id}/unresolved", response_model=list[UnresolvedMatch])
+def unresolved_matches(run_id: str) -> list[UnresolvedMatch]:
+    if run_id != DEMO_RUN_ID:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return store.unresolved_matches()
+
+
+@router.get("/cases/{case_id}", response_model=ExceptionCase)
+def exception_case(case_id: str) -> ExceptionCase:
+    try:
+        return store.get_case(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+
+
+def _transition_case(
+    case_id: str,
+    target: ExceptionCaseStatus,
+    request: CaseTransitionRequest,
+) -> ExceptionCase:
+    try:
+        return store.transition_case(case_id, target, request.note)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/cases/{case_id}/verify", response_model=ExceptionCase)
+def verify_case(case_id: str, request: CaseTransitionRequest) -> ExceptionCase:
+    return _transition_case(case_id, ExceptionCaseStatus.VERIFIED, request)
+
+
+@router.post("/cases/{case_id}/escalate", response_model=ExceptionCase)
+def escalate_case(case_id: str, request: CaseTransitionRequest) -> ExceptionCase:
+    return _transition_case(case_id, ExceptionCaseStatus.ESCALATED, request)
+
+
+@router.post("/cases/{case_id}/resolve", response_model=ExceptionCase)
+def resolve_case(case_id: str, request: CaseTransitionRequest) -> ExceptionCase:
+    return _transition_case(case_id, ExceptionCaseStatus.RESOLVED, request)
+
+
+@router.get(
     "/runs/{run_id}/payments/{payment_id}/expected-vs-actual",
     response_model=ExpectedActualResponse,
 )
@@ -81,6 +224,32 @@ def payment_graph(run_id: str, payment_id: str) -> PaymentGraph:
         raise HTTPException(status_code=404, detail="Payment not found") from exc
 
 
+@router.get(
+    "/runs/{run_id}/payments/{payment_id}/lineage",
+    response_model=ViolationLineageResponse,
+)
+def payment_lineage(run_id: str, payment_id: str) -> ViolationLineageResponse:
+    if run_id != DEMO_RUN_ID:
+        raise HTTPException(status_code=404, detail="Run not found")
+    try:
+        return store.lineage(payment_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Payment not found") from exc
+
+
+@router.get(
+    "/runs/{run_id}/payments/{payment_id}/counterfactual",
+    response_model=CounterfactualSettlement,
+)
+def payment_counterfactual(run_id: str, payment_id: str) -> CounterfactualSettlement:
+    if run_id != DEMO_RUN_ID:
+        raise HTTPException(status_code=404, detail="Run not found")
+    try:
+        return store.counterfactual(payment_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Payment not found") from exc
+
+
 @router.get("/root-causes/{root_cause_id}", response_model=RootCause)
 def root_cause(root_cause_id: str) -> RootCause:
     try:
@@ -89,9 +258,7 @@ def root_cause(root_cause_id: str) -> RootCause:
         raise HTTPException(status_code=404, detail="Root cause not found") from exc
 
 
-@router.post(
-    "/root-causes/{root_cause_id}/generate-hypothesis", response_model=HypothesisResponse
-)
+@router.post("/root-causes/{root_cause_id}/generate-hypothesis", response_model=HypothesisResponse)
 def generate_hypothesis(root_cause_id: str) -> HypothesisResponse:
     try:
         return store.generate_hypothesis(root_cause_id)
@@ -108,3 +275,96 @@ def verify_hypothesis(root_cause_id: str) -> HypothesisVerification:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Root cause not found") from exc
 
+
+@router.post("/runs/{run_id}/mutation-tests", response_model=MutationTestSummary)
+def create_mutation_test(run_id: str) -> MutationTestSummary:
+    global mutation_test
+    if run_id != DEMO_RUN_ID:
+        raise HTTPException(status_code=404, detail="Run not found")
+    store.ensure_loaded()
+    assert store.dataset is not None
+    candidate = _control("CTRL_UNSUPPORTED_FEE_CANDIDATE")
+    mutation_test = execute_mutation_test(
+        run_id,
+        store.dataset.payments,
+        unsupported_fee_control=candidate.status == "APPROVED",
+    )
+    return mutation_test
+
+
+@router.get("/mutation-tests/{test_id}", response_model=MutationTestSummary)
+def get_mutation_test(test_id: str) -> MutationTestSummary:
+    if test_id != MUTATION_TEST_ID or mutation_test is None:
+        raise HTTPException(status_code=404, detail="Mutation test not found")
+    return mutation_test
+
+
+@router.post("/controls/{control_id}/backtest", response_model=ControlBacktest)
+def backtest_control(control_id: str) -> ControlBacktest:
+    control = _control(control_id)
+    if control.id != "CTRL_UNSUPPORTED_FEE_CANDIDATE":
+        raise HTTPException(status_code=422, detail="No backtest fixture for this control")
+    store.ensure_loaded()
+    assert store.dataset is not None
+    before = execute_mutation_test(DEMO_RUN_ID, store.dataset.payments)
+    after = execute_mutation_test(DEMO_RUN_ID, store.dataset.payments, unsupported_fee_control=True)
+    before_missed = {result.id for result in before.results if not result.detected}
+    newly_detected = [
+        result.id for result in after.results if result.detected and result.id in before_missed
+    ]
+    result = ControlBacktest(
+        control_id=control.id,
+        status="COMPLETE",
+        candidate_status=control.status,
+        historical_false_positives=0,
+        before={
+            "detected_count": before.detected_count,
+            "mutation_count": before.mutation_count,
+            "mutation_detection_rate": before.mutation_detection_rate,
+            "false_positive_count": before.false_positive_count,
+        },
+        after={
+            "detected_count": after.detected_count,
+            "mutation_count": after.mutation_count,
+            "mutation_detection_rate": after.mutation_detection_rate,
+            "false_positive_count": after.false_positive_count,
+        },
+        detection_rate_delta=after.mutation_detection_rate - before.mutation_detection_rate,
+        false_positive_delta=after.false_positive_count - before.false_positive_count,
+        newly_detected_mutation_ids=newly_detected,
+        canonical_data_unchanged=(
+            before.canonical_data_unchanged and after.canonical_data_unchanged
+        ),
+    )
+    governance.record_backtest(control.id)
+    return result
+
+
+@router.post("/controls/{control_id}/approve", response_model=Control)
+def approve_control(control_id: str) -> Control:
+    _control(control_id)
+    try:
+        return governance.approve(control_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/integrations/razorpay/status", response_model=RazorpayConnectionStatus)
+def razorpay_status() -> RazorpayConnectionStatus:
+    return connection_status()
+
+
+@router.post("/integrations/razorpay/sync", response_model=RazorpaySyncSummary)
+async def razorpay_sync(request: RazorpaySyncRequest) -> RazorpaySyncSummary:
+    try:
+        return await sync_razorpay(request, run_id="RUN_RAZORPAY_LIVE")
+    except RazorpayNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/integrations/razorpay/mcp-evidence-capability",
+    response_model=McpEvidenceCapability,
+)
+def razorpay_mcp_evidence_capability() -> McpEvidenceCapability:
+    return mcp_evidence_capability()

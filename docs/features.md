@@ -828,3 +828,52 @@ CONTROL COVERAGE    EVENT GRAPH
 ```
 
 This is the version of sl3dge that should guide implementation.
+
+---
+
+# Razorpay Integration Layer — After Core Verification
+
+Razorpay strengthens the real-data demo, but does not become the source of
+financial truth. The seeded NovaCart dataset and hidden ground truth remain the
+primary evaluation path.
+
+Product flow:
+
+```text
+Razorpay read-only APIs
+        ↓
+bulk deterministic ingestion
+        ↓
+existing Financial Event Graph
+        ↓
+approved sl3dge controls
+        ↓
+expected vs actual verification
+```
+
+Data-source options:
+
+```text
+NovaCart Demo Dataset
+Razorpay Test Account
+Upload Files
+```
+
+The Razorpay sync UI must report payments, refunds, settlements and
+reconciliation records imported, plus last-sync status. The connector is
+read-only: it must not capture payments, create refunds, initiate settlements or
+perform any other money-moving action.
+
+Implementation order remains:
+
+```text
+PAY_82HD9 deterministic slice
+→ mutation testing and blind spots
+→ violation lineage and hypothesis verifier
+→ direct Razorpay reconciliation ingestion
+→ optional Razorpay MCP evidence retrieval
+→ optional webhooks
+```
+
+Razorpay tells sl3dge what happened. The approved merchant agreement tells
+sl3dge what should have happened. sl3dge independently compares the two.

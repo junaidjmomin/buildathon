@@ -1537,3 +1537,109 @@ The differentiated MVP is not backend-complete until:
 - control coverage identifies governed vs ungoverned edges
 - time-versioned controls select the correct rule at a date boundary
 - counterfactual settlement reconstruction works
+
+---
+
+# Razorpay Read-Only Ingestion — Post-Core Integration
+
+Do not build a parallel Razorpay domain model. All records must normalize into
+the existing `FinancialEvent`, `EventEdge`, run and evaluation models.
+
+## Direct API Plan
+
+Primary bulk source:
+
+```http
+GET /v1/settlements/recon/combined?year=YYYY&month=MM&day=DD&count=1000&skip=0
+```
+
+Use this Settlement Reconciliation endpoint for payment, refund, transfer and
+adjustment rows already associated with settlement IDs and UTRs.
+
+Read-only enrichment sources:
+
+```http
+GET /v1/payments?from=...&to=...&count=100&skip=...
+GET /v1/refunds?from=...&to=...&count=100&skip=...
+GET /v1/settlements?from=...&to=...&count=100&skip=...
+GET /v1/settlements/{settlement_id}
+```
+
+No create, capture, update, refund-initiation or instant-settlement endpoint is
+allowed in the prototype.
+
+## Domain Mapping
+
+```text
+Recon type=payment
+  → FinancialEvent(source=PAYMENT)
+
+Recon type=refund
+  → FinancialEvent(source=REFUND)
+
+Settlement record
+  → FinancialEvent(source=SETTLEMENT)
+
+settlement_utr
+  → settlement normalized_payload and bank-link evidence
+
+entity_id / payment_id / order_id / settlement_id
+  → external IDs and exact EventEdges
+
+fee / tax
+  → FEE and TAX events or normalized monetary components
+
+credit / debit / amount / currency
+  → Decimal amounts after currency-subunit conversion
+
+created_at / settled_at
+  → UTC-aware event timestamps
+```
+
+Preserve the complete Razorpay response in `raw_payload`. Derived events must
+retain source provenance, sync ID and mapping version.
+
+Recommended connector layout:
+
+```text
+backend/app/integrations/razorpay/
+├── client.py
+├── recon.py
+├── payments.py
+├── refunds.py
+├── settlements.py
+├── schemas.py
+└── mapper.py
+```
+
+Credentials are backend-only environment variables:
+
+```env
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_MODE=test
+```
+
+They must never be returned by an API or embedded in frontend bundles.
+
+## Optional MCP Evidence Layer
+
+Only after direct ingestion is stable, use the official Razorpay MCP server in
+read-only mode for bounded investigation with these tools:
+
+```text
+fetch_payment
+fetch_all_payments
+fetch_refund
+fetch_all_refunds
+fetch_multiple_refunds_for_payment
+fetch_all_settlements
+fetch_settlement_with_id
+fetch_settlement_recon_details
+```
+
+MCP output is evidence, not truth. Any AI-derived conclusion still passes
+through the deterministic verifier and ends in `PROVEN`, `REJECTED` or
+`UNRESOLVED`.
+
+Webhooks are P2. Do not add n8n without a concrete blocker.

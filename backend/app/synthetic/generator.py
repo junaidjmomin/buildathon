@@ -71,9 +71,7 @@ def generate_dataset(seed: int = DEMO_SEED, payment_count: int = 500) -> Synthet
         elif scenario == "UNSUPPORTED_FEE":
             unsupported_fee = Decimal("49.00")
 
-        actual_net = money(
-            amount - actual_fee - actual_tax - refund_deduction - unsupported_fee
-        )
+        actual_net = money(amount - actual_fee - actual_tax - refund_deduction - unsupported_fee)
         bank_credit = None if scenario == "UNRESOLVED" else actual_net
         payment = PaymentLifecycle(
             payment_id=payment_id,
@@ -116,4 +114,3 @@ def generate_dataset(seed: int = DEMO_SEED, payment_count: int = 500) -> Synthet
             "chargebacks": 6,
         },
     )
-

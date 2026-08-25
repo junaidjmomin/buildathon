@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 PAISE = Decimal("0.01")
 
@@ -40,4 +40,3 @@ def business_days_late(expected_at: datetime, actual_at: datetime) -> int:
         if cursor.weekday() < 5:
             days += 1
     return days
-

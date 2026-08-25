@@ -33,4 +33,3 @@ async def value_error_handler(_: Request, exc: ValueError) -> JSONResponse:
             }
         },
     )
-

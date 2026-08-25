@@ -14,4 +14,3 @@ def test_t_plus_two_skips_weekend() -> None:
     friday = datetime(2026, 8, 21, 10, tzinfo=timezone.utc)
     expected = add_business_days(friday, 2)
     assert expected.date().isoformat() == "2026-08-25"
-

@@ -1132,4 +1132,56 @@ The project is not done until:
 18. time-versioned control selection works at a boundary
 19. unresolved case stays unresolved
 20. precision/recall against hidden ground truth still work
+
+---
+
+# Razorpay Integration Engineering Contract
+
+Razorpay is the next integration layer after the deterministic core, mutation
+testing, blind spots, violation lineage and hypothesis verifier.
+
+Use direct HTTPS from the FastAPI backend with `httpx`. Authenticate server-side
+with Razorpay test-mode credentials. The frontend calls only sl3dge endpoints.
+
+Direct read-only dependencies:
+
+```text
+GET /v1/settlements/recon/combined  primary bulk reconciliation feed
+GET /v1/payments                    payment enrichment and completeness
+GET /v1/refunds                     refund enrichment and completeness
+GET /v1/settlements                 settlement amount/status/UTR enrichment
+GET /v1/settlements/{id}            bounded settlement detail
+```
+
+All paging, currency-subunit conversion, timestamp normalization, retries and
+rate-limit handling live in `backend/app/integrations/razorpay/`. Mapping emits
+the existing canonical event and edge schemas; Razorpay-specific database tables
+are prohibited unless a later persistence requirement cannot be met with raw
+payload provenance.
+
+Optional investigation layer:
+
+```text
+Official Razorpay MCP server
+Remote endpoint: https://mcp.razorpay.com/mcp
+Mode: read-only
+Allowed toolsets: payment, refund, settlement
+```
+
+Enable only bounded fetch tools. Do not enable or call capture, create, update,
+refund-initiation, payout or instant-settlement tools. Direct API ingestion
+remains authoritative for input data; MCP results are supplementary evidence for
+the AI investigator.
+
+Environment additions:
+
+```env
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_MODE=test
+RAZORPAY_API_BASE_URL=https://api.razorpay.com/v1
+```
+
+Do not expose these through `NEXT_PUBLIC_*` variables. Webhooks are P2, and n8n
+is out of scope without a concrete implementation blocker.
 ```
