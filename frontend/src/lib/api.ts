@@ -16,64 +16,108 @@ import type {
   RazorpayConnectionStatus,
   RazorpaySyncSummary,
   RunSummary,
+  SourceUploadResponse,
   UnresolvedMatch,
   Violation,
   ViolationLineageResponse,
 } from "@/types/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+const REQUEST_TIMEOUT_MS = 15_000;
+const segment = (value: string) => encodeURIComponent(value);
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly requestId: string | null,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`);
+  const headers = new Headers(init?.headers);
+  headers.set("Accept", "application/json");
+  if (!(init?.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  init?.signal?.addEventListener("abort", () => controller.abort(), { once: true });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      credentials: "include",
+      headers,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new ApiError("The API request timed out. Retry when the service is available.", 0, null);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    const payload = contentType.includes("application/json")
+      ? await response.json()
+      : await response.text();
+    const message =
+      typeof payload === "string"
+        ? payload
+        : payload.detail ?? payload.error?.message ?? `Request failed: ${response.status}`;
+    throw new ApiError(message, response.status, response.headers.get("x-request-id"));
+  }
   return response.json() as Promise<T>;
 }
 
 export const api = {
   loadDemo: () => request<DemoLoadResponse>("/demo/load", { method: "POST" }),
-  summary: (runId: string) => request<RunSummary>(`/runs/${runId}/summary`),
-  violations: (runId: string) => request<Violation[]>(`/runs/${runId}/violations`),
-  rootCauses: (runId: string) => request<RootCause[]>(`/runs/${runId}/root-causes`),
+  summary: (runId: string) => request<RunSummary>(`/runs/${segment(runId)}/summary`),
+  violations: (runId: string) => request<Violation[]>(`/runs/${segment(runId)}/violations`),
+  rootCauses: (runId: string) => request<RootCause[]>(`/runs/${segment(runId)}/root-causes`),
   expectedActual: (runId: string, paymentId: string) =>
-    request<ExpectedActualResponse>(`/runs/${runId}/payments/${paymentId}/expected-vs-actual`),
+    request<ExpectedActualResponse>(`/runs/${segment(runId)}/payments/${segment(paymentId)}/expected-vs-actual`),
   paymentGraph: (runId: string, paymentId: string) =>
-    request<PaymentGraph>(`/runs/${runId}/payments/${paymentId}/graph`),
+    request<PaymentGraph>(`/runs/${segment(runId)}/payments/${segment(paymentId)}/graph`),
   runMutationTest: (runId: string) =>
-    request<MutationTestSummary>(`/runs/${runId}/mutation-tests`, { method: "POST" }),
+    request<MutationTestSummary>(`/runs/${segment(runId)}/mutation-tests`, { method: "POST" }),
   backtestControl: (controlId: string) =>
-    request<ControlBacktest>(`/controls/${controlId}/backtest`, { method: "POST" }),
+    request<ControlBacktest>(`/controls/${segment(controlId)}/backtest`, { method: "POST" }),
   approveControl: (controlId: string) =>
-    request<{ id: string; status: string }>(`/controls/${controlId}/approve`, { method: "POST" }),
+    request<{ id: string; status: string }>(`/controls/${segment(controlId)}/approve`, { method: "POST" }),
   lineage: (runId: string, paymentId: string) =>
-    request<ViolationLineageResponse>(`/runs/${runId}/payments/${paymentId}/lineage`),
+    request<ViolationLineageResponse>(`/runs/${segment(runId)}/payments/${segment(paymentId)}/lineage`),
   counterfactual: (runId: string, paymentId: string) =>
-    request<CounterfactualSettlement>(`/runs/${runId}/payments/${paymentId}/counterfactual`),
+    request<CounterfactualSettlement>(`/runs/${segment(runId)}/payments/${segment(paymentId)}/counterfactual`),
   agreements: () => request<Agreement[]>("/agreements"),
   agreementProposals: (agreementId: string) =>
-    request<ControlProposal[]>(`/agreements/${agreementId}/control-proposals`),
+    request<ControlProposal[]>(`/agreements/${segment(agreementId)}/control-proposals`),
   extractAgreementControls: (agreementId: string) =>
-    request<ControlProposal[]>(`/agreements/${agreementId}/extract-controls`, { method: "POST" }),
+    request<ControlProposal[]>(`/agreements/${segment(agreementId)}/extract-controls`, { method: "POST" }),
   controlCoverage: (runId: string) =>
-    request<ControlCoverageSummary>(`/runs/${runId}/control-coverage`),
+    request<ControlCoverageSummary>(`/runs/${segment(runId)}/control-coverage`),
   exceptionCases: (runId: string) =>
-    request<ExceptionCase[]>(`/runs/${runId}/cases`),
+    request<ExceptionCase[]>(`/runs/${segment(runId)}/cases`),
   unresolvedMatches: (runId: string) =>
-    request<UnresolvedMatch[]>(`/runs/${runId}/unresolved`),
+    request<UnresolvedMatch[]>(`/runs/${segment(runId)}/unresolved`),
   transitionCase: (caseId: string, action: "verify" | "escalate" | "resolve", note = "") =>
-    request<ExceptionCase>(`/cases/${caseId}/${action}`, {
+    request<ExceptionCase>(`/cases/${segment(caseId)}/${action}`, {
       method: "POST",
       body: JSON.stringify({ note }),
     }),
-  rootCause: (rootCauseId: string) => request<RootCause>(`/root-causes/${rootCauseId}`),
+  rootCause: (rootCauseId: string) => request<RootCause>(`/root-causes/${segment(rootCauseId)}`),
   generateHypothesis: (rootCauseId: string) =>
-    request<HypothesisResponse>(`/root-causes/${rootCauseId}/generate-hypothesis`, {
+    request<HypothesisResponse>(`/root-causes/${segment(rootCauseId)}/generate-hypothesis`, {
       method: "POST",
     }),
   verifyHypothesis: (rootCauseId: string) =>
-    request<HypothesisVerification>(`/root-causes/${rootCauseId}/verify-hypothesis`, {
+    request<HypothesisVerification>(`/root-causes/${segment(rootCauseId)}/verify-hypothesis`, {
       method: "POST",
     }),
   razorpayStatus: () =>
@@ -85,4 +129,9 @@ export const api = {
     }),
   razorpayMcpCapability: () =>
     request<McpEvidenceCapability>("/integrations/razorpay/mcp-evidence-capability"),
+  uploadSource: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<SourceUploadResponse>("/sources/upload", { method: "POST", body });
+  },
 };

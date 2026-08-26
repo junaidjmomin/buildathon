@@ -21,6 +21,7 @@ class ArtifactService:
         object_path: str,
         content: bytes,
         content_type: str,
+        tenant_id: str,
         run_id: str | None = None,
         case_id: str | None = None,
         overwrite: bool = False,
@@ -33,6 +34,7 @@ class ArtifactService:
         )
         self.session.merge(
             ArtifactRecord(
+                tenant_id=tenant_id,
                 id=artifact_id,
                 run_id=run_id,
                 case_id=case_id,

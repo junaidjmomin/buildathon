@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
+from urllib.parse import quote
 
 import httpx
 
@@ -35,7 +36,8 @@ class SupabaseStorage:
     @property
     def configured(self) -> bool:
         return bool(
-            self.settings.supabase_url and self.settings.supabase_service_role_key
+            self.settings.supabase_url
+            and self.settings.supabase_service_role_key.get_secret_value()
         )
 
     async def upload(
@@ -51,15 +53,24 @@ class SupabaseStorage:
                 "Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on the backend"
             )
         clean_path = object_path.strip("/")
-        if not clean_path or ".." in clean_path.split("/"):
+        segments = clean_path.split("/")
+        if (
+            not clean_path
+            or ".." in segments
+            or any(not segment for segment in segments)
+            or "\\" in clean_path
+            or any(ord(character) < 32 for character in clean_path)
+        ):
             raise ValueError("Storage object path must be a safe relative path")
+        encoded_path = quote(clean_path, safe="/-_.")
         url = (
             f"{self.settings.supabase_url.rstrip('/')}/storage/v1/object/"
-            f"{self.settings.supabase_storage_bucket}/{clean_path}"
+            f"{self.settings.supabase_storage_bucket}/{encoded_path}"
         )
+        service_key = self.settings.supabase_service_role_key.get_secret_value()
         headers = {
-            "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
-            "apikey": self.settings.supabase_service_role_key,
+            "Authorization": f"Bearer {service_key}",
+            "apikey": service_key,
             "Content-Type": content_type,
             "x-upsert": "true" if overwrite else "false",
         }

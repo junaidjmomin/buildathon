@@ -247,12 +247,14 @@ class GovernanceStore:
     def __init__(self) -> None:
         self.controls: list[Control] = []
         self.backtested_control_ids: set[str] = set()
+        self.backtest_actors: dict[str, str] = {}
         self.reset()
 
     def reset(self) -> None:
         self.controls.clear()
         self.controls.extend(control.model_copy(deep=True) for control in _control_templates())
         self.backtested_control_ids.clear()
+        self.backtest_actors.clear()
 
     def agreement(self, agreement_id: str) -> Agreement:
         if agreement_id != AGREEMENT_ID:
@@ -297,16 +299,21 @@ class GovernanceStore:
             )
         return proposals
 
-    def record_backtest(self, control_id: str) -> None:
+    def record_backtest(self, control_id: str, *, actor: str = "demo-reviewer") -> None:
         self.control(control_id)
         self.backtested_control_ids.add(control_id)
+        self.backtest_actors[control_id] = actor
 
-    def approve(self, control_id: str) -> Control:
+    def approve(
+        self, control_id: str, *, actor: str = "demo-approver", enforce_maker_checker: bool = False
+    ) -> Control:
         control = self.control(control_id)
         if control.status != "DRAFT":
             raise RuntimeError("Only draft controls can be approved")
         if control_id not in self.backtested_control_ids:
             raise RuntimeError("A successful backtest is required before approval")
+        if enforce_maker_checker and self.backtest_actors.get(control_id) == actor:
+            raise RuntimeError("Control approval requires a different backtester and approver")
         control.status = "APPROVED"
         control.approved_at = datetime.now(timezone.utc)
         return control

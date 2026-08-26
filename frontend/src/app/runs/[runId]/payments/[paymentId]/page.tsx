@@ -7,7 +7,7 @@ import { useParams } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { api } from "@/lib/api";
-import { formatMoney } from "@/lib/format";
+import { compareDecimals, formatMoney } from "@/lib/format";
 import type { EvaluationStatus } from "@/types/api";
 
 export default function PaymentPage() {
@@ -91,7 +91,7 @@ export default function PaymentPage() {
             <div className="space-y-3">
               {data.evidence.map((evidence) => (
                 <div key={evidence.control} className="panel rounded-xl p-4">
-                  <div className="mb-3 flex items-start justify-between gap-3"><div><p className="text-xs font-semibold">{evidence.title}</p><p className="mt-1 font-mono text-[10px] text-[#7a847e]">{evidence.control}</p></div>{Number(evidence.difference) > 0 ? <CircleAlert size={17} className="text-[#e86f3a]" /> : <Check size={17} className="text-[#2a8a60]" />}</div>
+                  <div className="mb-3 flex items-start justify-between gap-3"><div><p className="text-xs font-semibold">{evidence.title}</p><p className="mt-1 font-mono text-[10px] text-[#7a847e]">{evidence.control}</p></div>{evidence.difference !== null && compareDecimals(evidence.difference, "0") > 0 ? <CircleAlert size={17} className="text-[#e86f3a]" /> : <Check size={17} className="text-[#2a8a60]" />}</div>
                   <div className="rounded-lg bg-[#f4f6f1] px-3 py-2.5 font-mono text-xs font-medium">{evidence.calculation}</div>
                   <div className="mt-3 grid grid-cols-3 gap-3 text-xs"><div><span className="block text-[10px] text-[#7a847e]">Expected</span><strong>{formatMoney(evidence.expected)}</strong></div><div><span className="block text-[10px] text-[#7a847e]">Actual</span><strong>{formatMoney(evidence.actual)}</strong></div><div><span className="block text-[10px] text-[#7a847e]">Difference</span><strong className="text-[#b14e29]">{formatMoney(evidence.difference)}</strong></div></div>
                   <div className="mt-4 border-t border-[#e5e8e2] pt-3 text-[11px] text-[#69736e]">{evidence.source} · <span className="font-medium text-[#1e6b51]">{evidence.source_clause}</span></div>

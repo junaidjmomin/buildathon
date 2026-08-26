@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import PurePath
+from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 
 from app.ai.provider import build_ai_runtime
 from app.core.config import get_settings
@@ -37,19 +38,20 @@ from app.domain.models import (
     Violation,
     ViolationLineageResponse,
 )
+from app.ingestion.csv import parse_source_csv
 from app.integrations.razorpay.client import RazorpayNotConfiguredError
 from app.integrations.razorpay.mcp_evidence import capability as mcp_evidence_capability
 from app.integrations.razorpay.sync import connection_status, sync_razorpay
-from app.ingestion.csv import parse_source_csv
 from app.mutations.engine import MUTATION_TEST_ID, execute_mutation_test
 from app.persistence.database import session_scope
 from app.persistence.repository import RunRepository
+from app.security.auth import Principal, get_current_principal, require_roles
 from app.services.demo import DEMO_RUN_ID, store
 from app.services.governance import AGREEMENT, CONTROLS, governance
-from app.storage.supabase import SupabaseStorage
 from app.storage.service import ArtifactService
+from app.storage.supabase import SupabaseStorage
 
-router = APIRouter(prefix="/api/v1")
+router = APIRouter(prefix="/api/v1", dependencies=[Depends(get_current_principal)])
 mutation_test: MutationTestSummary | None = None
 
 
@@ -86,29 +88,44 @@ def ai_capability() -> AiCapability:
 
 
 @router.post("/sources/upload", response_model=SourceUploadResponse)
-async def upload_source(file: UploadFile = File(...)) -> SourceUploadResponse:
+async def upload_source(
+    file: Annotated[UploadFile, File()],
+    principal: Annotated[Principal, Depends(require_roles("analyst"))],
+    request: Request,
+) -> SourceUploadResponse:
     filename = PurePath(file.filename or "source.csv").name
     if not filename.lower().endswith(".csv"):
         raise HTTPException(status_code=422, detail="Only CSV source files are accepted")
-    content = await file.read(10 * 1024 * 1024 + 1)
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="CSV source file exceeds the 10 MB limit")
+    settings = get_settings()
+    content = await file.read(settings.max_upload_bytes + 1)
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(status_code=413, detail="CSV source file exceeds the configured limit")
     parsed = parse_source_csv(content)
     upload_id = f"UPLOAD_{uuid4().hex[:12].upper()}"
-    object_path = f"runs/{DEMO_RUN_ID}/uploads/{upload_id}_{filename}"
-    settings = get_settings()
+    object_path = f"tenants/{principal.tenant_id}/uploads/{upload_id}.csv"
     storage = SupabaseStorage(settings)
     storage_status = "VALIDATED_ONLY"
     persisted_path: str | None = None
     if storage.configured and settings.database_url:
-        with session_scope() as session:
+        with session_scope(tenant_id=principal.tenant_id) as session:
             stored = await ArtifactService(storage, session).store(
                 artifact_id=upload_id,
                 kind="SOURCE_CSV",
                 object_path=object_path,
                 content=content,
                 content_type="text/csv",
-                run_id=DEMO_RUN_ID,
+                tenant_id=principal.tenant_id,
+                run_id=None,
+            )
+            RunRepository(session).write_audit(
+                tenant_id=principal.tenant_id,
+                actor_id=principal.subject,
+                action="SOURCE_UPLOAD",
+                resource_type="artifact",
+                resource_id=upload_id,
+                outcome="AVAILABLE",
+                details={"filename": filename, "row_count": parsed.row_count},
+                request_id=request.state.request_id,
             )
         storage_status = "PRIVATE_STORAGE"
         persisted_path = stored.object_path
@@ -124,7 +141,11 @@ async def upload_source(file: UploadFile = File(...)) -> SourceUploadResponse:
 
 
 @router.post("/demo/load", response_model=DemoLoadResponse)
-def load_demo() -> DemoLoadResponse:
+def load_demo(
+    _principal: Annotated[Principal, Depends(require_roles("analyst"))],
+) -> DemoLoadResponse:
+    if get_settings().environment == "production":
+        raise HTTPException(status_code=404, detail="Demo loading is disabled in production")
     return store.load()
 
 
@@ -157,7 +178,10 @@ def agreement(agreement_id: str) -> Agreement:
     "/agreements/{agreement_id}/extract-controls",
     response_model=list[ControlProposal],
 )
-def extract_agreement_controls(agreement_id: str) -> list[ControlProposal]:
+def extract_agreement_controls(
+    agreement_id: str,
+    _principal: Annotated[Principal, Depends(require_roles("analyst"))],
+) -> list[ControlProposal]:
     try:
         return governance.proposals(agreement_id)
     except KeyError as exc:
@@ -253,10 +277,25 @@ def exception_case(case_id: str) -> ExceptionCase:
 def _transition_case(
     case_id: str,
     target: ExceptionCaseStatus,
-    request: CaseTransitionRequest,
+    payload: CaseTransitionRequest,
+    principal: Principal,
+    request: Request,
 ) -> ExceptionCase:
     try:
-        return store.transition_case(case_id, target, request.note)
+        case = store.transition_case(case_id, target, payload.note, actor=principal.subject)
+        if get_settings().database_url:
+            with session_scope(tenant_id=principal.tenant_id) as session:
+                RunRepository(session).write_audit(
+                    tenant_id=principal.tenant_id,
+                    actor_id=principal.subject,
+                    action=f"CASE_{target.value}",
+                    resource_type="case",
+                    resource_id=case_id,
+                    outcome="SUCCESS",
+                    details={"from_status": case.audit_trail[-1].from_status},
+                    request_id=request.state.request_id,
+                )
+        return case
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Case not found") from exc
     except RuntimeError as exc:
@@ -264,18 +303,39 @@ def _transition_case(
 
 
 @router.post("/cases/{case_id}/verify", response_model=ExceptionCase)
-def verify_case(case_id: str, request: CaseTransitionRequest) -> ExceptionCase:
-    return _transition_case(case_id, ExceptionCaseStatus.VERIFIED, request)
+def verify_case(
+    case_id: str,
+    request: CaseTransitionRequest,
+    principal: Annotated[Principal, Depends(require_roles("analyst"))],
+    http_request: Request,
+) -> ExceptionCase:
+    return _transition_case(
+        case_id, ExceptionCaseStatus.VERIFIED, request, principal, http_request
+    )
 
 
 @router.post("/cases/{case_id}/escalate", response_model=ExceptionCase)
-def escalate_case(case_id: str, request: CaseTransitionRequest) -> ExceptionCase:
-    return _transition_case(case_id, ExceptionCaseStatus.ESCALATED, request)
+def escalate_case(
+    case_id: str,
+    request: CaseTransitionRequest,
+    principal: Annotated[Principal, Depends(require_roles("analyst"))],
+    http_request: Request,
+) -> ExceptionCase:
+    return _transition_case(
+        case_id, ExceptionCaseStatus.ESCALATED, request, principal, http_request
+    )
 
 
 @router.post("/cases/{case_id}/resolve", response_model=ExceptionCase)
-def resolve_case(case_id: str, request: CaseTransitionRequest) -> ExceptionCase:
-    return _transition_case(case_id, ExceptionCaseStatus.RESOLVED, request)
+def resolve_case(
+    case_id: str,
+    request: CaseTransitionRequest,
+    principal: Annotated[Principal, Depends(require_roles("analyst"))],
+    http_request: Request,
+) -> ExceptionCase:
+    return _transition_case(
+        case_id, ExceptionCaseStatus.RESOLVED, request, principal, http_request
+    )
 
 
 @router.get(
@@ -336,7 +396,10 @@ def root_cause(root_cause_id: str) -> RootCause:
 
 
 @router.post("/root-causes/{root_cause_id}/generate-hypothesis", response_model=HypothesisResponse)
-def generate_hypothesis(root_cause_id: str) -> HypothesisResponse:
+def generate_hypothesis(
+    root_cause_id: str,
+    _principal: Annotated[Principal, Depends(require_roles("analyst"))],
+) -> HypothesisResponse:
     try:
         return store.generate_hypothesis(root_cause_id)
     except KeyError as exc:
@@ -346,7 +409,10 @@ def generate_hypothesis(root_cause_id: str) -> HypothesisResponse:
 @router.post(
     "/root-causes/{root_cause_id}/verify-hypothesis", response_model=HypothesisVerification
 )
-def verify_hypothesis(root_cause_id: str) -> HypothesisVerification:
+def verify_hypothesis(
+    root_cause_id: str,
+    _principal: Annotated[Principal, Depends(require_roles("analyst"))],
+) -> HypothesisVerification:
     try:
         return store.verify_hypothesis(root_cause_id)
     except KeyError as exc:
@@ -354,7 +420,11 @@ def verify_hypothesis(root_cause_id: str) -> HypothesisVerification:
 
 
 @router.post("/runs/{run_id}/mutation-tests", response_model=MutationTestSummary)
-def create_mutation_test(run_id: str) -> MutationTestSummary:
+def create_mutation_test(
+    run_id: str,
+    _principal: Annotated[Principal, Depends(require_roles("analyst"))],
+    request: Request,
+) -> MutationTestSummary:
     global mutation_test
     if run_id != DEMO_RUN_ID:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -367,8 +437,23 @@ def create_mutation_test(run_id: str) -> MutationTestSummary:
         unsupported_fee_control=candidate.status == "APPROVED",
     )
     if get_settings().database_url:
-        with session_scope() as session:
-            RunRepository(session).save_mutation_test(mutation_test)
+        with session_scope(tenant_id=_principal.tenant_id) as session:
+            RunRepository(session).save_mutation_test(
+                mutation_test, tenant_id=_principal.tenant_id
+            )
+            RunRepository(session).write_audit(
+                tenant_id=_principal.tenant_id,
+                actor_id=_principal.subject,
+                action="MUTATION_TEST_EXECUTED",
+                resource_type="mutation_test",
+                resource_id=mutation_test.id,
+                outcome="COMPLETE",
+                details={
+                    "detected": mutation_test.detected_count,
+                    "missed": mutation_test.missed_count,
+                },
+                request_id=request.state.request_id,
+            )
     return mutation_test
 
 
@@ -380,7 +465,11 @@ def get_mutation_test(test_id: str) -> MutationTestSummary:
 
 
 @router.post("/controls/{control_id}/backtest", response_model=ControlBacktest)
-def backtest_control(control_id: str) -> ControlBacktest:
+def backtest_control(
+    control_id: str,
+    _principal: Annotated[Principal, Depends(require_roles("analyst"))],
+    request: Request,
+) -> ControlBacktest:
     control = _control(control_id)
     if control.id != "CTRL_UNSUPPORTED_FEE_CANDIDATE":
         raise HTTPException(status_code=422, detail="No backtest fixture for this control")
@@ -416,15 +505,52 @@ def backtest_control(control_id: str) -> ControlBacktest:
             before.canonical_data_unchanged and after.canonical_data_unchanged
         ),
     )
-    governance.record_backtest(control.id)
+    governance.record_backtest(control.id, actor=_principal.subject)
+    if get_settings().database_url:
+        with session_scope(tenant_id=_principal.tenant_id) as session:
+            RunRepository(session).write_audit(
+                tenant_id=_principal.tenant_id,
+                actor_id=_principal.subject,
+                action="CONTROL_BACKTESTED",
+                resource_type="control",
+                resource_id=control.id,
+                outcome="COMPLETE",
+                details={
+                    "before_detected": before.detected_count,
+                    "after_detected": after.detected_count,
+                    "false_positive_delta": result.false_positive_delta,
+                },
+                request_id=request.state.request_id,
+            )
     return result
 
 
 @router.post("/controls/{control_id}/approve", response_model=Control)
-def approve_control(control_id: str) -> Control:
+def approve_control(
+    control_id: str,
+    _principal: Annotated[Principal, Depends(require_roles("approver"))],
+    request: Request,
+) -> Control:
     _control(control_id)
     try:
-        return governance.approve(control_id)
+        approved = governance.approve(
+            control_id,
+            actor=_principal.subject,
+            enforce_maker_checker=get_settings().environment == "production",
+        )
+        if get_settings().database_url:
+            with session_scope(tenant_id=_principal.tenant_id) as session:
+                RunRepository(session).write_audit(
+                    tenant_id=_principal.tenant_id,
+                    actor_id=_principal.subject,
+                    action="CONTROL_APPROVED",
+                    resource_type="control",
+                    resource_id=approved.id,
+                    outcome="APPROVED",
+                    details={"version": approved.version},
+                    request_id=request.state.request_id,
+                )
+        return approved
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -435,9 +561,21 @@ def razorpay_status() -> RazorpayConnectionStatus:
 
 
 @router.post("/integrations/razorpay/sync", response_model=RazorpaySyncSummary)
-async def razorpay_sync(request: RazorpaySyncRequest) -> RazorpaySyncSummary:
+async def razorpay_sync(
+    request: RazorpaySyncRequest,
+    principal: Annotated[Principal, Depends(require_roles("analyst"))],
+) -> RazorpaySyncSummary:
+    if get_settings().environment == "production":
+        raise HTTPException(
+            status_code=409,
+            detail="Foreground synchronization is disabled in production; submit a sync job",
+        )
     try:
-        return await sync_razorpay(request, run_id="RUN_RAZORPAY_LIVE")
+        return await sync_razorpay(
+            request,
+            run_id="RUN_RAZORPAY_LIVE",
+            tenant_id=principal.tenant_id,
+        )
     except RazorpayNotConfiguredError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

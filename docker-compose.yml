@@ -1,42 +1,133 @@
+name: sl3dge
+
+x-backend-environment: &backend-environment
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env; see compose.env.example}
+  MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:?Set MIGRATION_DATABASE_URL in .env; see compose.env.example}
+  DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-5}
+  DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-5}
+  DATABASE_DISABLE_PREPARED_STATEMENTS: ${DATABASE_DISABLE_PREPARED_STATEMENTS:-false}
+  SUPABASE_URL: ${SUPABASE_URL:-}
+  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+  SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-sl3dge-private}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+  TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,backend}
+  FORCE_HTTPS: ${FORCE_HTTPS:-false}
+  MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
+  AUTH_MODE: ${AUTH_MODE:-disabled}
+  OIDC_ISSUER: ${OIDC_ISSUER:-}
+  OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+  OIDC_JWKS_URL: ${OIDC_JWKS_URL:-}
+  OIDC_TENANT_CLAIM: ${OIDC_TENANT_CLAIM:-merchant_id}
+  OIDC_ROLES_CLAIM: ${OIDC_ROLES_CLAIM:-roles}
+  LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+  LLM_MODEL: ${LLM_MODEL:-openai/gpt-oss-120b}
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+  RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+  RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+  RAZORPAY_MODE: ${RAZORPAY_MODE:-test}
+  RAZORPAY_API_BASE_URL: ${RAZORPAY_API_BASE_URL:-https://api.razorpay.com/v1}
+  RAZORPAY_MCP_ENABLED: ${RAZORPAY_MCP_ENABLED:-false}
+
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16.10-bookworm
     environment:
-      POSTGRES_DB: sl3dge
-      POSTGRES_USER: sl3dge
-      POSTGRES_PASSWORD: sl3dge
+      POSTGRES_DB: ${POSTGRES_DB:-sl3dge}
+      POSTGRES_USER: ${POSTGRES_USER:-sl3dge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a random POSTGRES_PASSWORD in .env}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sl3dge -d sl3dge"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    stop_grace_period: 1m
+    shm_size: 256mb
+    security_opt:
+      - no-new-privileges:true
 
-  backend:
-    build: ./backend
-    environment:
-      DATABASE_URL: postgresql+psycopg://sl3dge:sl3dge@postgres:5432/sl3dge
-      MIGRATION_DATABASE_URL: postgresql+psycopg://sl3dge:sl3dge@postgres:5432/sl3dge
-      DATABASE_DISABLE_PREPARED_STATEMENTS: "false"
-    command: >-
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+  migrate:
+    build:
+      context: ./backend
+      target: runtime
+    environment: *backend-environment
+    command: ["alembic", "upgrade", "head"]
     depends_on:
       postgres:
         condition: service_healthy
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    environment: *backend-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     ports:
-      - "8000:8000"
+      - "${BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
 
   frontend:
-    build: ./frontend
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+        NEXT_PUBLIC_APP_MODE: ${NEXT_PUBLIC_APP_MODE:-demo}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
-      - "3000:3000"
+      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/.next/cache:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/').then(response => {
+            if (!response.ok) process.exit(1)
+          }).catch(() => process.exit(1))
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
 
 volumes:
   pgdata:

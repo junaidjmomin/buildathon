@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { api } from "@/lib/api";
+import { formatPercent } from "@/lib/format";
 
 export default function ControlCoveragePage() {
   const { runId } = useParams<{ runId: string }>();
@@ -18,7 +19,6 @@ export default function ControlCoveragePage() {
   if (coverage.isPending) return <AppShell><div className="grid min-h-[calc(100vh-64px)] place-items-center"><LoaderCircle className="animate-spin text-[#1e6b51]" /></div></AppShell>;
   if (!coverage.data) return <AppShell><main className="p-8">Control coverage could not be loaded.</main></AppShell>;
   const data = coverage.data;
-  const percentage = Number(data.coverage_percentage) * 100;
 
   return (
     <AppShell>
@@ -30,7 +30,7 @@ export default function ControlCoveragePage() {
           <Metric label="Material edges" value={data.total_material_edges.toLocaleString("en-IN")} />
           <Metric label="Governed" value={data.governed_edges.toLocaleString("en-IN")} tone="green" />
           <Metric label="Ungoverned" value={data.ungoverned_edges.toLocaleString("en-IN")} tone="orange" />
-          <Metric label="Control coverage" value={`${percentage.toFixed(2)}%`} tone="green" />
+          <Metric label="Control coverage" value={formatPercent(data.coverage_percentage, 2)} tone="green" />
         </section>
 
         <section className="panel mb-6 overflow-hidden rounded-2xl">
@@ -52,4 +52,3 @@ function Metric({ label, value, tone = "default" }: { label: string; value: stri
   const color = tone === "green" ? "text-[#1e6b51]" : tone === "orange" ? "text-[#bd4e24]" : "text-[#17211d]";
   return <div className="panel rounded-xl p-4"><ShieldCheck size={15} className="mb-4 text-[#7a847e]" /><p className={`number-tabular text-2xl font-semibold ${color}`}>{value}</p><p className="mt-1 text-[11px] text-[#727d77]">{label}</p></div>;
 }
-

@@ -63,13 +63,14 @@ class AiRuntime:
 def build_ai_runtime(settings: Settings | None = None) -> AiRuntime:
     config = settings or get_settings()
     provider = config.llm_provider.strip().lower()
-    if provider == "groq" and config.groq_api_key:
+    groq_api_key = config.groq_api_key.get_secret_value()
+    if provider == "groq" and groq_api_key:
         return AiRuntime(
             provider=provider,
             model=config.llm_model,
             configured=True,
             provider_client=GroqTextProvider(
-                api_key=config.groq_api_key,
+                api_key=groq_api_key,
                 model=config.llm_model,
             ),
             fallback_policy="Deterministic verification remains authoritative.",

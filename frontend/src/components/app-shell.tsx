@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Activity,
   Boxes,
   FileCheck2,
   Gauge,
@@ -16,7 +15,6 @@ import { usePathname } from "next/navigation";
 
 const items = [
   { label: "Overview", icon: LayoutDashboard, href: "/" },
-  { label: "Control runs", icon: Activity, href: "/" },
   { label: "Controls", icon: ShieldCheck, href: "/runs/RUN_NOVACART_AUG_2026/coverage" },
   { label: "Exceptions", icon: TriangleAlert, href: "/exceptions" },
   { label: "Root causes", icon: GitBranch, href: "/root-causes/RC_MDR_01" },
@@ -26,6 +24,7 @@ const items = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const demoMode = process.env.NEXT_PUBLIC_APP_MODE !== "production";
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[236px_1fr]">
       <aside className="hidden min-h-screen bg-[#112a2b] px-4 py-5 text-white lg:flex lg:flex-col">
@@ -48,6 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition ${
                 active ? "bg-white/10 font-medium text-white" : "text-white/58 hover:bg-white/5 hover:text-white"
               }`}
+              aria-current={active ? "page" : undefined}
             >
               <Icon size={16} /> {label}
             </Link>
@@ -65,12 +65,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#dfe2db] bg-[#f3f4ef]/90 px-5 backdrop-blur-xl md:px-8">
           <div className="flex items-center gap-2 text-xs text-[#66716b]">
             <ShieldCheck size={15} className="text-[#1e6b51]" />
-            <span className="font-medium text-[#17211d]">NovaCart India</span><span>·</span><span>August 2026</span>
+            <span className="font-medium text-[#17211d]">
+              {demoMode ? "NovaCart India" : "Financial controls"}
+            </span>
+            <span>·</span>
+            <span>{demoMode ? "Seeded demo" : "Production workspace"}</span>
           </div>
           <div className="flex items-center gap-2 rounded-full border border-[#cdd7cf] bg-white px-3 py-1.5 text-[11px] font-medium text-[#1e6b51]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#2a9b6a]" /> Deterministic engine ready
+            <span className="h-1.5 w-1.5 rounded-full bg-[#2a9b6a]" /> Verification-first
           </div>
         </header>
+        <nav
+          aria-label="Primary navigation"
+          className="sticky top-16 z-10 flex gap-1 overflow-x-auto border-b border-[#dfe2db] bg-[#f8f9f5] px-3 py-2 lg:hidden"
+        >
+          {items.map(({ label, icon: Icon, href }) => {
+            const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+            return (
+              <Link
+                key={label}
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium ${
+                  active ? "bg-[#dfeee6] text-[#174b3b]" : "text-[#52615a]"
+                }`}
+              >
+                <Icon size={14} /> {label}
+              </Link>
+            );
+          })}
+        </nav>
         {children}
       </div>
     </div>

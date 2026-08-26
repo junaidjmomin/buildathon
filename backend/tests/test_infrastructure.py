@@ -4,6 +4,7 @@ import asyncio
 from decimal import Decimal
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -25,6 +26,28 @@ def test_canonical_seeded_graph_matches_manifest() -> None:
     assert len(edges) == 1495
     assert all(isinstance(event.amount, Decimal) for event in events)
     assert all(isinstance(edge.confidence, Decimal) for edge in edges)
+
+
+def test_settlement_and_bank_events_store_batch_aggregates() -> None:
+    dataset = generate_dataset()
+    events, _ = canonical_records("RUN_TEST", dataset)
+    event_index = {event.id: event for event in events}
+    members = [payment for payment in dataset.payments if payment.settlement_id == "SET_000"]
+    expected_settlement = sum((payment.actual_net for payment in members), Decimal("0.00"))
+    expected_bank = sum(
+        (payment.bank_credit for payment in members if payment.bank_credit is not None),
+        Decimal("0.00"),
+    )
+    assert event_index["EVT_SETTLEMENT_SET_000"].amount == expected_settlement
+    assert event_index["EVT_BANK_BANK_000"].amount == expected_bank
+
+
+def test_composite_tenant_identity_prevents_cross_merchant_collisions() -> None:
+    dataset = generate_dataset()
+    first, _ = canonical_records("RUN_SHARED", dataset, tenant_id="merchant_a")
+    second, _ = canonical_records("RUN_SHARED", dataset, tenant_id="merchant_b")
+    identities = {(event.tenant_id, event.run_id, event.id) for event in first + second}
+    assert len(identities) == 2358
 
 
 def test_polars_csv_ingestion_keeps_money_in_decimal_text_semantics() -> None:
@@ -60,6 +83,12 @@ def test_ai_runtime_gracefully_degrades_without_key() -> None:
     assert runtime.configured is False
     assert runtime.provider_client is None
     assert "deterministic" in runtime.fallback_policy.lower()
+
+
+def test_production_configuration_fails_closed_without_identity_and_infrastructure() -> None:
+    settings = Settings(ENVIRONMENT="production")
+    with pytest.raises(RuntimeError, match="unsafe or incomplete"):
+        settings.validate_runtime()
 
 
 def test_storage_requires_backend_credentials() -> None:
@@ -129,6 +158,7 @@ def test_artifact_service_stores_only_private_object_metadata_in_postgres() -> N
                 object_path="agreements/novacart-v1.pdf",
                 content=b"synthetic-pdf",
                 content_type="application/pdf",
+                tenant_id="novacart_demo",
             )
         )
         session.commit()

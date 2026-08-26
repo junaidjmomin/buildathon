@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import lru_cache
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
@@ -41,9 +41,16 @@ def get_session_factory() -> sessionmaker[Session] | None:
 
 
 @contextmanager
-def session_scope() -> Iterator[Session]:
+def session_scope(*, tenant_id: str | None = None) -> Iterator[Session]:
     factory = get_session_factory()
     if factory is None:
         raise RuntimeError("DATABASE_URL is not configured")
     with factory.begin() as session:
+        if session.bind is not None and session.bind.dialect.name == "postgresql":
+            if not tenant_id:
+                raise RuntimeError("A tenant context is required for PostgreSQL transactions")
+            session.execute(
+                text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+                {"tenant_id": tenant_id},
+            )
         yield session

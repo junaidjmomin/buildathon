@@ -5,6 +5,17 @@ export interface DemoLoadResponse {
   name: string;
   counts: Record<string, number>;
   known_demo_ids: Record<string, string>;
+  persistence_status: "IN_MEMORY" | "POSTGRES";
+}
+
+export interface SourceUploadResponse {
+  upload_id: string;
+  filename: string;
+  row_count: number;
+  columns: string[];
+  decimal_values_checked: number;
+  storage_status: "VALIDATED_ONLY" | "PRIVATE_STORAGE";
+  object_path: string | null;
 }
 
 export interface RunSummary {

@@ -20,6 +20,7 @@ import { useEffect } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { api } from "@/lib/api";
+import { formatPercent } from "@/lib/format";
 
 const LABELS: Record<string, string> = {
   MDR_RATE_INCREASE: "MDR rate increase",
@@ -38,7 +39,7 @@ export default function MutationTestPage() {
   const mutation = useMutation({ mutationFn: () => api.runMutationTest(runId) });
 
   useEffect(() => {
-    mutation.mutate();
+    if (process.env.NEXT_PUBLIC_APP_MODE !== "production") mutation.mutate();
     // Run one isolated suite on first entry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -58,6 +59,7 @@ export default function MutationTestPage() {
 
         {mutation.isPending && <div className="panel grid min-h-80 place-items-center rounded-2xl text-center"><div><LoaderCircle className="mx-auto mb-3 animate-spin text-[#1e6b51]" /><p className="text-sm font-medium">Injecting 50 isolated mutations</p><p className="mt-1 text-xs text-[#718079]">Canonical run data remains read-only.</p></div></div>}
         {mutation.isError && <div className="panel rounded-2xl p-8 text-center"><CircleAlert className="mx-auto mb-3 text-[#e86f3a]" /><p className="font-medium">Mutation suite could not be executed.</p></div>}
+        {!mutation.data && !mutation.isPending && !mutation.isError && <div className="panel rounded-2xl p-8 text-center"><Beaker className="mx-auto mb-3 text-[#1e6b51]" /><p className="font-medium">Mutation testing is an explicit production action.</p><p className="mt-2 text-xs text-[#66716b]">Start the isolated suite when you are ready to record a new control-quality result.</p></div>}
 
         {mutation.data && <MutationResults data={mutation.data} />}
       </main>
@@ -72,7 +74,7 @@ function MutationResults({ data }: { data: Awaited<ReturnType<typeof api.runMuta
       <Metric icon={Beaker} label="Mutations injected" value={String(data.mutation_count)} />
       <Metric icon={ShieldCheck} label="Detected" value={String(data.detected_count)} tone="green" />
       <Metric icon={EyeOff} label="Missed" value={String(data.missed_count)} tone="orange" />
-      <Metric icon={Target} label="Detection rate" value={`${(Number(data.mutation_detection_rate) * 100).toFixed(0)}%`} tone="green" />
+      <Metric icon={Target} label="Detection rate" value={formatPercent(data.mutation_detection_rate, 0)} tone="green" />
       <Metric icon={CircleAlert} label="False positives" value={String(data.false_positive_count)} />
     </section>
 
@@ -85,7 +87,7 @@ function MutationResults({ data }: { data: Awaited<ReturnType<typeof api.runMuta
         <div className="border-b border-[#e2e5df] px-5 py-4"><h2 className="text-sm font-semibold">Coverage by fault type</h2><p className="mt-1 text-xs text-[#7a847e]">Actual control-engine outcome for each injected class</p></div>
         <div className="divide-y divide-[#e9ece7]">
           {data.coverage.map((item) => {
-            const rate = Number(item.detection_rate) * 100;
+            const rate = item.injected ? (item.detected / item.injected) * 100 : 0;
             return <div key={item.mutation_type} className="px-5 py-3.5">
               <div className="mb-2 flex items-center justify-between gap-4 text-xs"><span className="font-medium">{LABELS[item.mutation_type] ?? item.mutation_type}</span><span className={rate === 100 ? "font-semibold text-[#1e6b51]" : "font-semibold text-[#c25229]"}>{item.detected}/{item.injected} · {rate.toFixed(0)}%</span></div>
               <div className="h-1.5 overflow-hidden rounded-full bg-[#edf0eb]"><div className={`h-full rounded-full ${rate === 100 ? "bg-[#2d7a5d]" : "bg-[#e86f3a]"}`} style={{ width: `${rate}%` }} /></div>
@@ -118,7 +120,7 @@ function CandidateBacktest() {
     {!backtest.data && <><p className="mt-2 text-xs leading-5 text-[#617168]">Test this candidate against historical clean data and the full mutation suite before activation.</p><button onClick={() => backtest.mutate()} disabled={backtest.isPending} className="mt-3 flex items-center gap-2 rounded-lg bg-[#1e6b51] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60">{backtest.isPending ? <LoaderCircle size={13} className="animate-spin" /> : <TrendingUp size={13} />} Backtest candidate</button></>}
     {backtest.data && <div className="mt-4">
       <div className="grid grid-cols-2 gap-3"><div className="rounded-lg border border-[#dfe5e0] bg-white p-3"><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#77817b]">Before</p><p className="mt-1 text-xl font-semibold">{backtest.data.before.detected_count}/{backtest.data.before.mutation_count}</p><p className="text-[10px] text-[#77817b]">mutations detected</p></div><div className="rounded-lg border border-[#bad8c7] bg-[#ecf8f1] p-3"><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#1e6b51]">With candidate</p><p className="mt-1 text-xl font-semibold text-[#1e6b51]">{backtest.data.after.detected_count}/{backtest.data.after.mutation_count}</p><p className="text-[10px] text-[#527061]">mutations detected</p></div></div>
-      <div className="mt-3 flex justify-between rounded-lg bg-white px-3 py-2 text-[10px]"><span>Detection coverage <strong className="text-[#1e6b51]">+{(Number(backtest.data.detection_rate_delta) * 100).toFixed(0)}%</strong></span><span>False-positive delta <strong>{backtest.data.false_positive_delta}</strong></span></div>
+      <div className="mt-3 flex justify-between rounded-lg bg-white px-3 py-2 text-[10px]"><span>Detection coverage <strong className="text-[#1e6b51]">+{formatPercent(backtest.data.detection_rate_delta, 0)}</strong></span><span>False-positive delta <strong>{backtest.data.false_positive_delta}</strong></span></div>
       {!approve.isSuccess && <button onClick={() => approve.mutate()} disabled={approve.isPending} className="mt-3 w-full rounded-lg bg-[#112a2b] px-3 py-2.5 text-xs font-semibold text-white disabled:opacity-60">Approve control</button>}
       {approve.isSuccess && <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#1e6b51]"><Check size={13} /> Approved explicitly. Future suites will apply this control.</p>}
     </div>}

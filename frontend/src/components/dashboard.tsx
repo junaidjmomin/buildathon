@@ -9,9 +9,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
-import { formatMoney, formatPercent } from "@/lib/format";
+import { compareDecimals, formatMoney, formatPercent } from "@/lib/format";
 
 const DEMO_RUN = "RUN_NOVACART_AUG_2026";
+const DEMO_MODE = process.env.NEXT_PUBLIC_APP_MODE !== "production";
 
 export function Dashboard() {
   const queryClient = useQueryClient();
@@ -25,24 +26,38 @@ export function Dashboard() {
   });
 
   useEffect(() => {
-    load.mutate();
+    if (DEMO_MODE) load.mutate();
     // The seeded demo executes only once when the console opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const activeRun = runId ?? DEMO_RUN;
   const summary = useQuery({
-    queryKey: ["run-summary", activeRun], queryFn: () => api.summary(activeRun), enabled: Boolean(runId),
+    queryKey: ["run-summary", activeRun], queryFn: () => api.summary(activeRun), enabled: DEMO_MODE && Boolean(runId),
   });
   const violations = useQuery({
-    queryKey: ["violations", activeRun], queryFn: () => api.violations(activeRun), enabled: Boolean(runId),
+    queryKey: ["violations", activeRun], queryFn: () => api.violations(activeRun), enabled: DEMO_MODE && Boolean(runId),
   });
   const roots = useQuery({
-    queryKey: ["root-causes", activeRun], queryFn: () => api.rootCauses(activeRun), enabled: Boolean(runId),
+    queryKey: ["root-causes", activeRun], queryFn: () => api.rootCauses(activeRun), enabled: DEMO_MODE && Boolean(runId),
   });
   const coverage = useQuery({
-    queryKey: ["control-coverage", activeRun], queryFn: () => api.controlCoverage(activeRun), enabled: Boolean(runId),
+    queryKey: ["control-coverage", activeRun], queryFn: () => api.controlCoverage(activeRun), enabled: DEMO_MODE && Boolean(runId),
   });
+
+  if (!DEMO_MODE) {
+    return (
+      <main className="mx-auto max-w-4xl px-5 py-16 md:px-8">
+        <div className="panel rounded-2xl p-8 md:p-12">
+          <ShieldCheck className="mb-5 text-[#1e6b51]" size={30} />
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1e6b51]">Production workspace</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em]">No verified run selected</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#66716b]">Production never loads synthetic data or executes controls merely because a page opened. Connect an approved source and start an explicit, auditable run.</p>
+          <Link href="/data" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white">Open data sources <ArrowRight size={15} /></Link>
+        </div>
+      </main>
+    );
+  }
 
   if (load.isPending || summary.isPending) {
     return (
@@ -63,6 +78,19 @@ export function Dashboard() {
           <h1 className="text-xl font-semibold">The control API is unavailable</h1>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#66716b]">Start FastAPI on port 8000 and retry. Financial results are never simulated in the browser.</p>
           <button onClick={() => load.mutate()} className="mt-5 rounded-lg bg-[#112a2b] px-4 py-2 text-sm font-medium text-white">Retry connection</button>
+        </div>
+      </main>
+    );
+  }
+
+  if (violations.isError || roots.isError || coverage.isError) {
+    return (
+      <main className="mx-auto max-w-6xl p-9">
+        <div className="panel mt-12 rounded-2xl p-8 text-center" role="alert">
+          <FileWarning className="mx-auto mb-4 text-[#e86f3a]" />
+          <h1 className="text-xl font-semibold">The run is only partially available</h1>
+          <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[#66716b]">At least one financial evidence section failed to load. No unavailable value has been replaced with zero.</p>
+          <button onClick={() => queryClient.invalidateQueries()} className="mt-5 rounded-lg bg-[#112a2b] px-4 py-2 text-sm font-medium text-white">Retry all evidence</button>
         </div>
       </main>
     );
@@ -157,7 +185,7 @@ export function Dashboard() {
             <table className="w-full min-w-[720px] text-left text-xs">
               <thead className="bg-[#f7f8f5] text-[10px] uppercase tracking-[0.11em] text-[#7a847e]"><tr><th className="px-5 py-3">Transaction</th><th className="px-3 py-3">Category</th><th className="px-3 py-3">Expected</th><th className="px-3 py-3">Actual</th><th className="px-3 py-3 text-right">Impact</th><th /></tr></thead>
               <tbody className="divide-y divide-[#ecefe9]">
-                {(violations.data ?? []).slice().sort((a, b) => Number(b.financial_impact) - Number(a.financial_impact)).slice(0, 7).map((item) => (
+                {(violations.data ?? []).slice().sort((a, b) => compareDecimals(b.financial_impact, a.financial_impact)).slice(0, 7).map((item) => (
                   <tr key={item.id} className="group hover:bg-[#f9faf7]">
                     <td className="px-5 py-3.5 font-mono text-[11px] font-semibold text-[#1e6b51]">{item.payment_id}</td>
                     <td className="px-3 py-3.5 font-medium">{item.category}</td><td className="px-3 py-3.5 text-[#66716b]">{item.expected}</td><td className="px-3 py-3.5 text-[#b14e29]">{item.actual}</td><td className="number-tabular px-3 py-3.5 text-right font-semibold">{formatMoney(item.financial_impact)}</td>

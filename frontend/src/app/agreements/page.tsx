@@ -14,6 +14,7 @@ import {
 
 import { AppShell } from "@/components/app-shell";
 import { api } from "@/lib/api";
+import { formatPercent } from "@/lib/format";
 
 export default function AgreementsPage() {
   const queryClient = useQueryClient();
@@ -83,7 +84,7 @@ export default function AgreementsPage() {
               return <div key={proposal.id} className={`rounded-xl border p-4 ${proposal.status === "DRAFT" ? "border-[#efc6b3] bg-[#fff8f4]" : "border-[#dbe3dc] bg-white"}`}>
                 <div className="flex items-start justify-between gap-4"><div><p className="text-[9px] font-bold uppercase tracking-[0.13em] text-[#68746d]">{control.logical_control_key} · v{control.version}</p><h3 className="mt-1 text-sm font-semibold">{control.name}</h3><p className="mt-1 text-xs text-[#66716b]">{control.expected} · {control.scope}</p></div><span className={`rounded-full px-2 py-1 text-[9px] font-bold ${proposal.status === "APPROVED" ? "bg-[#dff2e8] text-[#1e6b51]" : "bg-[#ffe5d8] text-[#bd4e24]"}`}>{proposal.status}</span></div>
                 <div className="mt-3 grid gap-3 rounded-lg bg-[#f5f7f3] p-3 text-[10px] sm:grid-cols-2"><div><span className="text-[#7a847e]">Parameters</span><p className="mt-1 font-mono font-semibold">{JSON.stringify(control.parameters)}</p></div><div><span className="text-[#7a847e]">Applicability</span><p className="mt-1 font-mono font-semibold">{control.conditions.join(" · ")}</p></div></div>
-                <div className="mt-3 flex items-center gap-2 text-[10px] text-[#65716b]"><span className="font-semibold text-[#1e6b51]">Clause {clause?.reference}</span><ArrowRight size={11} /><span>{control.id}</span><span className="ml-auto">{(Number(proposal.confidence) * 100).toFixed(0)}% extraction confidence</span></div>
+                <div className="mt-3 flex items-center gap-2 text-[10px] text-[#65716b]"><span className="font-semibold text-[#1e6b51]">Clause {clause?.reference}</span><ArrowRight size={11} /><span>{control.id}</span><span className="ml-auto">{formatPercent(proposal.confidence, 0)} extraction confidence</span></div>
               </div>;
             })}
           </div>
@@ -98,4 +99,3 @@ export default function AgreementsPage() {
     </AppShell>
   );
 }
-

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime, time, timezone
 from decimal import Decimal
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
@@ -17,6 +19,7 @@ from app.domain.models import (
     Violation,
 )
 from app.persistence.orm import (
+    AuditLogRecord,
     ControlRecord,
     EventEdgeRecord,
     EventRecord,
@@ -34,6 +37,7 @@ def _utc_start(value: Any) -> datetime:
 
 def _event(
     *,
+    tenant_id: str,
     event_id: str,
     run_id: str,
     source: str,
@@ -45,6 +49,7 @@ def _event(
     payload: dict[str, Any],
 ) -> EventRecord:
     return EventRecord(
+        tenant_id=tenant_id,
         id=event_id,
         run_id=run_id,
         source=source,
@@ -60,11 +65,25 @@ def _event(
 
 
 def canonical_records(
-    run_id: str, dataset: SyntheticDataset
+    run_id: str,
+    dataset: SyntheticDataset,
+    *,
+    tenant_id: str = "novacart_demo",
 ) -> tuple[list[EventRecord], list[EventEdgeRecord]]:
     events: list[EventRecord] = []
     edges: list[EventEdgeRecord] = []
     seen_events: set[str] = set()
+    settlement_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0.00"))
+    bank_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0.00"))
+    settlement_times: dict[str, datetime] = {}
+    for payment in dataset.payments:
+        settlement_totals[payment.settlement_id] += payment.actual_net
+        settlement_times[payment.settlement_id] = max(
+            settlement_times.get(payment.settlement_id, payment.settled_at),
+            payment.settled_at,
+        )
+        if payment.bank_txn_id is not None and payment.bank_credit is not None:
+            bank_totals[payment.bank_txn_id] += payment.bank_credit
 
     def append_event(record: EventRecord) -> None:
         if record.id not in seen_events:
@@ -81,6 +100,7 @@ def canonical_records(
 
         append_event(
             _event(
+                tenant_id=tenant_id,
                 event_id=order_event_id,
                 run_id=run_id,
                 source="NOVACART",
@@ -94,6 +114,7 @@ def canonical_records(
         )
         append_event(
             _event(
+                tenant_id=tenant_id,
                 event_id=payment_event_id,
                 run_id=run_id,
                 source="RAZORPAY",
@@ -111,13 +132,14 @@ def canonical_records(
         )
         append_event(
             _event(
+                tenant_id=tenant_id,
                 event_id=settlement_event_id,
                 run_id=run_id,
                 source="RAZORPAY",
                 external_id=payment.settlement_id,
                 event_type="SETTLEMENT",
-                amount=payment.actual_net,
-                occurred_at=payment.settled_at,
+                amount=settlement_totals[payment.settlement_id],
+                occurred_at=settlement_times[payment.settlement_id],
                 status="processed",
                 payload={"settlement_id": payment.settlement_id},
             )
@@ -125,13 +147,14 @@ def canonical_records(
         if bank_event_id is not None and payment.bank_credit is not None:
             append_event(
                 _event(
+                    tenant_id=tenant_id,
                     event_id=bank_event_id,
                     run_id=run_id,
                     source="BANK",
                     external_id=payment.bank_txn_id or "",
                     event_type="BANK_CREDIT",
-                    amount=payment.bank_credit,
-                    occurred_at=payment.settled_at,
+                    amount=bank_totals[payment.bank_txn_id],
+                    occurred_at=settlement_times[payment.settlement_id],
                     status="posted",
                     payload={"bank_txn_id": payment.bank_txn_id},
                 )
@@ -139,6 +162,7 @@ def canonical_records(
         if payment.refund_id is not None:
             append_event(
                 _event(
+                    tenant_id=tenant_id,
                     event_id=f"EVT_REFUND_{payment.refund_id}",
                     run_id=run_id,
                     source="RAZORPAY",
@@ -155,6 +179,7 @@ def canonical_records(
         edges.extend(
             [
                 EventEdgeRecord(
+                    tenant_id=tenant_id,
                     id=f"EDGE_ORDER_PAYMENT_{payment.payment_id}",
                     run_id=run_id,
                     from_event_id=order_event_id,
@@ -165,6 +190,7 @@ def canonical_records(
                     evidence=edge_evidence,
                 ),
                 EventEdgeRecord(
+                    tenant_id=tenant_id,
                     id=f"EDGE_PAYMENT_SETTLEMENT_{payment.payment_id}",
                     run_id=run_id,
                     from_event_id=payment_event_id,
@@ -179,6 +205,7 @@ def canonical_records(
         if bank_event_id is not None:
             edges.append(
                 EventEdgeRecord(
+                    tenant_id=tenant_id,
                     id=f"EDGE_SETTLEMENT_BANK_{payment.payment_id}",
                     run_id=run_id,
                     from_event_id=settlement_event_id,
@@ -195,6 +222,7 @@ def canonical_records(
         payment = dataset.payments[100 + index]
         append_event(
             _event(
+                tenant_id=tenant_id,
                 event_id=f"EVT_CHARGEBACK_{chargeback_id}",
                 run_id=run_id,
                 source="RAZORPAY",
@@ -223,13 +251,20 @@ class RunRepository:
         violations: list[Violation],
         root_causes: list[RootCause],
         controls: list[Control],
+        tenant_id: str = "novacart_demo",
     ) -> tuple[int, int]:
-        self.session.execute(delete(RunRecord).where(RunRecord.id == run_id))
+        self.session.execute(
+            delete(RunRecord).where(
+                RunRecord.tenant_id == tenant_id,
+                RunRecord.id == run_id,
+            )
+        )
         self.session.flush()
 
-        events, edges = canonical_records(run_id, dataset)
+        events, edges = canonical_records(run_id, dataset, tenant_id=tenant_id)
         self.session.add(
             RunRecord(
+                tenant_id=tenant_id,
                 id=run_id,
                 name=summary.name,
                 status=summary.status,
@@ -251,6 +286,7 @@ class RunRepository:
         for control in controls:
             self.session.merge(
                 ControlRecord(
+                    tenant_id=tenant_id,
                     id=control.id,
                     logical_control_key=control.logical_control_key,
                     version=control.version,
@@ -269,6 +305,7 @@ class RunRepository:
 
         self.session.add_all(
             ViolationRecord(
+                tenant_id=tenant_id,
                 id=violation.id,
                 run_id=run_id,
                 payment_id=violation.payment_id,
@@ -285,6 +322,7 @@ class RunRepository:
         )
         self.session.add_all(
             RootCauseRecord(
+                tenant_id=tenant_id,
                 id=root.id,
                 run_id=run_id,
                 title=root.title,
@@ -301,9 +339,12 @@ class RunRepository:
         )
         return len(events), len(edges)
 
-    def save_mutation_test(self, result: MutationTestSummary) -> None:
+    def save_mutation_test(
+        self, result: MutationTestSummary, *, tenant_id: str = "novacart_demo"
+    ) -> None:
         self.session.merge(
             MutationTestRecord(
+                tenant_id=tenant_id,
                 id=result.id,
                 run_id=result.source_run_id,
                 status=result.status,
@@ -325,10 +366,12 @@ class RunRepository:
         synced_at: datetime,
         events: list[FinancialEvent],
         edges: list[CanonicalEventEdge],
+        tenant_id: str,
     ) -> None:
-        if self.session.get(RunRecord, run_id) is None:
+        if self.session.get(RunRecord, (tenant_id, run_id)) is None:
             self.session.add(
                 RunRecord(
+                    tenant_id=tenant_id,
                     id=run_id,
                     name="Razorpay read-only sync",
                     status="COMPLETE",
@@ -346,6 +389,7 @@ class RunRepository:
         for event in events:
             self.session.merge(
                 EventRecord(
+                    tenant_id=tenant_id,
                     id=event.id,
                     run_id=event.run_id,
                     source=event.source,
@@ -363,6 +407,7 @@ class RunRepository:
         for edge in edges:
             self.session.merge(
                 EventEdgeRecord(
+                    tenant_id=tenant_id,
                     id=edge.id,
                     run_id=edge.run_id,
                     from_event_id=edge.from_event_id,
@@ -373,3 +418,30 @@ class RunRepository:
                     evidence=edge.evidence,
                 )
             )
+
+    def write_audit(
+        self,
+        *,
+        tenant_id: str,
+        actor_id: str,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        outcome: str,
+        details: dict[str, Any] | None = None,
+        request_id: str | None = None,
+    ) -> None:
+        self.session.add(
+            AuditLogRecord(
+                tenant_id=tenant_id,
+                id=f"AUD_{uuid4().hex.upper()}",
+                actor_id=actor_id,
+                action=action,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                outcome=outcome,
+                details=details or {},
+                request_id=request_id,
+                created_at=datetime.now(timezone.utc),
+            )
+        )

@@ -73,7 +73,7 @@ class DemoStore:
         self.summary = self._build_summary(self.dataset, started)
         settings = get_settings()
         if settings.database_url:
-            with session_scope() as session:
+            with session_scope(tenant_id="novacart_demo") as session:
                 persisted_events, persisted_edges = RunRepository(session).replace_demo_run(
                     run_id=DEMO_RUN_ID,
                     dataset=self.dataset,
@@ -81,6 +81,7 @@ class DemoStore:
                     violations=self.violations,
                     root_causes=self.root_causes,
                     controls=CONTROLS,
+                    tenant_id="novacart_demo",
                 )
             if (
                 persisted_events != self.summary.event_count
@@ -707,6 +708,8 @@ class DemoStore:
         case_id: str,
         target: ExceptionCaseStatus,
         note: str,
+        *,
+        actor: str = "demo-reviewer",
     ) -> ExceptionCase:
         case = self.get_case(case_id)
         allowed = {
@@ -743,7 +746,7 @@ class DemoStore:
             CaseAuditEntry(
                 from_status=previous,
                 to_status=target,
-                actor="demo-reviewer",
+                actor=actor,
                 note=note,
                 occurred_at=occurred_at,
             )

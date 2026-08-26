@@ -11,12 +11,33 @@ export default function DataSourcesPage() {
   const status = useQuery({ queryKey: ["razorpay-status"], queryFn: api.razorpayStatus });
   const mcp = useQuery({ queryKey: ["razorpay-mcp-capability"], queryFn: api.razorpayMcpCapability });
   const sync = useMutation({ mutationFn: api.syncRazorpay });
+  const upload = useMutation({ mutationFn: api.uploadSource });
   return <AppShell><main className="mx-auto max-w-[1160px] px-5 py-8 md:px-8 md:py-10">
     <div className="mb-8"><p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1e6b51]">Ingestion</p><h1 className="text-3xl font-semibold tracking-[-0.035em]">Choose a financial data source</h1><p className="mt-2 text-sm text-[#66716b]">Every source normalizes into the same financial event graph and deterministic control pipeline.</p></div>
     <section className="mb-6 grid gap-4 md:grid-cols-3">
       <SourceCard icon={Database} title="NovaCart Demo Dataset" description="Seeded 500-payment run with hidden ground truth and stable proof cases." badge="ACTIVE"><Link href="/" className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#1e6b51]">Open demo run <ArrowRight size={13} /></Link></SourceCard>
       <SourceCard icon={WalletCards} title="Razorpay Test Account" description="Read-only payment, refund, settlement and reconciliation ingestion." badge={status.data?.configured ? "CONFIGURED" : "NOT CONFIGURED"}><button onClick={() => sync.mutate()} disabled={!status.data?.configured || sync.isPending} className="mt-5 flex items-center gap-2 rounded-lg bg-[#112a2b] px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">{sync.isPending ? <LoaderCircle size={13} className="animate-spin" /> : <RefreshCw size={13} />} Sync Razorpay</button></SourceCard>
-      <SourceCard icon={FileUp} title="Upload Files" description="Upload orders, payments, settlements, bank, refunds and chargebacks." badge="MANUAL"><button className="mt-5 rounded-lg border border-[#d6ddd7] bg-white px-3 py-2 text-xs font-semibold text-[#4e5c55]">Choose files</button></SourceCard>
+      <SourceCard icon={FileUp} title="Upload Files" description="Validate CSV money fields deterministically, then persist to private Storage when configured." badge="MANUAL">
+        <label className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#d6ddd7] bg-white px-3 py-2 text-xs font-semibold text-[#4e5c55]">
+          {upload.isPending ? <LoaderCircle size={13} className="animate-spin" /> : <FileUp size={13} />}
+          {upload.isPending ? "Validating…" : "Choose CSV"}
+          <input
+            className="sr-only"
+            type="file"
+            accept=".csv,text/csv"
+            disabled={upload.isPending}
+            onChange={(event) => {
+              const selected = event.currentTarget.files?.[0];
+              if (selected) upload.mutate(selected);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+        <div className="mt-3 min-h-10 text-[10px] leading-4 text-[#66716b]" aria-live="polite">
+          {upload.data && `${upload.data.filename}: ${upload.data.row_count} rows · ${upload.data.storage_status === "PRIVATE_STORAGE" ? "stored privately" : "validated locally"}`}
+          {upload.error && <span className="text-[#a43d32]">{upload.error.message}</span>}
+        </div>
+      </SourceCard>
     </section>
 
     <section className="panel overflow-hidden rounded-2xl">

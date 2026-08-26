@@ -41,7 +41,11 @@ def connection_status(client: RazorpayClient | None = None) -> RazorpayConnectio
 
 
 async def sync_razorpay(
-    request: RazorpaySyncRequest, *, run_id: str, client: RazorpayClient | None = None
+    request: RazorpaySyncRequest,
+    *,
+    run_id: str,
+    tenant_id: str = "novacart_demo",
+    client: RazorpayClient | None = None,
 ) -> RazorpaySyncSummary:
     global last_sync
     active = client or RazorpayClient()
@@ -107,13 +111,14 @@ async def sync_razorpay(
         )
     persistence_status = "IN_MEMORY"
     if get_settings().database_url:
-        with session_scope() as session:
+        with session_scope(tenant_id=tenant_id) as session:
             RunRepository(session).save_canonical_sync(
                 run_id=run_id,
                 sync_id=sync_id,
                 synced_at=synced_at,
                 events=list(event_index.values()),
                 edges=list(edge_index.values()),
+                tenant_id=tenant_id,
             )
         persistence_status = "POSTGRES"
     last_sync = RazorpaySyncSummary(
