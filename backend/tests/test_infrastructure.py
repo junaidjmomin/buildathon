@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 
 import httpx
 import pytest
@@ -10,11 +15,17 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.ai.provider import build_ai_runtime
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.ingestion.csv import parse_source_csv
 from app.main import app
-from app.persistence.orm import ArtifactRecord, Base
-from app.persistence.repository import canonical_records
+from app.persistence.database import get_engine, get_session_factory
+from app.persistence.orm import AgentExecutionRecord, ArtifactRecord, Base, SourceSnapshotRecord
+from app.persistence.repository import (
+    AgentExecutionRepository,
+    JobRepository,
+    SourceSnapshotRepository,
+    canonical_records,
+)
 from app.storage.service import ArtifactService
 from app.storage.supabase import StorageNotConfiguredError, SupabaseStorage
 from app.synthetic.generator import generate_dataset
@@ -95,9 +106,7 @@ def test_storage_requires_backend_credentials() -> None:
     storage = SupabaseStorage(Settings(SUPABASE_URL="", SUPABASE_SERVICE_ROLE_KEY=""))
     try:
         asyncio.run(
-            storage.upload(
-                "runs/RUN_001/payments.csv", b"id,amount", content_type="text/csv"
-            )
+            storage.upload("runs/RUN_001/payments.csv", b"id,amount", content_type="text/csv")
         )
     except StorageNotConfiguredError:
         pass
@@ -127,9 +136,7 @@ def test_storage_upload_is_private_backend_request() -> None:
             content_type="text/csv",
         )
     )
-    assert captured["url"].endswith(
-        "/storage/v1/object/sl3dge-private/runs/RUN_001/payments.csv"
-    )
+    assert captured["url"].endswith("/storage/v1/object/sl3dge-private/runs/RUN_001/payments.csv")
     assert captured["authorization"] == "Bearer backend-secret"
     assert captured["apikey"] == "backend-secret"
     assert stored.bucket == "sl3dge-private"
@@ -180,3 +187,174 @@ def test_capabilities_never_expose_privileged_credentials() -> None:
     payload = infrastructure.text + ai.text
     assert "service_role" not in payload
     assert "GROQ_API_KEY" not in payload
+
+
+def test_source_snapshots_are_content_addressed_and_idempotent() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    captured_at = datetime(2026, 8, 26, tzinfo=timezone.utc)
+    with Session(engine) as session:
+        repository = SourceSnapshotRepository(session)
+        first = repository.capture(
+            tenant_id="merchant_a",
+            source_system="RAZORPAY",
+            resource_type="payment",
+            external_id="pay_123",
+            payload={"id": "pay_123", "amount": 10000},
+            provenance={"endpoint": "/payments", "read_only": True},
+            captured_at=captured_at,
+        )
+        second = repository.capture(
+            tenant_id="merchant_a",
+            source_system="RAZORPAY",
+            resource_type="payment",
+            external_id="pay_123",
+            payload={"amount": 10000, "id": "pay_123"},
+            provenance={"endpoint": "/payments", "read_only": True},
+            captured_at=captured_at,
+        )
+        assert first.id == second.id
+        assert session.query(SourceSnapshotRecord).count() == 1
+
+
+def test_background_jobs_are_idempotent_leased_and_bounded() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        repository = JobRepository(session)
+        first, created = repository.enqueue(
+            tenant_id="merchant_a",
+            job_type="RAZORPAY_SYNC",
+            idempotency_key="2026-08",
+            payload={"year": 2026, "month": 8},
+            max_attempts=2,
+        )
+        duplicate, duplicate_created = repository.enqueue(
+            tenant_id="merchant_a",
+            job_type="RAZORPAY_SYNC",
+            idempotency_key="2026-08",
+            payload={"year": 2026, "month": 8},
+            max_attempts=2,
+        )
+        assert created is True
+        assert duplicate_created is False
+        assert first.id == duplicate.id
+        claimed = repository.claim_next(tenant_id="merchant_a", worker_id="worker-1")
+        assert claimed is not None
+        assert claimed.status == "RUNNING"
+        assert claimed.attempt_count == 1
+        repository.fail(
+            claimed,
+            error_code="UPSTREAM_TIMEOUT",
+            safe_message="Upstream timed out",
+            retry_delay_seconds=0,
+        )
+        assert claimed.status == "RETRYABLE"
+        claimed_again = repository.claim_next(tenant_id="merchant_a", worker_id="worker-2")
+        assert claimed_again is not None
+        assert claimed_again.attempt_count == 2
+        repository.succeed(claimed_again, {"sync_id": "SYNC_1"})
+        assert claimed_again.status == "SUCCEEDED"
+        assert claimed_again.result == {"sync_id": "SYNC_1"}
+        assert (
+            repository.latest(tenant_id="merchant_a", job_type="RAZORPAY_SYNC", status="SUCCEEDED")
+            is claimed_again
+        )
+
+
+def test_agent_execution_results_are_durable_and_tenant_scoped() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    now = datetime(2026, 8, 26, tzinfo=timezone.utc)
+    with Session(engine) as session:
+        repository = AgentExecutionRepository(session)
+        saved = repository.save(
+            tenant_id="merchant_a",
+            execution_id="INV_001",
+            workflow="ROOT_CAUSE_INVESTIGATION",
+            resource_type="root_cause",
+            resource_id="RC_MDR_01",
+            status="PROVEN",
+            result={"execution_id": "INV_001", "trace": []},
+            started_at=now,
+            completed_at=now,
+        )
+        session.flush()
+        assert saved.id == "INV_001"
+        assert repository.get(tenant_id="merchant_a", execution_id="INV_001") is saved
+        assert repository.get(tenant_id="merchant_b", execution_id="INV_001") is None
+        assert session.query(AgentExecutionRecord).count() == 1
+
+
+def test_migrations_are_immutable_and_upgrade_from_empty_database(tmp_path: Path) -> None:
+    backend_dir = Path(__file__).parents[1]
+    initial = backend_dir / "alembic" / "versions" / "0001_initial.py"
+    migration_source = initial.read_text(encoding="utf-8")
+    assert "app.persistence.orm" not in migration_source
+    assert "create_all" not in migration_source
+    database_path = tmp_path / "migration.db"
+    environment = os.environ.copy()
+    environment["MIGRATION_DATABASE_URL"] = f"sqlite:///{database_path.as_posix()}"
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=backend_dir,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    table_names = set(Base.metadata.tables)
+    from sqlalchemy import inspect
+
+    assert table_names <= set(inspect(engine).get_table_names())
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "downgrade", "base"],
+        cwd=backend_dir,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_sync_job_api_requires_and_honors_idempotency(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path = tmp_path / "jobs.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path.as_posix()}")
+    get_settings.cache_clear()
+    get_engine.cache_clear()
+    get_session_factory.cache_clear()
+    engine = get_engine()
+    assert engine is not None
+    Base.metadata.create_all(engine)
+    try:
+        api_client = TestClient(app)
+        missing_key = api_client.post(
+            "/api/v1/integrations/razorpay/sync-jobs",
+            json={"year": 2026, "month": 8},
+        )
+        assert missing_key.status_code == 422
+        headers = {"Idempotency-Key": "novacart-2026-08-sync"}
+        first = api_client.post(
+            "/api/v1/integrations/razorpay/sync-jobs",
+            json={"year": 2026, "month": 8},
+            headers=headers,
+        )
+        replay = api_client.post(
+            "/api/v1/integrations/razorpay/sync-jobs",
+            json={"year": 2026, "month": 8},
+            headers=headers,
+        )
+        assert first.status_code == replay.status_code == 202
+        assert first.json()["created"] is True
+        assert replay.json()["created"] is False
+        assert first.json()["job"]["id"] == replay.json()["job"]["id"]
+        fetched = api_client.get(f"/api/v1/jobs/{first.json()['job']['id']}")
+        assert fetched.status_code == 200
+        assert fetched.json()["status"] == "QUEUED"
+    finally:
+        get_session_factory.cache_clear()
+        get_engine.cache_clear()
+        get_settings.cache_clear()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.integrations.razorpay.client import RazorpayClient
+from app.integrations.razorpay.client import RazorpayClient, RazorpayUpstreamError
 from app.integrations.razorpay.schemas import RefundItem
 
 
@@ -9,7 +9,7 @@ async def fetch_refunds(
 ) -> list[RefundItem]:
     items: list[RefundItem] = []
     skip = 0
-    while True:
+    for _page_number in range(client.max_pages):
         payload = await client.get(
             "/refunds",
             params={
@@ -20,8 +20,20 @@ async def fetch_refunds(
             },
         )
         page = [RefundItem.model_validate(item) for item in payload.get("items", [])]
+        if len(items) + len(page) > client.max_records:
+            raise RazorpayUpstreamError(
+                "RAZORPAY_RECORD_LIMIT",
+                "Razorpay refunds exceed the configured record limit",
+                retryable=False,
+            )
         items.extend(page)
         if len(page) < 100:
             break
         skip += len(page)
+    else:
+        raise RazorpayUpstreamError(
+            "RAZORPAY_PAGE_LIMIT",
+            "Razorpay refunds exceed the configured page limit",
+            retryable=False,
+        )
     return items

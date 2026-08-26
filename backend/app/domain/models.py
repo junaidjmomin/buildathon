@@ -544,5 +544,28 @@ class RazorpaySyncSummary(ApiModel):
     reconciliation_records_imported: int
     events_created: int
     edges_created: int
+    unresolved_references: int = 0
+    control_evaluations_created: int = 0
+    violations_created: int = 0
     synced_at: datetime
     persistence_status: str = "IN_MEMORY"
+
+
+class BackgroundJob(ApiModel):
+    id: str
+    run_id: str | None = None
+    job_type: str
+    status: str
+    attempt_count: int
+    max_attempts: int
+    result: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class JobSubmission(ApiModel):
+    created: bool
+    job: BackgroundJob

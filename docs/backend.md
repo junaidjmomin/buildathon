@@ -43,41 +43,41 @@ verification precede generalized agent features.
 # 2. Core Architecture
 
 ```text
-Source Files / Synthetic Data
-            │
-            ▼
-     Ingestion Layer
-            │
-            ▼
-     Normalization Layer
-            │
-            ▼
-    Financial Event Graph
-            │
-            ├──────────────┐
-            ▼              │
-   Deterministic           │
-   Control Engine          │
-            │              │
-            ▼              │
- Expected vs Actual        │
-            │              │
-      ┌─────┴─────┐        │
-      ▼           ▼        │
-    PASS      VIOLATION    │
-                  │        │
-                  ▼        │
-          Root Cause Layer │
-                  │        │
-                  ▼        │
-          AI Investigator  │
-                  │        │
-                  ▼        │
-              Hypothesis   │
-                  │        │
-                  ▼        │
-              Verifier ◄───┘
+Next.js
+   │ HTTPS + tenant identity
+   ▼
+FastAPI API ───────────────► durable background_jobs ───► worker
+   │                                                        │
+   │                                                        ▼
+   │                                           read-only Razorpay APIs
+   │                                                        │
+   ├────────────────────────────────────────────────────────┘
+   ▼
+Supabase Postgres
+   ├── immutable source_snapshots + provenance
+   ├── events + deterministic/scored event_edges
+   ├── typed controls + control_evaluations + violations
+   ├── root causes + cases + audit log
+   └── durable LangGraph checkpoints + execution traces
+
+Supabase private Storage
+   └── agreements, uploaded sources, optional evidence artifacts
+
+Deterministic finance pipeline
+   Source snapshot → normalize → event graph → controls → expected vs actual
+                                                     ├── PASS
+                                                     ├── VIOLATION
+                                                     └── UNRESOLVED
+
+Three bounded LangGraph workflows
+   ├── root-cause investigation → deterministic verifier → case
+   ├── blind-spot remediation → deterministic backtests → human approval
+   └── agreement compilation → schema/conflict checks → human approval
 ```
+
+LangGraph orchestrates bounded investigation and control-governance work. It
+does not own matching, arithmetic, control execution, financial verdicts, or
+money movement.
 
 ---
 
@@ -124,10 +124,11 @@ Use:
 - Alembic
 - Supabase Postgres for deployed environments; ordinary PostgreSQL remains the
   local fallback through the same SQLAlchemy `DATABASE_URL`
+- LangGraph for the three explicitly defined agent workflows only
+- LangChain Pydantic structured output with the provider-abstracted LLM client
 - Polars preferred for batch processing
 - pytest
 - httpx for API tests
-- Optional LangGraph only if orchestration genuinely needs it
 
 Keep business logic in service modules, not route handlers.
 
@@ -830,12 +831,26 @@ Required API output:
 
 ---
 
-# 16. AI Contract-Control Extraction
+# 16. Agreement Control Compilation — LangGraph
 
 Input:
 - agreement text or parsed PDF text
 
-Output candidate structured controls.
+Run one bounded, checkpointed graph:
+
+```text
+extract_clauses
+→ classify_financial_terms
+→ generate_typed_controls
+→ validate_schemas
+→ detect_conflicts
+→ human_approval
+```
+
+Output candidate structured controls. LangChain must request strict Pydantic
+structured output from the configured provider. Every rate, fee, tolerance, and
+amount inside candidate parameters remains a decimal string and passes the same
+no-binary-float validation as manually authored controls.
 
 The model output must conform to a Pydantic schema.
 
@@ -852,7 +867,10 @@ confidence
 
 Store as `DRAFT`.
 
-User approval moves it to `APPROVED`.
+Schema validation must reject malformed or binary-float financial parameters.
+Conflict detection must reject overlapping effective periods or incompatible
+versions. A successful graph ends at `AWAITING_HUMAN_APPROVAL`; only a separate,
+authorized human action can move a proposal to `APPROVED`.
 
 Do not execute unapproved controls.
 
@@ -865,7 +883,26 @@ For the demo, support a synthetic merchant agreement with:
 
 ---
 
-# 17. Hypothesis Verification
+# 17. Root-Cause Investigation — LangGraph + Deterministic Verifier
+
+Run one bounded, checkpointed graph with explicit state, nodes, conditional
+edges, and an attempt limit:
+
+```text
+collect_evidence
+→ fetch_razorpay_context
+→ load_contract_context
+→ generate_hypothesis
+→ verify_hypothesis
+    ├── PROVEN     → create_case
+    ├── REJECTED   → generate_alternative_hypothesis → verify_hypothesis
+    └── UNRESOLVED / attempts exhausted → escalate_unresolved
+```
+
+Each node appends a sanitized trace event containing sequence, node, status,
+message, and timestamp. The execution ID is also the LangGraph thread/checkpoint
+key so retries and resumptions are auditable. Production uses a Postgres-backed
+checkpointer; an in-memory saver is development-only.
 
 AI may generate a hypothesis, e.g.:
 
@@ -907,8 +944,18 @@ UNRESOLVED
 Critical demo case:
 - observed rate changes
 - no approved contract amendment exists
-- hypothesis is rejected as a legitimate policy change
-- classify as potential systemic overcharge
+- the first policy-change hypothesis is deterministically `REJECTED`
+- the graph generates an alternate gateway-deviation hypothesis
+- the alternate is deterministically `PROVEN` from the approved `"0.0155"`
+  rate, observed `"0.0175"` rate, and `"0.01"` currency tolerance
+- create or attach the evidence-backed case and classify it as a potential
+  systemic overcharge
+
+The model cannot create `EventEdge` rows, alter controls, approve proposals,
+write a financial verdict, or call money-moving tools. Missing or unverified
+evidence must produce `UNRESOLVED`, never a forced conclusion. If the configured
+LLM is unavailable, the workflow reports degraded AI capability while the
+deterministic verifier and the entire core pipeline remain available.
 
 ---
 
@@ -1008,8 +1055,12 @@ POST /api/v1/controls/{control_id}/reject
 ```http
 POST /api/v1/agreements
 POST /api/v1/agreements/{agreement_id}/extract-controls
+POST /api/v1/agreements/{agreement_id}/compile-controls
 GET /api/v1/agreements/{agreement_id}/control-proposals
 ```
+
+`compile-controls` returns the bounded LangGraph execution trace and stops at
+`AWAITING_HUMAN_APPROVAL`; approval remains a separate role-gated endpoint.
 
 ---
 
@@ -1048,9 +1099,43 @@ GET /api/v1/runs/{run_id}/payments/{payment_id}/graph
 ```http
 GET /api/v1/runs/{run_id}/root-causes
 GET /api/v1/root-causes/{root_cause_id}
-POST /api/v1/root-causes/{root_cause_id}/generate-hypothesis
-POST /api/v1/root-causes/{root_cause_id}/verify-hypothesis
+POST /api/v1/root-causes/{root_cause_id}/investigate
+GET /api/v1/agent/investigations/{execution_id}
 ```
+
+The investigation response exposes the explicit node trace, hypothesis
+attempts, verifier evidence, final `PROVEN | REJECTED | UNRESOLVED` status, and
+case ID when one is created. The older single-step generate/verify routes, if
+retained during migration, are compatibility endpoints rather than the
+authoritative investigation contract.
+
+---
+
+## Blind-spot remediation
+
+```http
+POST /api/v1/runs/{run_id}/blind-spots/remediate
+```
+
+The response includes the candidate, schema verdict, historical and mutation
+backtest results, metric comparison, graph trace, and human-approval state.
+
+---
+
+## Durable Razorpay jobs
+
+```http
+POST /api/v1/integrations/razorpay/sync-jobs
+Idempotency-Key: <stable caller-generated key>
+
+GET /api/v1/jobs/{job_id}
+```
+
+Production synchronization is queued and returns `202`. The worker claims jobs
+with a tenant-scoped lease, bounded attempts, and retry classification. Reusing
+the same tenant, job type, and idempotency key returns the original job rather
+than importing duplicate source data. Foreground synchronization is local
+development-only.
 
 ---
 
@@ -1124,13 +1209,18 @@ not rewrite repositories around direct Supabase client calls.
 Use Postgres for:
 - controls
 - runs
+- immutable, content-addressed source snapshots and ingestion provenance
 - events
-- edges
-- evaluations
+- edges with matching evidence and deterministic confidence
+- append-only control evaluations
 - violations
 - root causes
 - human review states
 - mutation tests, results, backtests, and control coverage
+- idempotent background jobs, leases, attempts, and bounded failure details
+- LangGraph checkpoints, execution metadata, and sanitized node traces
+- integration status and last successful sync metadata
+- tenant-scoped audit records
 - file metadata and immutable Supabase Storage object paths
 
 Use Supabase Storage for merchant agreement PDFs, uploaded source files, and
@@ -1158,6 +1248,13 @@ Local development remains swappable by pointing the same variables at a normal
 local PostgreSQL instance. No business-logic branch may depend on whether the
 database host is local PostgreSQL or Supabase Postgres.
 
+Every tenant-owned table carries `tenant_id`; repository reads and writes are
+tenant-scoped and production Postgres enables row-level security as defense in
+depth. Migrations are immutable Alembic operations and never call live ORM
+`metadata.create_all()` or `drop_all()`. Raw Razorpay responses are sanitized
+and content-addressed before persistence; duplicate content maps to the same
+source snapshot instead of silently producing duplicate evidence.
+
 For the event graph MVP, do **not** add Neo4j.
 Relational tables are enough.
 
@@ -1176,6 +1273,10 @@ Required tests:
 - lifecycle invalid cases
 - leakage aggregation
 - root-cause signature generation
+- no binary float accepted in typed AI control output
+- deterministic hypothesis verification cannot be overridden by model text
+- sub-threshold or ambiguous FUZZY evidence remains unresolved
+- job idempotency, lease ownership, retry bounds, and terminal failure behavior
 
 ## Integration
 - ingest demo files
@@ -1183,6 +1284,10 @@ Required tests:
 - execute controls
 - compare against ground truth
 - retrieve run summary
+- resume all three LangGraph workflows from Postgres checkpoints
+- persist source snapshots, evaluations, violations, and audit events
+- prove tenant isolation and Postgres row-level security with two tenants
+- replay an idempotent Razorpay sync submission without duplicate ingestion
 
 ## Regression
 Create one fixed seeded dataset and assert minimum metrics.
@@ -1208,6 +1313,9 @@ Log:
 - control execution counts
 - duration
 - AI call identifiers
+- agent execution/thread ID, node, branch, attempt, and verifier result
+- job ID, idempotency replay, lease owner, attempt, and terminal outcome
+- source snapshot checksum and mapping version
 - failures
 
 Never log full sensitive raw payloads in normal logs.
@@ -1216,7 +1324,7 @@ Never log full sensitive raw payloads in normal logs.
 
 # 25. Security / Safety
 
-For Buildathon:
+For production and the recorded demo:
 - seeded synthetic data remains the primary scored evaluation path
 - Razorpay ingestion is read-only
 - file size limits
@@ -1233,6 +1341,13 @@ The browser calls FastAPI only. It does not query finance tables or Storage with
 a privileged Supabase key. Supabase Auth, Realtime, and Edge Functions are not
 required for the MVP; Realtime is P2 run-progress polish only.
 
+Production API access requires validated OIDC bearer tokens, role checks, and a
+tenant claim. Background workers and graph checkpoints use backend-only
+credentials. Razorpay access is restricted to an explicit HTTPS GET allowlist,
+bounded pagination/response sizes, timeouts, retries, and no redirects. AI
+prompts treat source and agreement text as untrusted data and expose no write or
+money-moving tool.
+
 ---
 
 # 26. Environment Variables
@@ -1242,12 +1357,34 @@ Example:
 ```env
 DATABASE_URL=postgresql+psycopg://app_role:...@...pooler.supabase.com:6543/postgres
 MIGRATION_DATABASE_URL=postgresql+psycopg://migration_role:...@db....supabase.co:5432/postgres
+AGENT_CHECKPOINT_DATABASE_URL=postgresql+psycopg://checkpoint_role:...@db....supabase.co:5432/postgres?sslmode=require
 SUPABASE_URL=https://PROJECT_REF.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_STORAGE_BUCKET=sl3dge-private
+AUTH_MODE=oidc
+OIDC_ISSUER=https://identity.example.com/
+OIDC_AUDIENCE=sl3dge-api
+OIDC_JWKS_URL=https://identity.example.com/.well-known/jwks.json
+OIDC_TENANT_CLAIM=merchant_id
+OIDC_ROLES_CLAIM=roles
 LLM_PROVIDER=groq
 LLM_MODEL=openai/gpt-oss-120b
 GROQ_API_KEY=
+LLM_TIMEOUT_SECONDS=30
+LLM_MAX_OUTPUT_TOKENS=1200
+LLM_MAX_INPUT_CHARS=24000
+AGENT_MAX_ATTEMPTS=2
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_MODE=test
+RAZORPAY_API_BASE_URL=https://api.razorpay.com/v1
+RAZORPAY_TIMEOUT_SECONDS=20
+RAZORPAY_MAX_RETRIES=3
+RAZORPAY_MAX_PAGES=100
+RAZORPAY_MAX_RECORDS=100000
+WORKER_TENANT_IDS=novacart_demo
+WORKER_LEASE_SECONDS=900
+WORKER_POLL_SECONDS=2
 DEMO_SEED=20260825
 CORS_ORIGINS=http://localhost:3000
 ```
@@ -1280,6 +1417,9 @@ backend/
 │   │   ├── models.py
 │   │   ├── session.py
 │   │   └── migrations/
+│   ├── persistence/
+│   │   ├── orm.py
+│   │   └── repository.py
 │   ├── schemas/
 │   ├── ingestion/
 │   ├── normalization/
@@ -1294,10 +1434,20 @@ backend/
 │   │   └── lifecycle.py
 │   ├── evaluation/
 │   ├── root_cause/
+│   ├── agents/
+│   │   ├── investigation.py
+│   │   ├── control_workflows.py
+│   │   ├── checkpoint.py
+│   │   └── models.py
 │   ├── ai/
 │   │   ├── contract_extractor.py
 │   │   ├── hypothesis.py
-│   │   └── explanation.py
+│   │   ├── explanation.py
+│   │   └── provider.py
+│   ├── integrations/
+│   │   └── razorpay/
+│   ├── workers/
+│   │   └── runner.py
 │   ├── drift/
 │   └── synthetic/
 ├── tests/
@@ -1430,6 +1580,24 @@ INSUFFICIENT_EVIDENCE
 
 Return a structured blind-spot object with the affected event/edge and relevant agreement context when available.
 
+Remediation runs as the second bounded LangGraph workflow:
+
+```text
+identify_gap
+→ retrieve_contract_clause
+→ propose_control
+→ schema_validate
+    ├── invalid → REJECTED
+    └── valid   → historical_backtest
+                → mutation_backtest
+                → compare_metrics
+                → human_approval
+```
+
+The graph may propose a typed control, but the deterministic backtest services
+own every metric. The graph may stop at `AWAITING_HUMAN_APPROVAL`; it must never
+activate the control itself.
+
 ## Candidate Control Backtesting — P1
 
 AI-generated controls must be tested before approval.
@@ -1442,7 +1610,7 @@ candidate control
 → mutation suite
 → precision/recall delta
 → false-positive delta
-→ explicit user approval/rejection
+→ explicit authorized human approval/rejection
 ```
 
 Endpoint:
@@ -1588,25 +1756,27 @@ Response shape:
 
 ```text
 1. Exact seeded manifest + hidden ground truth
-2. Canonical domain models
-3. Source ingestion and normalization
-4. Deterministic/scored Financial Event Graph matching
-5. Approved, typed, Decimal control registry
-6. Deterministic control engine
-7. Expected-vs-Actual, batch metrics, and PAY_82HD9 acceptance slice
-8. Financial Mutation Testing on derived data
-9. Mutation coverage and control blind-spot detection
-10. Candidate-control proposal with agreement provenance
-11. Historical + mutation backtest and explicit approval gate
-12. Violation Lineage and counterfactual settlement
-13. Root-cause clustering
-14. Bounded AI hypothesis + independent deterministic verifier
-15. Agreement extraction and executable-control provenance UI/API
+2. Canonical domain contracts with tenant, audit, provenance, and Decimal invariants
+3. Supabase/local Postgres repositories, immutable Alembic migrations, RLS, and private Storage metadata
+4. Immutable source snapshots, ingestion, and normalization
+5. Deterministic/scored Financial Event Graph matching
+6. Approved, typed, time-versioned Decimal control registry
+7. Deterministic control engine with persisted evaluations and violations
+8. Expected-vs-Actual, batch metrics, and PAY_82HD9 acceptance slice
+9. Financial Mutation Testing on derived data with canonical-data integrity checks
+10. Mutation coverage and control blind-spot detection
+11. LangGraph blind-spot remediation with deterministic historical/mutation backtests and a human gate
+12. LangGraph agreement compilation with strict Pydantic output, schema/conflict checks, and a human gate
+13. Violation Lineage and counterfactual settlement
+14. Root-cause clustering
+15. LangGraph root-cause investigation with bounded alternatives, deterministic verification, checkpoints, trace, and case creation
 16. Control Coverage, exception case workflow, and time-versioned controls
-17. Direct read-only Razorpay reconciliation ingestion into canonical events/edges
+17. Durable, idempotent read-only Razorpay sync jobs into canonical snapshots/events/evaluations
 18. Optional read-only Razorpay MCP evidence tools
-19. Supabase Postgres/Storage persistence, regression tests, and seeded E2E demo
-20. P2 only: temporal replay, schema drift, webhooks, and evidence export
+19. Frontend execution-trace, job-status, approval, and deterministic evidence UX
+20. OIDC/RBAC, tenant isolation, secret boundaries, input limits, and production HTTP hardening
+21. Regression/E2E tests, CI, structured observability, backup/recovery, and deployment verification
+22. P2 only: temporal replay, schema drift, webhooks, Realtime progress, and evidence export
 ```
 
 Mutation testing must be built before generalized agent features.
@@ -1619,31 +1789,39 @@ seeded API evidence:
 
 1. `data/demo/manifest.json` and generator output agree on every exact count and stable ID.
 2. The seeded run produces 500 payments, 1,179 events, 1,495 edges, and 2,018 evaluations.
-3. `PAY_82HD9` has the exact Decimal economics recorded in the manifest.
+3. `PAY_82HD9` has the exact Decimal economics recorded in the manifest; all JSON financial rates, tolerances, fees, and amounts are decimal strings parsed to `Decimal`.
 4. Gateway net equals bank credit at `9793.50`, while the approved control yields a violation.
 5. Verified leakage for `PAY_82HD9` is exactly `23.60`.
 6. `REF_91` proves duplicate refund deduction and `SET_1042` proves the SLA control.
 7. The event graph shows the complete lifecycle without LLM-created edges.
-8. Counterfactual settlement reconstructs `9817.10` with `20.00` MDR and `3.60` GST drivers.
-9. Violation lineage identifies one primary MDR failure and three downstream effects.
-10. Similar MDR violations cluster under `RC_MDR_01`.
-11. A bounded AI hypothesis is generated and the deterministic verifier returns `REJECTED`.
-12. At least eight deterministic mutation types execute against a derived copy.
-13. The seeded mutation run reports 50 injected, 47 detected, 3 missed, 0 false positives, and `0.9400` MDR.
-14. Mutation testing proves the canonical dataset is unchanged.
-15. A missed unsupported-fee mutation exposes an agreement-linked blind spot.
-16. The draft candidate backtests from 47/50 to 49/50 with false-positive delta 0.
-17. The candidate remains inactive until a successful backtest and explicit approval.
-18. Control coverage reports 2,009 material edges, 2,000 governed, and 9 ungoverned before approval.
-19. The correct immutable MDR version is selected on both sides of the 1 September boundary.
-20. `UNR_003` and the other four ambiguous cases remain `UNRESOLVED` without forced matching.
-21. The evidence-backed case enforces `OPEN → VERIFIED → ESCALATED/RESOLVED` and retains its audit trail.
-22. Precision, recall, false-positive rate, verified leakage, unresolved count, processing time, mutation rate, coverage, and lineage counts come from backend calculations.
-23. Direct Razorpay sync is GET-only, maps into canonical events/edges, and exposes no credential.
-24. Optional Razorpay MCP output is non-authoritative evidence and still terminates in `PROVEN`, `REJECTED`, or `UNRESOLVED` after verification.
-25. FastAPI repositories work unchanged with local PostgreSQL or Supabase Postgres through connection configuration.
-26. Agreement/source/evidence objects use private Supabase Storage paths with metadata in Postgres.
-27. The full deterministic run and all acceptance arithmetic work when no LLM configuration is present.
+8. Every FUZZY result exposes a deterministic score and matching evidence; sub-threshold or ambiguous candidates remain `UNRESOLVED`.
+9. Counterfactual settlement reconstructs `9817.10` with `20.00` MDR and `3.60` GST drivers.
+10. Violation lineage identifies one primary MDR failure and three downstream effects.
+11. Similar MDR violations cluster under `RC_MDR_01`.
+12. Root-cause investigation records `collect_evidence → fetch_razorpay_context → load_contract_context → generate_hypothesis → verify_hypothesis` in its trace.
+13. The verifier rejects the unsupported contract-change hypothesis, the bounded alternate is proven as a systemic gateway deviation, and the graph creates or attaches the evidence case.
+14. Unverified evidence, verifier disagreement, or exhausted attempts end `UNRESOLVED`; model text cannot force a verdict.
+15. At least eight deterministic mutation types execute against a derived copy.
+16. The seeded mutation run reports 50 injected, 47 detected, 3 missed, 0 false positives, and `0.9400` mutation detection rate.
+17. Mutation testing proves the canonical dataset is unchanged.
+18. The blind-spot graph retrieves the agreement clause, schema-validates the proposal, and uses deterministic historical and mutation backtests.
+19. The draft candidate backtests from 47/50 to 49/50 with false-positive delta 0.
+20. The candidate remains inactive in `AWAITING_HUMAN_APPROVAL` until an authorized user explicitly approves it.
+21. Agreement compilation produces strictly typed, versioned `DRAFT` controls, detects effective-date conflicts, and also stops at a human gate.
+22. Control coverage reports 2,009 material edges, 2,000 governed, and 9 ungoverned before approval.
+23. The correct immutable MDR version is selected on both sides of the 1 September boundary.
+24. `UNR_003` and the other four ambiguous cases remain `UNRESOLVED` without forced matching.
+25. The evidence-backed case enforces `OPEN → VERIFIED → ESCALATED/RESOLVED` and retains its tenant-scoped audit trail.
+26. Precision, recall, false-positive rate, verified leakage, unresolved count, processing time, mutation rate, coverage, and lineage counts come from backend calculations.
+27. Production Razorpay sync is GET-only, queued with a required idempotency key, leased to a worker, bounded by attempts/pages/records/bytes, and exposes no credential.
+28. Replayed Razorpay jobs and identical source content do not duplicate jobs or evidence snapshots; normalized events retain source checksum, sync ID, and mapping version.
+29. Optional Razorpay MCP output is non-authoritative evidence and still terminates in `PROVEN`, `REJECTED`, or `UNRESOLVED` after verification.
+30. FastAPI repositories work unchanged with local PostgreSQL or Supabase Postgres through connection configuration.
+31. Agreement/source/evidence objects use private Supabase Storage paths with metadata in Postgres.
+32. OIDC roles, tenant filters, and Postgres RLS prevent one tenant from reading or mutating another tenant's records.
+33. All three LangGraph workflows use durable production checkpoints, bounded retries, structured traces, and explicit human gates where required.
+34. The browser receives no Supabase privileged credential, Groq key, or Razorpay secret.
+35. The full deterministic run and all acceptance arithmetic work when no LLM configuration is present; AI-only actions degrade explicitly.
 
 ---
 

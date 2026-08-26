@@ -97,6 +97,8 @@ def map_recon_item(
             "settlement_utr": item.settlement_utr,
             "debit": str(_money_from_subunits(item.debit)),
             "credit": str(_money_from_subunits(item.credit)),
+            "fee": str(_money_from_subunits(item.fee)),
+            "tax": str(_money_from_subunits(item.tax)),
             "payment_method": item.method,
             "card_network": item.card_network,
             "card_type": item.card_type,

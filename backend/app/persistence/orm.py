@@ -371,8 +371,7 @@ class BackgroundJobRecord(Base):
         CheckConstraint("attempt_count >= 0", name="ck_background_jobs_attempt_count"),
         CheckConstraint("max_attempts >= 1", name="ck_background_jobs_max_attempts"),
         CheckConstraint(
-            "status IN ('QUEUED', 'RUNNING', 'RETRYABLE', 'SUCCEEDED', 'FAILED', "
-            "'CANCELLED')",
+            "status IN ('QUEUED', 'RUNNING', 'RETRYABLE', 'SUCCEEDED', 'FAILED', 'CANCELLED')",
             name="ck_background_jobs_status",
         ),
         Index(
@@ -386,6 +385,13 @@ class BackgroundJobRecord(Base):
         ),
         Index("ix_background_jobs_tenant_run", "tenant_id", "run_id", "created_at"),
         Index("ix_background_jobs_tenant_updated", "tenant_id", "updated_at"),
+        Index(
+            "ix_background_jobs_tenant_type_status_updated",
+            "tenant_id",
+            "job_type",
+            "status",
+            "updated_at",
+        ),
     )
 
     tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
@@ -406,5 +412,42 @@ class BackgroundJobRecord(Base):
     lease_owner: Mapped[str | None] = mapped_column(String(160))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AgentExecutionRecord(Base):
+    """Durable final output and trace for one bounded agent workflow execution."""
+
+    __tablename__ = "agent_executions"
+    __table_args__ = (
+        CheckConstraint(
+            "workflow IN ('ROOT_CAUSE_INVESTIGATION', 'BLIND_SPOT_REMEDIATION', "
+            "'AGREEMENT_CONTROL_COMPILER')",
+            name="ck_agent_executions_workflow",
+        ),
+        Index(
+            "ix_agent_executions_tenant_resource",
+            "tenant_id",
+            "resource_type",
+            "resource_id",
+            "completed_at",
+        ),
+        Index(
+            "ix_agent_executions_tenant_updated",
+            "tenant_id",
+            "updated_at",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
+    id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    workflow: Mapped[str] = mapped_column(String(64))
+    resource_type: Mapped[str] = mapped_column(String(64))
+    resource_id: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(48))
+    result: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

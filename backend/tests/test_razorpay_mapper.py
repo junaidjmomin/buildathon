@@ -1,7 +1,13 @@
+import asyncio
 from decimal import Decimal
 
+import httpx
+
+from app.core.config import Settings
+from app.integrations.razorpay.client import RazorpayClient
 from app.integrations.razorpay.mapper import map_payment, map_recon_item, map_refund
 from app.integrations.razorpay.schemas import PaymentItem, ReconItem, RefundItem
+from app.integrations.razorpay.sync import _build_mdr_evaluations
 
 
 def test_recon_payment_maps_into_canonical_events_and_edges() -> None:
@@ -94,3 +100,86 @@ def test_direct_payment_and_refund_map_into_same_canonical_model() -> None:
     assert refund_edge.from_event_id == payment_event.id
     assert refund_edge.to_event_id == refund_event.id
     assert refund_edge.relationship == "REFUNDED_BY"
+
+
+def test_razorpay_schema_discards_unapproved_extra_payload_fields() -> None:
+    payment = PaymentItem.model_validate(
+        {
+            "id": "pay_123",
+            "amount": 10000,
+            "currency": "INR",
+            "status": "captured",
+            "method": "card",
+            "created_at": 1567692556,
+            "email": "must-not-be-retained@example.com",
+            "contact": "+910000000000",
+            "notes": {"secret": "must-not-be-retained"},
+        }
+    )
+    serialized = payment.model_dump(mode="json")
+    assert "email" not in serialized
+    assert "contact" not in serialized
+    assert "notes" not in serialized
+
+
+def test_razorpay_client_retries_only_bounded_read_requests() -> None:
+    attempts = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        assert request.method == "GET"
+        if attempts == 1:
+            return httpx.Response(503, headers={"retry-after": "0"})
+        return httpx.Response(200, json={"items": []})
+
+    client = RazorpayClient(
+        key_id="rzp_test_key",
+        key_secret="backend-only-secret",
+        transport=httpx.MockTransport(handler),
+        settings=Settings(RAZORPAY_MAX_RETRIES=1),
+    )
+    result = asyncio.run(client.get("/payments", params={"count": 1}))
+    assert result == {"items": []}
+    assert attempts == 2
+
+
+def test_razorpay_client_rejects_non_allowlisted_paths() -> None:
+    client = RazorpayClient(
+        key_id="rzp_test_key",
+        key_secret="backend-only-secret",
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={})),
+    )
+    try:
+        asyncio.run(client.get("/refunds/../payments"))
+    except ValueError as exc:
+        assert "allowlist" in str(exc)
+    else:
+        raise AssertionError("Path traversal must be rejected before an upstream request")
+
+
+def test_live_payment_runs_decimal_mdr_control_and_creates_violation() -> None:
+    payment = PaymentItem.model_validate(
+        {
+            "id": "pay_mdr_violation",
+            "amount": 1000000,
+            "currency": "INR",
+            "status": "captured",
+            "method": "card",
+            "international": False,
+            "captured": True,
+            "fee": 17500,
+            "tax": 3150,
+            "created_at": 1787600000,
+        }
+    )
+    event = map_payment(payment, run_id="RUN_1", sync_id="SYNC_1")
+    evaluations = _build_mdr_evaluations([event])
+    assert len(evaluations) == 1
+    evaluation = evaluations[0]
+    assert evaluation.expected_amount == Decimal("155.00")
+    assert evaluation.actual_amount == Decimal("175.00")
+    assert evaluation.difference_amount == Decimal("20.00")
+    assert evaluation.tolerance_amount == Decimal("0.01")
+    assert evaluation.outcome.value == "VIOLATION"
+    assert evaluation.violation is not None

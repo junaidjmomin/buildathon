@@ -1,5 +1,6 @@
 import type {
   Agreement,
+  BackgroundJob,
   ControlBacktest,
   ControlCoverageSummary,
   ControlProposal,
@@ -9,6 +10,8 @@ import type {
   ExpectedActualResponse,
   HypothesisResponse,
   HypothesisVerification,
+  InvestigationExecution,
+  JobSubmission,
   McpEvidenceCapability,
   MutationTestSummary,
   PaymentGraph,
@@ -120,6 +123,10 @@ export const api = {
     request<HypothesisVerification>(`/root-causes/${segment(rootCauseId)}/verify-hypothesis`, {
       method: "POST",
     }),
+  investigateRootCause: (rootCauseId: string) =>
+    request<InvestigationExecution>(`/root-causes/${segment(rootCauseId)}/investigate`, {
+      method: "POST",
+    }),
   razorpayStatus: () =>
     request<RazorpayConnectionStatus>("/integrations/razorpay/status"),
   syncRazorpay: () =>
@@ -127,6 +134,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ year: 2026, month: 8 }),
     }),
+  submitRazorpaySyncJob: (idempotencyKey: string) =>
+    request<JobSubmission>("/integrations/razorpay/sync-jobs", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ year: 2026, month: 8 }),
+    }),
+  backgroundJob: (jobId: string) => request<BackgroundJob>(`/jobs/${segment(jobId)}`),
   razorpayMcpCapability: () =>
     request<McpEvidenceCapability>("/integrations/razorpay/mcp-evidence-capability"),
   uploadSource: (file: File) => {

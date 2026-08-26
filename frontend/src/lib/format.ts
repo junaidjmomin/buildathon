@@ -5,8 +5,9 @@ function scaledInteger(value: string | number, scale: number): bigint {
   const [whole = "0", fraction = ""] = unsigned.split(".");
   const kept = fraction.padEnd(scale, "0").slice(0, scale);
   const next = fraction[scale] ?? "0";
-  let result = BigInt(whole || "0") * 10n ** BigInt(scale) + BigInt(kept || "0");
-  if (next >= "5") result += 1n;
+  let result =
+    BigInt(whole || "0") * BigInt(10) ** BigInt(scale) + BigInt(kept || "0");
+  if (next >= "5") result += BigInt(1);
   return negative ? -result : result;
 }
 
@@ -19,7 +20,7 @@ function indianGrouping(value: string): string {
 
 function fixed(value: string | number, scale: number): string {
   const scaled = scaledInteger(value, scale);
-  const negative = scaled < 0n;
+  const negative = scaled < BigInt(0);
   const digits = (negative ? -scaled : scaled).toString().padStart(scale + 1, "0");
   const whole = scale ? digits.slice(0, -scale) : digits;
   const fraction = scale ? `.${digits.slice(-scale)}` : "";
@@ -33,7 +34,7 @@ export function formatMoney(value: string | number | null, compact = false) {
 
 export function formatPercent(value: string, digits = 1) {
   const scaled = scaledInteger(value, digits + 2);
-  const negative = scaled < 0n;
+  const negative = scaled < BigInt(0);
   const absolute = (negative ? -scaled : scaled).toString().padStart(digits + 1, "0");
   const whole = digits ? absolute.slice(0, -digits) : absolute;
   const fraction = digits ? `.${absolute.slice(-digits)}` : "";

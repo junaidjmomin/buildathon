@@ -202,6 +202,26 @@ export interface RazorpaySyncSummary {
   synced_at: string;
 }
 
+export interface BackgroundJob {
+  id: string;
+  run_id: string | null;
+  job_type: string;
+  status: "QUEUED" | "RUNNING" | "RETRYABLE" | "SUCCEEDED" | "FAILED" | "CANCELLED";
+  attempt_count: number;
+  max_attempts: number;
+  result: RazorpaySyncSummary | Record<string, unknown> | null;
+  error: { code?: string; message?: string } | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface JobSubmission {
+  created: boolean;
+  job: BackgroundJob;
+}
+
 export interface Control {
   id: string;
   name: string;
@@ -332,6 +352,53 @@ export interface HypothesisVerification {
   classification: string;
   checks: Array<{ label: string; value: string; result: string }>;
   conclusion: string;
+}
+
+export interface AgentTraceStep {
+  sequence: number;
+  node: string;
+  status: string;
+  message: string;
+  occurred_at: string;
+  details: Record<string, unknown>;
+}
+
+export interface InvestigationExecution {
+  execution_id: string;
+  workflow: "ROOT_CAUSE_INVESTIGATION";
+  tenant_id: string;
+  run_id: string;
+  root_cause_id: string;
+  violation_ids: string[];
+  status: "PROVEN" | "UNRESOLVED";
+  attempt_count: number;
+  ai_configured: boolean;
+  hypotheses: Array<{
+    hypothesis_id: string;
+    kind: string;
+    statement: string;
+    rationale: string;
+    claimed_rate: string | null;
+    evidence_ids: string[];
+    confidence: string;
+  }>;
+  verification: {
+    status: "PROVEN" | "REJECTED" | "UNRESOLVED";
+    classification: string;
+    conclusion: string;
+    verifier: string;
+    checks: Array<{
+      label: string;
+      result: string;
+      expected: string | null;
+      observed: string | null;
+      evidence_ids: string[];
+    }>;
+  } | null;
+  case_id: string | null;
+  trace: AgentTraceStep[];
+  started_at: string;
+  completed_at: string;
 }
 
 export interface McpEvidenceCapability {

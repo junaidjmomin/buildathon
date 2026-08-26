@@ -23,10 +23,23 @@ x-backend-environment: &backend-environment
   LLM_PROVIDER: ${LLM_PROVIDER:-groq}
   LLM_MODEL: ${LLM_MODEL:-openai/gpt-oss-120b}
   GROQ_API_KEY: ${GROQ_API_KEY:-}
+  LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+  LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-1200}
+  LLM_MAX_INPUT_CHARS: ${LLM_MAX_INPUT_CHARS:-24000}
+  AGENT_MAX_ATTEMPTS: ${AGENT_MAX_ATTEMPTS:-2}
+  AGENT_CHECKPOINT_DATABASE_URL: ${AGENT_CHECKPOINT_DATABASE_URL:-}
   RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
   RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
   RAZORPAY_MODE: ${RAZORPAY_MODE:-test}
   RAZORPAY_API_BASE_URL: ${RAZORPAY_API_BASE_URL:-https://api.razorpay.com/v1}
+  RAZORPAY_TIMEOUT_SECONDS: ${RAZORPAY_TIMEOUT_SECONDS:-20}
+  RAZORPAY_MAX_RETRIES: ${RAZORPAY_MAX_RETRIES:-3}
+  RAZORPAY_MAX_PAGES: ${RAZORPAY_MAX_PAGES:-100}
+  RAZORPAY_MAX_RECORDS: ${RAZORPAY_MAX_RECORDS:-100000}
+  RAZORPAY_MAX_RESPONSE_BYTES: ${RAZORPAY_MAX_RESPONSE_BYTES:-10485760}
+  WORKER_TENANT_IDS: ${WORKER_TENANT_IDS:-novacart_demo}
+  WORKER_LEASE_SECONDS: ${WORKER_LEASE_SECONDS:-900}
+  WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS:-2}
   RAZORPAY_MCP_ENABLED: ${RAZORPAY_MCP_ENABLED:-false}
 
 services:
@@ -70,6 +83,24 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  agent-checkpoint-migrate:
+    build:
+      context: ./backend
+      target: runtime
+    environment: *backend-environment
+    command: ["python", "-m", "app.agents.checkpoint", "setup"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
   backend:
     build:
       context: ./backend
@@ -78,8 +109,33 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      agent-checkpoint-migrate:
+        condition: service_completed_successfully
     ports:
       - "${BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+
+  worker:
+    build:
+      context: ./backend
+      target: runtime
+    environment: *backend-environment
+    command: ["python", "-m", "app.workers.runner"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      agent-checkpoint-migrate:
+        condition: service_completed_successfully
     init: true
     restart: unless-stopped
     stop_grace_period: 30s

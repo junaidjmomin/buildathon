@@ -1,81 +1,73 @@
 from __future__ import annotations
 
-from typing import Any
-
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RazorpayModel(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore", strict=True, str_strip_whitespace=True)
 
 
 class RazorpayCollection(RazorpayModel):
     entity: str = "collection"
-    count: int
-    items: list[dict[str, Any]]
+    count: int = Field(ge=0)
+    items: list[dict[str, object]]
 
 
 class ReconItem(RazorpayModel):
-    entity_id: str
-    type: str
-    debit: int = 0
-    credit: int = 0
-    amount: int
-    currency: str
-    fee: int = 0
-    tax: int = 0
+    entity_id: str = Field(min_length=1, max_length=160)
+    type: str = Field(min_length=1, max_length=80)
+    debit: int = Field(default=0, ge=0)
+    credit: int = Field(default=0, ge=0)
+    amount: int = Field(ge=0)
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    fee: int = Field(default=0, ge=0)
+    tax: int = Field(default=0, ge=0)
     on_hold: bool = False
     settled: bool = False
-    created_at: int
-    settled_at: int | None = None
-    settlement_id: str | None = None
-    posted_at: int | None = None
-    description: str | None = None
-    notes: Any = None
-    payment_id: str | None = None
-    settlement_utr: str | None = None
-    order_id: str | None = None
-    order_receipt: str | None = None
-    method: str | None = None
-    card_network: str | None = None
-    card_issuer: str | None = None
-    card_type: str | None = None
-    dispute_id: str | None = None
+    created_at: int = Field(ge=0)
+    settled_at: int | None = Field(default=None, ge=0)
+    settlement_id: str | None = Field(default=None, max_length=160)
+    payment_id: str | None = Field(default=None, max_length=160)
+    settlement_utr: str | None = Field(default=None, max_length=160)
+    order_id: str | None = Field(default=None, max_length=160)
+    method: str | None = Field(default=None, max_length=80)
+    card_network: str | None = Field(default=None, max_length=80)
+    card_type: str | None = Field(default=None, max_length=80)
 
 
 class PaymentItem(RazorpayModel):
-    id: str
+    id: str = Field(min_length=1, max_length=160)
     entity: str = "payment"
-    amount: int
-    currency: str
-    status: str
-    order_id: str | None = None
+    amount: int = Field(ge=0)
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    status: str = Field(min_length=1, max_length=80)
+    order_id: str | None = Field(default=None, max_length=160)
     international: bool = False
-    method: str
-    amount_refunded: int = 0
+    method: str = Field(min_length=1, max_length=80)
+    amount_refunded: int = Field(default=0, ge=0)
     captured: bool = False
-    fee: int | None = None
-    tax: int | None = None
-    created_at: int
+    fee: int | None = Field(default=None, ge=0)
+    tax: int | None = Field(default=None, ge=0)
+    created_at: int = Field(ge=0)
 
 
 class RefundItem(RazorpayModel):
-    id: str
+    id: str = Field(min_length=1, max_length=160)
     entity: str = "refund"
-    amount: int
-    currency: str
-    payment_id: str
-    created_at: int
-    status: str
-    receipt: str | None = None
+    amount: int = Field(ge=0)
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    payment_id: str = Field(min_length=1, max_length=160)
+    created_at: int = Field(ge=0)
+    status: str = Field(min_length=1, max_length=80)
+    receipt: str | None = Field(default=None, max_length=160)
 
 
 class SettlementItem(RazorpayModel):
-    id: str
+    id: str = Field(min_length=1, max_length=160)
     entity: str = "settlement"
-    amount: int
-    status: str
-    fees: int = 0
-    tax: int = 0
-    utr: str | None = None
-    created_at: int
+    amount: int = Field(ge=0)
+    status: str = Field(min_length=1, max_length=80)
+    fees: int = Field(default=0, ge=0)
+    tax: int = Field(default=0, ge=0)
+    utr: str | None = Field(default=None, max_length=160)
+    created_at: int = Field(ge=0)

@@ -236,7 +236,10 @@ def _control_templates() -> list[Control]:
             status="DRAFT",
             clause_id="CLAUSE_4_6",
             logical_control_key="UNLISTED_SETTLEMENT_FEE",
-            parameters={"allowlist": ["processing_fee", "gst", "refund_principal"]},
+            parameters={
+                "allowlist": ["processing_fee", "gst", "refund_principal"],
+                "tolerance": "0.01",
+            },
             conditions=["deduction_type not in allowlist"],
             extraction_method="BOUNDED_CANDIDATE_EXTRACTION",
         ),
