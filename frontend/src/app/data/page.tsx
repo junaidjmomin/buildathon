@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowRight, Database, FileUp, KeyRound, LoaderCircle, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
+import { ArrowRight, BrainCircuit, Database, FileUp, KeyRound, LoaderCircle, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
 import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 
 export default function DataSourcesPage() {
   const status = useQuery({ queryKey: ["razorpay-status"], queryFn: api.razorpayStatus });
+  const mcp = useQuery({ queryKey: ["razorpay-mcp-capability"], queryFn: api.razorpayMcpCapability });
   const sync = useMutation({ mutationFn: api.syncRazorpay });
   return <AppShell><main className="mx-auto max-w-[1160px] px-5 py-8 md:px-8 md:py-10">
     <div className="mb-8"><p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1e6b51]">Ingestion</p><h1 className="text-3xl font-semibold tracking-[-0.035em]">Choose a financial data source</h1><p className="mt-2 text-sm text-[#66716b]">Every source normalizes into the same financial event graph and deterministic control pipeline.</p></div>
@@ -26,6 +27,7 @@ export default function DataSourcesPage() {
         <div className="mt-5 flex items-center gap-2 border-t border-[#e5e8e2] pt-4 text-[11px] text-[#66716b]"><ShieldCheck size={14} className="text-[#1e6b51]" /> Connector permissions are GET-only. No payment, refund or settlement action is available.</div>
       </div>
     </section>
+    {mcp.data && <section className="panel mt-6 overflow-hidden rounded-2xl"><div className="flex flex-col justify-between gap-3 border-b border-[#e2e5df] px-5 py-4 sm:flex-row sm:items-center"><div><h2 className="flex items-center gap-2 text-sm font-semibold"><BrainCircuit size={16} className="text-[#1e6b51]" /> Optional MCP investigation evidence</h2><p className="mt-1 text-xs text-[#78827d]">Supplementary context only; direct API ingestion and deterministic controls remain authoritative.</p></div><span className="w-fit rounded-full bg-[#eceeed] px-2.5 py-1 text-[10px] font-bold text-[#66716b]">{mcp.data.enabled ? "ENABLED · READ ONLY" : "DISABLED BY DEFAULT"}</span></div><div className="p-5"><div className="flex flex-wrap gap-2">{mcp.data.allowed_tools.map((tool) => <span key={tool} className="rounded-md bg-[#eef2ed] px-2 py-1 font-mono text-[9px] text-[#52615a]">{tool}</span>)}</div><p className="mt-4 flex items-start gap-2 border-t border-[#e5e8e2] pt-4 text-[11px] leading-5 text-[#66716b]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#1e6b51]" /> {mcp.data.result_policy}</p></div></section>}
   </main></AppShell>;
 }
 

@@ -1,5 +1,8 @@
+import json
+from collections import Counter
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -21,6 +24,35 @@ def test_seeded_demo_proves_hidden_overcharge() -> None:
     assert body["gateway_net"] == body["bank_credit"] == "9793.50"
     assert body["expected_net"] == "9817.10"
     assert body["verified_leakage"] == "23.60"
+
+
+def test_seeded_generator_matches_authoritative_manifest_and_ids() -> None:
+    loaded = client.post("/api/v1/demo/load").json()
+    manifest_path = Path(__file__).parents[2] / "data" / "demo" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert loaded["known_demo_ids"] == manifest["known_demo_ids"]
+    assert loaded["counts"] == {
+        key: manifest["records"][key]
+        for key in ["orders", "payments", "settlements", "bank_entries", "refunds", "chargebacks"]
+    }
+    assert store.summary is not None
+    assert store.dataset is not None
+    assert store.summary.event_count == manifest["records"]["financial_events"]
+    assert store.summary.relationship_count == manifest["records"]["event_edges"]
+    assert store.summary.control_evaluation_count == manifest["records"]["control_evaluations"]
+    scenarios = Counter(store.dataset.ground_truth.values())
+    assert scenarios == {
+        "PASS": manifest["ground_truth"]["pass"],
+        "MDR_RATE_DEVIATION": manifest["ground_truth"]["mdr_rate_deviation"],
+        "INCORRECT_GST": manifest["ground_truth"]["incorrect_gst"],
+        "DUPLICATE_REFUND": manifest["ground_truth"]["duplicate_refund"],
+        "SETTLEMENT_SLA": manifest["ground_truth"]["settlement_sla"],
+        "UNSUPPORTED_FEE": manifest["ground_truth"]["unsupported_fee"],
+        "UNRESOLVED": manifest["ground_truth"]["unresolved"],
+    }
+    assert any(payment.refund_id == "REF_91" for payment in store.dataset.payments)
+    assert any(payment.settlement_id == "SET_1042" for payment in store.dataset.payments)
+    assert any(payment.unresolved_case_id == "UNR_003" for payment in store.dataset.payments)
 
 
 def test_demo_metrics_are_measured_from_separate_ground_truth() -> None:

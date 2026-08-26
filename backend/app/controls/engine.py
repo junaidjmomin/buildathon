@@ -3,13 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from app.controls.dsl import GstFeeParameters, MdrRateParameters
 from app.core.money import add_business_days, business_days_late, expected_fee, expected_gst, money
 from app.domain.models import ControlType, EvaluationStatus, PaymentLifecycle
 from app.services.governance import governance
 
 DOMESTIC_MDR_RATE = Decimal("0.0155")
-GST_RATE = Decimal("0.18")
-TOLERANCE = Decimal("0.01")
 
 
 @dataclass(frozen=True)
@@ -31,9 +30,14 @@ def evaluate_payment(
 ) -> PaymentEvaluation:
     if mdr_rate is None:
         control = governance.effective_control("DOMESTIC_CARD_MDR", payment.captured_at.date())
-        mdr_rate = Decimal(str(control.parameters["rate"]))
+        mdr_parameters = MdrRateParameters.model_validate(control.parameters)
+        mdr_rate = mdr_parameters.rate
+        tolerance = mdr_parameters.tolerance
+    else:
+        tolerance = Decimal("0.01")
+    gst_parameters = GstFeeParameters.model_validate(governance.control("CTRL_GST_FEE").parameters)
     fee = expected_fee(payment.amount, mdr_rate)
-    tax = expected_gst(fee, GST_RATE)
+    tax = expected_gst(fee, gst_parameters.rate)
     expected_refund = payment.refund_amount
     expected_net = money(payment.amount - fee - tax - expected_refund)
     fee_difference = money(payment.actual_fee - fee)
@@ -47,19 +51,21 @@ def evaluate_payment(
         + max(unsupported, Decimal("0"))
     )
     fee_status = (
-        EvaluationStatus.PASS if abs(fee_difference) <= TOLERANCE else EvaluationStatus.VIOLATION
+        EvaluationStatus.PASS if abs(fee_difference) <= tolerance else EvaluationStatus.VIOLATION
     )
     tax_status = (
-        EvaluationStatus.PASS if abs(tax_difference) <= TOLERANCE else EvaluationStatus.VIOLATION
+        EvaluationStatus.PASS
+        if abs(tax_difference) <= gst_parameters.tolerance
+        else EvaluationStatus.VIOLATION
     )
     net_status = (
         EvaluationStatus.PASS
-        if abs(payment.actual_net - expected_net) <= TOLERANCE
+        if abs(payment.actual_net - expected_net) <= tolerance
         else EvaluationStatus.VIOLATION
     )
     if payment.bank_credit is None:
         bank_status = EvaluationStatus.UNRESOLVED
-    elif abs(payment.bank_credit - expected_net) <= TOLERANCE:
+    elif abs(payment.bank_credit - expected_net) <= tolerance:
         bank_status = EvaluationStatus.PASS
     else:
         bank_status = EvaluationStatus.VIOLATION

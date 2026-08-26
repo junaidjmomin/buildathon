@@ -299,6 +299,7 @@ export interface ExceptionCase {
 }
 
 export interface UnresolvedMatch {
+  id: string;
   payment_id: string;
   status: "UNRESOLVED";
   amount: string;

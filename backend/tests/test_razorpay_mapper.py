@@ -1,7 +1,7 @@
 from decimal import Decimal
 
-from app.integrations.razorpay.mapper import map_recon_item
-from app.integrations.razorpay.schemas import ReconItem
+from app.integrations.razorpay.mapper import map_payment, map_recon_item, map_refund
+from app.integrations.razorpay.schemas import PaymentItem, ReconItem, RefundItem
 
 
 def test_recon_payment_maps_into_canonical_events_and_edges() -> None:
@@ -55,3 +55,42 @@ def test_razorpay_status_never_exposes_credentials() -> None:
         "last_sync_status",
         "last_synced_at",
     }
+
+
+def test_direct_payment_and_refund_map_into_same_canonical_model() -> None:
+    payment = PaymentItem.model_validate(
+        {
+            "id": "pay_123",
+            "amount": 100000,
+            "currency": "INR",
+            "status": "captured",
+            "order_id": "order_123",
+            "method": "card",
+            "amount_refunded": 25000,
+            "captured": True,
+            "fee": 1550,
+            "tax": 279,
+            "created_at": 1567692556,
+        }
+    )
+    refund = RefundItem.model_validate(
+        {
+            "id": "rfnd_123",
+            "amount": 25000,
+            "currency": "INR",
+            "payment_id": "pay_123",
+            "created_at": 1567693556,
+            "status": "processed",
+        }
+    )
+    payment_event = map_payment(payment, run_id="RUN_1", sync_id="SYNC_1")
+    refund_event, refund_edge = map_refund(refund, run_id="RUN_1", sync_id="SYNC_1")
+
+    assert payment_event.id == "rzp:payment:pay_123"
+    assert payment_event.amount == Decimal("1000.00")
+    assert payment_event.normalized_payload["fee"] == "15.50"
+    assert refund_event.id == "rzp:refund:rfnd_123"
+    assert refund_event.amount == Decimal("250.00")
+    assert refund_edge.from_event_id == payment_event.id
+    assert refund_edge.to_event_id == refund_event.id
+    assert refund_edge.relationship == "REFUNDED_BY"

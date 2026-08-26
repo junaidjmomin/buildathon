@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "seed": 20260825,
+  "dataset": "NovaCart August 2026",
+  "records": {
+    "orders": 500,
+    "payments": 500,
+    "settlements": 84,
+    "bank_entries": 84,
+    "refunds": 5,
+    "chargebacks": 6,
+    "financial_events": 1179,
+    "event_edges": 1495,
+    "control_evaluations": 2018
+  },
+  "ground_truth": {
+    "pass": 439,
+    "mdr_rate_deviation": 25,
+    "incorrect_gst": 8,
+    "duplicate_refund": 5,
+    "settlement_sla": 10,
+    "unsupported_fee": 8,
+    "unresolved": 5
+  },
+  "run_outcomes": {
+    "pass": 439,
+    "violation": 56,
+    "warning": 0,
+    "unresolved": 5,
+    "precision": "1.0000",
+    "recall": "1.0000",
+    "false_positive_rate": "0.0000",
+    "verified_leakage": "13280.24",
+    "cash_delayed": "474908.00"
+  },
+  "mutation_test": {
+    "mutations": 50,
+    "detected": 47,
+    "missed": 3,
+    "false_positives": 0,
+    "mutation_detection_rate": "0.9400"
+  },
+  "control_coverage_before_candidate_approval": {
+    "material_edges": 2009,
+    "governed_edges": 2000,
+    "ungoverned_edges": 9,
+    "coverage_rate": "0.9955"
+  },
+  "known_demo_ids": {
+    "mdr_violation": "PAY_82HD9",
+    "duplicate_refund": "REF_91",
+    "sla_violation": "SET_1042",
+    "root_cause": "RC_MDR_01",
+    "unresolved": "UNR_003"
+  },
+  "pay_82hd9_acceptance": {
+    "payment_amount": "10000.00",
+    "approved_mdr_rate": "0.0155",
+    "actual_mdr_rate": "0.0175",
+    "expected_mdr": "155.00",
+    "actual_mdr": "175.00",
+    "gst_rate": "0.18",
+    "expected_gst": "27.90",
+    "actual_gst": "31.50",
+    "expected_net": "9817.10",
+    "actual_gateway_net": "9793.50",
+    "bank_credit": "9793.50",
+    "verified_leakage": "23.60",
+    "currency": "INR"
+  }
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, BrainCircuit, Check, CircleDollarSign, GitBranch, LoaderCircle, Scale, ShieldAlert, X } from "lucide-react";
+import { ArrowLeft, BrainCircuit, CircleDollarSign, GitBranch, LoaderCircle, Scale, ShieldAlert, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -40,4 +40,3 @@ export default function RootCausePage() {
 function Metric({ icon: Icon, label, value }: { icon: typeof ShieldAlert; label: string; value: string }) {
   return <div className="panel rounded-xl p-4"><Icon size={15} className="mb-4 text-[#1e6b51]" /><p className="number-tabular text-lg font-semibold tracking-[-0.025em]">{value}</p><p className="mt-1 text-[11px] text-[#727d77]">{label}</p></div>;
 }
-

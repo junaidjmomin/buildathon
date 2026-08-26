@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight, Beaker, Check, CircleDollarSign, Clock3, DatabaseZap, FileWarning,
-  Fingerprint, LoaderCircle, Play, ScanSearch, ShieldAlert, ShieldCheck,
+  Fingerprint, GitBranch, LoaderCircle, Play, ScanSearch, ShieldAlert, ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -40,6 +40,9 @@ export function Dashboard() {
   const roots = useQuery({
     queryKey: ["root-causes", activeRun], queryFn: () => api.rootCauses(activeRun), enabled: Boolean(runId),
   });
+  const coverage = useQuery({
+    queryKey: ["control-coverage", activeRun], queryFn: () => api.controlCoverage(activeRun), enabled: Boolean(runId),
+  });
 
   if (load.isPending || summary.isPending) {
     return (
@@ -68,6 +71,8 @@ export function Dashboard() {
   if (!summary.data) return null;
   const data = summary.data;
   const rootMax = Math.max(...(roots.data ?? []).map((root) => Number(root.verified_impact)), 1);
+  const primaryCount = (roots.data ?? []).reduce((total, root) => total + root.primary_violation_count, 0);
+  const downstreamCount = (roots.data ?? []).reduce((total, root) => total + root.downstream_effect_count, 0);
 
   return (
     <main className="mx-auto max-w-[1440px] px-5 py-7 md:px-8 md:py-9">
@@ -82,13 +87,15 @@ export function Dashboard() {
         </button>
       </section>
 
-      <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <Metric icon={DatabaseZap} label="Transactions" value={data.transaction_count.toLocaleString("en-IN")} />
         <Metric icon={Fingerprint} label="Controls evaluated" value={data.control_evaluation_count.toLocaleString("en-IN")} />
         <Metric icon={ShieldCheck} label="Precision" value={formatPercent(data.precision)} tone="green" />
         <Metric icon={ScanSearch} label="Violation recall" value={formatPercent(data.recall)} tone="green" />
         <Metric icon={CircleDollarSign} label="Verified leakage" value={formatMoney(data.verified_leakage, true)} tone="orange" />
         <Metric icon={ShieldAlert} label="Unresolved" value={String(data.unresolved_count)} />
+        <Metric icon={ShieldCheck} label="Control coverage" value={coverage.data ? formatPercent(coverage.data.coverage_percentage) : "—"} tone="green" />
+        <Metric icon={GitBranch} label="Primary / downstream" value={`${primaryCount} / ${downstreamCount}`} />
       </section>
 
       <section className="mb-6 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
@@ -134,10 +141,10 @@ export function Dashboard() {
           <p className="mb-5 mt-1 text-xs text-[#7a847e]">Structural clusters, not repeated symptoms</p>
           <div className="space-y-4">
             {(roots.data ?? []).slice(0, 5).map((root) => (
-              <div key={root.id}>
+              <Link href={`/root-causes/${root.id}`} key={root.id} className="block rounded-lg p-1 transition hover:bg-[#f5f7f3]">
                 <div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="truncate font-medium">{root.title}</span><span className="number-tabular text-[#66716b]">{formatMoney(root.verified_impact, true)}</span></div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-[#edf0eb]"><div className="h-full rounded-full bg-[#2d7a5d]" style={{ width: `${Math.max(4, (Number(root.verified_impact) / rootMax) * 100)}%` }} /></div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -171,6 +178,11 @@ export function Dashboard() {
         <div className="flex items-start gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#dff2e8] text-[#1e6b51]"><Beaker size={19} /></span><div><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#1e6b51]">Control quality</p><h3 className="mt-1 text-base font-semibold">Would your controls catch the money being wrong?</h3><p className="mt-1 text-xs leading-5 text-[#5e7168]">Inject 50 isolated financial failures and measure real detection coverage.</p></div></div>
         <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-[#1e6b51]">Test my controls <ArrowRight size={16} className="transition group-hover:translate-x-1" /></span>
       </Link>
+      <section className="mt-4 grid gap-3 md:grid-cols-3">
+        <QuickLink href="/agreements" label="Agreement provenance" detail="Clause → typed control → immutable version" />
+        <QuickLink href={`/runs/${activeRun}/coverage`} label="Control coverage" detail="Measure governed and ungoverned money edges" />
+        <QuickLink href="/exceptions" label="Evidence cases" detail="Verify, escalate or resolve with an audit trail" />
+      </section>
     </main>
   );
 }
@@ -182,4 +194,8 @@ function Metric({ icon: Icon, label, value, tone = "default" }: { icon: typeof D
 
 function Outcome({ label, value, color }: { label: string; value: number; color: string }) {
   return <div className="bg-white px-5 py-4"><div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#77817b]"><span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} /> {label}</div><p className="number-tabular text-2xl font-semibold tracking-[-0.04em]">{value}</p></div>;
+}
+
+function QuickLink({ href, label, detail }: { href: string; label: string; detail: string }) {
+  return <Link href={href} className="panel group flex items-center justify-between rounded-xl p-4"><div><p className="text-xs font-semibold">{label}</p><p className="mt-1 text-[10px] text-[#727d77]">{detail}</p></div><ArrowRight size={14} className="text-[#89928d] transition group-hover:translate-x-1 group-hover:text-[#1e6b51]" /></Link>;
 }

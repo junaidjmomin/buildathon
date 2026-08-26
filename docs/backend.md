@@ -1,5 +1,18 @@
 # sl3dge — Backend Handoff for Codex
 
+## Specification Authority
+
+Authority order:
+
+1. `features.md` defines product scope and priority.
+2. `backend.md` defines backend behavior, API, and domain contracts.
+3. `frontend.md` defines UI behavior and the recorded demo flow.
+4. `techstack.md` defines engineering implementation choices.
+
+If two sections conflict, the later section explicitly marked **authoritative**
+wins. This document contains one authoritative backend build order and one
+authoritative differentiated acceptance test.
+
 ## 0. Mission
 
 Build the backend for **sl3dge**, an AI Finance Controller for the Razorpay Buildathon.
@@ -10,31 +23,20 @@ Core product distinction:
 
 The backend must convert approved financial controls into deterministic checks over a transaction lifecycle graph, detect provable violations, calculate verified monetary impact, cluster related failures, and use AI only for bounded tasks such as contract-control extraction, root-cause hypotheses, and schema-mapping suggestions.
 
-The system must be able to process at least **50 records**. Target the demo around **500 payment transactions / 1,200+ financial events**.
+The system must be able to process at least **50 records**. The authoritative
+NovaCart seed contains exactly **500 payments and 1,179 financial events**; all
+seeded counts come from `data/demo/manifest.json`.
 
 The backend must never require an LLM to produce the core reconciliation/control result.
 
 ---
 
-# 1. Backend Priorities
+# 1. Backend Priority Rule
 
-Implement in this order:
-
-1. Synthetic dataset generator + hidden ground truth
-2. Core domain models
-3. Data ingestion and normalization
-4. Financial event graph construction
-5. Deterministic control engine
-6. Expected-vs-actual evaluation
-7. Batch run metrics
-8. Exception/violation APIs
-9. Root-cause clustering
-10. Agreement-to-control extraction
-11. Hypothesis verification
-12. Schema drift detection
-13. Optional evidence-pack export
-
-Do not begin with chat or generalized agent infrastructure.
+The only backend implementation sequence is the **Authoritative Backend Build
+Order** near the end of this document. Do not infer a competing order from the
+domain-model or API section numbering. Mutation testing and independent control
+verification precede generalized agent features.
 
 ---
 
@@ -120,7 +122,8 @@ Use:
 - Pydantic v2
 - SQLAlchemy 2.x
 - Alembic
-- PostgreSQL
+- Supabase Postgres for deployed environments; ordinary PostgreSQL remains the
+  local fallback through the same SQLAlchemy `DATABASE_URL`
 - Polars preferred for batch processing
 - pytest
 - httpx for API tests
@@ -209,6 +212,14 @@ confidence: float
 method: enum[EXACT, RULE, FUZZY, HUMAN]
 evidence: JSON
 ```
+
+`FUZZY` is deterministic and scored; it is never an LLM-created edge. A fuzzy
+matcher may combine normalized string similarity, Decimal amount
+equality/tolerance, timestamp proximity, and reference-token overlap. It must
+return an explicit confidence score plus component evidence in `evidence`.
+Scores below the typed deterministic threshold produce `UNRESOLVED`; they do
+not produce an `EventEdge`. LLMs may explain an existing match but may not
+create an edge or force an ambiguous match.
 
 Suggested relationships:
 
@@ -361,16 +372,31 @@ agreement.pdf or agreement.txt
 ground_truth.json
 ```
 
-Recommended planted abnormalities:
+The generator and `data/demo/manifest.json` are jointly authoritative for the
+seeded run. With `DEMO_SEED=20260825`, generate exactly:
 
-- ~25 MDR overcharges
-- ~8 incorrect GST cases
-- ~5 duplicate refund deductions
-- ~10 settlement SLA violations
-- ~8 unsupported fees
-- ~5 missing bank settlements
-- ~3-5 intentionally ambiguous cases
-- second-day schema drift file
+```text
+orders                         500
+payments                       500
+settlements                     84
+bank entries                    84
+refunds                          5
+chargebacks                      6
+financial events             1,179
+event edges                  1,495
+control evaluations          2,018
+
+PASS                            439
+MDR rate deviations              25
+incorrect GST                     8
+duplicate refunds                 5
+settlement SLA violations         10
+unsupported fees                   8
+UNRESOLVED                         5
+```
+
+The run outcome is 439 `PASS`, 56 `VIOLATION`, 0 `WARNING`, and 5
+`UNRESOLVED`. These are exact demo expectations, not illustrative targets.
 
 Ensure the generator can also produce a 50-record lightweight test set.
 
@@ -461,7 +487,9 @@ Required behavior:
 - reject impossible values where appropriate
 - return ingestion summary
 
-API response should include:
+An ingestion API response should include fields like the following. These
+values are **illustrative for a non-seeded upload** and are not NovaCart demo
+counts:
 
 ```json
 {
@@ -492,11 +520,15 @@ refund.payment_id == payment.payment_id
 Use:
 
 1. exact settlement reference in bank narration
-2. exact net amount + expected timing window
-3. grouped evidence
+2. deterministic score over normalized narration/reference tokens, Decimal net
+   amount equality or typed tolerance, and timestamp proximity
+3. grouped deterministic evidence
 4. otherwise unresolved
 
-Do not force ambiguous matches.
+Persist the score and feature-level matching evidence. The configured threshold
+is deterministic and typed. If the best candidate is below it, or multiple
+candidates remain tied within the ambiguity margin, return `UNRESOLVED`. Do not
+force ambiguous matches, and do not ask an LLM to choose an `EventEdge`.
 
 Persist confidence and matching method.
 
@@ -518,7 +550,8 @@ Example MDR control:
     "card_scope": "domestic"
   },
   "parameters": {
-    "rate": 0.0155
+    "rate": "0.0155",
+    "tolerance": "0.01"
   }
 }
 ```
@@ -529,7 +562,8 @@ GST control:
 {
   "type": "GST_ON_FEE",
   "parameters": {
-    "rate": 0.18
+    "rate": "0.18",
+    "tolerance": "0.01"
   }
 }
 ```
@@ -546,6 +580,12 @@ SLA:
 ```
 
 Keep the MVP control system explicit and type-safe.
+
+All rates, monetary amounts, and monetary tolerances in JSON are decimal
+strings. Pydantic validators parse them into Python `Decimal` before the
+deterministic executor runs. Raw JSON floating-point values are invalid for MDR
+rates, GST rates, fee rates, amounts, and currency tolerances. Integer counts
+such as `business_days` remain integers.
 
 ---
 
@@ -593,7 +633,9 @@ amount * configured_rate
 
 Compare against actual gateway fee.
 
-Allow a configurable tolerance, e.g. ₹0.01.
+Require a typed `tolerance` parameter such as `"0.01"`. It is a currency
+amount encoded as a decimal string and parsed into `Decimal`; it is not a rate
+and never uses binary floating-point semantics.
 
 ---
 
@@ -615,6 +657,9 @@ actual_fee
 expected_gst
 actual_gst
 ```
+
+The GST control also carries a monetary tolerance as a decimal string, e.g.
+`"tolerance": "0.01"`, parsed into `Decimal`.
 
 ---
 
@@ -659,6 +704,9 @@ gross
 ```
 
 Compare to settlement net.
+
+Settlement arithmetic uses a typed monetary tolerance such as
+`"tolerance": "0.01"`, parsed into `Decimal`.
 
 ---
 
@@ -771,12 +819,12 @@ Required API output:
 ```json
 {
   "title": "Domestic Visa MDR deviation",
-  "affected_count": 23,
-  "expected_rate": 0.0155,
-  "observed_rate": 0.0175,
+  "affected_count": 25,
+  "expected_rate": "0.0155",
+  "observed_rate": "0.0175",
   "first_seen": "...",
   "last_seen": "...",
-  "verified_impact": "8421.70"
+  "verified_impact": "2042.82"
 }
 ```
 
@@ -835,7 +883,7 @@ Represent hypothesis structurally:
     "card_network": "visa",
     "card_scope": "domestic"
   },
-  "proposed_value": 0.0175,
+  "proposed_value": "0.0175",
   "effective_from": "2026-08-18"
 }
 ```
@@ -1039,7 +1087,7 @@ Use consistent errors.
 
 ---
 
-# 21. Demo Seed
+# 21. Authoritative Seeded Demo Manifest
 
 Support a known deterministic demo seed.
 
@@ -1049,21 +1097,31 @@ Example:
 DEMO_SEED=20260825
 ```
 
-The demo run should always contain:
-- one clear hidden MDR overcharge
-- one duplicate refund deduction
-- one SLA violation
-- one systemic cluster of MDR rate drift
-- 3 intentionally unresolved cases
-- one schema-drift sample
+`data/demo/manifest.json` is the single machine-readable authority. The exact
+record, event, edge, evaluation, ground-truth, outcome, mutation, and coverage
+counts are the counts listed in Section 6. Do not substitute rounded UI examples.
 
-This enables a reliable recorded demo.
+Stable featured IDs are:
+
+```text
+PAY_82HD9   hidden MDR violation
+REF_91      duplicate refund case
+SET_1042    settlement SLA violation
+RC_MDR_01   systemic MDR root cause
+UNR_003     unresolved case
+```
+
+The seed contains five unresolved records, with `UNR_003` as the featured case.
 
 ---
 
-# 22. Persistence Strategy
+# 22. Persistence Strategy — Supabase Infrastructure
 
-Use PostgreSQL for:
+The deployed primary database is **Supabase Postgres**. FastAPI continues to use
+SQLAlchemy 2.x and Alembic through standard PostgreSQL connection strings; do
+not rewrite repositories around direct Supabase client calls.
+
+Use Postgres for:
 - controls
 - runs
 - events
@@ -1072,6 +1130,33 @@ Use PostgreSQL for:
 - violations
 - root causes
 - human review states
+- mutation tests, results, backtests, and control coverage
+- file metadata and immutable Supabase Storage object paths
+
+Use Supabase Storage for merchant agreement PDFs, uploaded source files, and
+optional evidence artifacts. Store only object metadata, checksum, bucket, path,
+content type, size, and provenance in Postgres rather than duplicating file
+contents in relational rows.
+
+```text
+sl3dge-private/
+  agreements/novacart-v1.pdf
+  runs/RUN_001/payments.csv
+  runs/RUN_001/settlements.csv
+  runs/RUN_001/bank.csv
+  evidence/CASE_1042/evidence.json
+```
+
+Runtime FastAPI deployments should use the Supabase transaction pooler through
+`DATABASE_URL`, with bounded SQLAlchemy pools and `pool_pre_ping`. Alembic uses
+`MIGRATION_DATABASE_URL` with a direct or session-mode connection because
+transaction pooling must not be assumed to preserve session state or named
+prepared statements. Use a least-privilege application database role, not a
+superuser or service role, for normal queries.
+
+Local development remains swappable by pointing the same variables at a normal
+local PostgreSQL instance. No business-logic branch may depend on whether the
+database host is local PostgreSQL or Supabase Postgres.
 
 For the event graph MVP, do **not** add Neo4j.
 Relational tables are enough.
@@ -1132,7 +1217,8 @@ Never log full sensitive raw payloads in normal logs.
 # 25. Security / Safety
 
 For Buildathon:
-- synthetic data only
+- seeded synthetic data remains the primary scored evaluation path
+- Razorpay ingestion is read-only
 - file size limits
 - MIME validation
 - sanitize filenames
@@ -1140,6 +1226,12 @@ For Buildathon:
 - contract extraction treats document text as untrusted input
 - structured AI outputs only
 - secrets via environment variables
+- Supabase service credentials, Groq keys, and Razorpay credentials are
+  backend-only and never serialized by an API
+
+The browser calls FastAPI only. It does not query finance tables or Storage with
+a privileged Supabase key. Supabase Auth, Realtime, and Edge Functions are not
+required for the MVP; Realtime is P2 run-progress polish only.
 
 ---
 
@@ -1148,15 +1240,23 @@ For Buildathon:
 Example:
 
 ```env
-DATABASE_URL=postgresql+psycopg://...
-LLM_PROVIDER=openai
-LLM_API_KEY=
-LLM_MODEL=
+DATABASE_URL=postgresql+psycopg://app_role:...@...pooler.supabase.com:6543/postgres
+MIGRATION_DATABASE_URL=postgresql+psycopg://migration_role:...@db....supabase.co:5432/postgres
+SUPABASE_URL=https://PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STORAGE_BUCKET=sl3dge-private
+LLM_PROVIDER=groq
+LLM_MODEL=openai/gpt-oss-120b
+GROQ_API_KEY=
 DEMO_SEED=20260825
 CORS_ORIGINS=http://localhost:3000
 ```
 
-Core deterministic pipeline must run even if no LLM key is present.
+`LLM_PROVIDER=groq` and `LLM_MODEL=openai/gpt-oss-120b` are the reproducible
+development/demo defaults. Provider-specific calls live behind the `LLMClient`
+abstraction, never in control or finance business logic. If the provider, model,
+or key is absent, the deterministic pipeline still works fully and AI-only
+actions return an explicit unavailable/degraded state.
 
 ---
 
@@ -1208,25 +1308,11 @@ backend/
 
 ---
 
-# 28. Definition of Done — Backend MVP
+# 28. Backend Completion Gate
 
-Backend is demo-ready when:
-
-- seeded 500-payment dataset can be generated
-- all sources can be ingested
-- event graph is created
-- at least 5 control types execute
-- expected-vs-actual endpoint works
-- hidden fee overcharge is detected even when settlement equals bank credit
-- verified leakage is calculated
-- duplicate refund deduction is detected
-- SLA violation is detected
-- similar violations cluster into a root cause
-- hypothesis can be generated and deterministically verified/rejected
-- 3 ambiguous cases remain unresolved
-- precision/recall are computed from hidden ground truth
-- core run works without an LLM
-- API tests pass
+Backend completion is defined only by the **Authoritative Differentiated
+Acceptance Test** below. This section intentionally contains no competing MVP
+checklist.
 
 ---
 
@@ -1235,7 +1321,7 @@ Backend is demo-ready when:
 Do not implement:
 - blockchain
 - wallets
-- production Razorpay APIs
+- Razorpay money-moving operations
 - accounting ERP integrations
 - generic chat
 - forecasting
@@ -1270,6 +1356,7 @@ SETTLEMENT_DELAY
 UNSUPPORTED_FEE
 FAILED_PAYMENT_SETTLED
 REFUND_EXCEEDS_PAYMENT
+DUPLICATE_CHARGEBACK_FEE
 PAYMENT_METHOD_RECLASSIFICATION
 ```
 
@@ -1487,56 +1574,76 @@ Response shape:
 
 ```json
 {
-  "actual": {"gross":"100000.00","mdr":"1750.00","gst":"315.00","refunds":"5000.00","net":"92935.00"},
-  "expected": {"gross":"100000.00","mdr":"1550.00","gst":"279.00","refunds":"5000.00","net":"93171.00"},
-  "difference":"236.00",
+  "actual": {"gross":"10000.00","mdr":"175.00","gst":"31.50","refunds":"0.00","net":"9793.50"},
+  "expected": {"gross":"10000.00","mdr":"155.00","gst":"27.90","refunds":"0.00","net":"9817.10"},
+  "difference":"23.60",
   "drivers":[
-    {"type":"EXCESS_MDR","amount":"200.00"},
-    {"type":"EXCESS_GST","amount":"36.00"}
+    {"type":"EXCESS_MDR","amount":"20.00"},
+    {"type":"EXCESS_GST","amount":"3.60"}
   ]
 }
 ```
 
-## Updated Backend Build Order
+## Authoritative Backend Build Order
 
 ```text
-1. Synthetic dataset + ground truth
-2. Domain models
-3. Ingestion / normalization
-4. Financial Event Graph
-5. Deterministic controls
-6. Expected-vs-Actual
-7. Batch metrics
-8. Financial Mutation Testing
-9. Mutation coverage + blind spots
-10. Exception APIs
-11. Violation Lineage
-12. Root-cause clustering
-13. Agreement → candidate controls
-14. Candidate-control backtest
-15. AI hypothesis generation
-16. Independent hypothesis verifier
-17. Control Coverage Graph
-18. Time-versioned controls
-19. Temporal replay
-20. Schema drift
+1. Exact seeded manifest + hidden ground truth
+2. Canonical domain models
+3. Source ingestion and normalization
+4. Deterministic/scored Financial Event Graph matching
+5. Approved, typed, Decimal control registry
+6. Deterministic control engine
+7. Expected-vs-Actual, batch metrics, and PAY_82HD9 acceptance slice
+8. Financial Mutation Testing on derived data
+9. Mutation coverage and control blind-spot detection
+10. Candidate-control proposal with agreement provenance
+11. Historical + mutation backtest and explicit approval gate
+12. Violation Lineage and counterfactual settlement
+13. Root-cause clustering
+14. Bounded AI hypothesis + independent deterministic verifier
+15. Agreement extraction and executable-control provenance UI/API
+16. Control Coverage, exception case workflow, and time-versioned controls
+17. Direct read-only Razorpay reconciliation ingestion into canonical events/edges
+18. Optional read-only Razorpay MCP evidence tools
+19. Supabase Postgres/Storage persistence, regression tests, and seeded E2E demo
+20. P2 only: temporal replay, schema drift, webhooks, and evidence export
 ```
 
 Mutation testing must be built before generalized agent features.
 
-## Additional Backend Definition of Done
+## Authoritative Differentiated Acceptance Test
 
-The differentiated MVP is not backend-complete until:
+This is the only backend acceptance test in this document. The differentiated
+MVP is not backend-complete until all items are proven by automated tests or
+seeded API evidence:
 
-- at least 8 deterministic mutation types work
-- Mutation Detection Rate is computed
-- at least one deliberate blind spot is demonstrable
-- candidate controls can be backtested before approval
-- canonical data is unchanged by mutation tests
-- violation lineage separates primary failures from downstream effects
-- control coverage identifies governed vs ungoverned edges
-- time-versioned controls select the correct rule at a date boundary
-- counterfactual settlement reconstruction works
+1. `data/demo/manifest.json` and generator output agree on every exact count and stable ID.
+2. The seeded run produces 500 payments, 1,179 events, 1,495 edges, and 2,018 evaluations.
+3. `PAY_82HD9` has the exact Decimal economics recorded in the manifest.
+4. Gateway net equals bank credit at `9793.50`, while the approved control yields a violation.
+5. Verified leakage for `PAY_82HD9` is exactly `23.60`.
+6. `REF_91` proves duplicate refund deduction and `SET_1042` proves the SLA control.
+7. The event graph shows the complete lifecycle without LLM-created edges.
+8. Counterfactual settlement reconstructs `9817.10` with `20.00` MDR and `3.60` GST drivers.
+9. Violation lineage identifies one primary MDR failure and three downstream effects.
+10. Similar MDR violations cluster under `RC_MDR_01`.
+11. A bounded AI hypothesis is generated and the deterministic verifier returns `REJECTED`.
+12. At least eight deterministic mutation types execute against a derived copy.
+13. The seeded mutation run reports 50 injected, 47 detected, 3 missed, 0 false positives, and `0.9400` MDR.
+14. Mutation testing proves the canonical dataset is unchanged.
+15. A missed unsupported-fee mutation exposes an agreement-linked blind spot.
+16. The draft candidate backtests from 47/50 to 49/50 with false-positive delta 0.
+17. The candidate remains inactive until a successful backtest and explicit approval.
+18. Control coverage reports 2,009 material edges, 2,000 governed, and 9 ungoverned before approval.
+19. The correct immutable MDR version is selected on both sides of the 1 September boundary.
+20. `UNR_003` and the other four ambiguous cases remain `UNRESOLVED` without forced matching.
+21. The evidence-backed case enforces `OPEN → VERIFIED → ESCALATED/RESOLVED` and retains its audit trail.
+22. Precision, recall, false-positive rate, verified leakage, unresolved count, processing time, mutation rate, coverage, and lineage counts come from backend calculations.
+23. Direct Razorpay sync is GET-only, maps into canonical events/edges, and exposes no credential.
+24. Optional Razorpay MCP output is non-authoritative evidence and still terminates in `PROVEN`, `REJECTED`, or `UNRESOLVED` after verification.
+25. FastAPI repositories work unchanged with local PostgreSQL or Supabase Postgres through connection configuration.
+26. Agreement/source/evidence objects use private Supabase Storage paths with metadata in Postgres.
+27. The full deterministic run and all acceptance arithmetic work when no LLM configuration is present.
 
 ---
 

@@ -9,9 +9,23 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sl3dge -d sl3dge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   backend:
     build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://sl3dge:sl3dge@postgres:5432/sl3dge
+      MIGRATION_DATABASE_URL: postgresql+psycopg://sl3dge:sl3dge@postgres:5432/sl3dge
+      DATABASE_DISABLE_PREPARED_STATEMENTS: "false"
+    command: >-
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8000:8000"
 

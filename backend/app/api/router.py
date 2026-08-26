@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import PurePath
+from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from app.ai.provider import build_ai_runtime
+from app.core.config import get_settings
 from app.domain.models import (
     Agreement,
+    AiCapability,
     CaseTransitionRequest,
     Control,
     ControlBacktest,
@@ -18,6 +23,7 @@ from app.domain.models import (
     ExpectedActualResponse,
     HypothesisResponse,
     HypothesisVerification,
+    InfrastructureCapability,
     McpEvidenceCapability,
     MutationTestSummary,
     PaymentGraph,
@@ -26,6 +32,7 @@ from app.domain.models import (
     RazorpaySyncSummary,
     RootCause,
     RunSummary,
+    SourceUploadResponse,
     UnresolvedMatch,
     Violation,
     ViolationLineageResponse,
@@ -33,9 +40,14 @@ from app.domain.models import (
 from app.integrations.razorpay.client import RazorpayNotConfiguredError
 from app.integrations.razorpay.mcp_evidence import capability as mcp_evidence_capability
 from app.integrations.razorpay.sync import connection_status, sync_razorpay
+from app.ingestion.csv import parse_source_csv
 from app.mutations.engine import MUTATION_TEST_ID, execute_mutation_test
+from app.persistence.database import session_scope
+from app.persistence.repository import RunRepository
 from app.services.demo import DEMO_RUN_ID, store
 from app.services.governance import AGREEMENT, CONTROLS, governance
+from app.storage.supabase import SupabaseStorage
+from app.storage.service import ArtifactService
 
 router = APIRouter(prefix="/api/v1")
 mutation_test: MutationTestSummary | None = None
@@ -44,6 +56,71 @@ mutation_test: MutationTestSummary | None = None
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "sl3dge-api"}
+
+
+@router.get("/capabilities/infrastructure", response_model=InfrastructureCapability)
+def infrastructure_capability() -> InfrastructureCapability:
+    settings = get_settings()
+    storage = SupabaseStorage(settings)
+    return InfrastructureCapability(
+        database_configured=bool(settings.database_url),
+        database_mode="POSTGRES" if settings.database_url else "IN_MEMORY",
+        storage_configured=storage.configured,
+        storage_bucket=settings.supabase_storage_bucket,
+        storage_policy=(
+            "Private bucket; privileged upload credentials remain backend-only and only "
+            "object paths are stored in PostgreSQL."
+        ),
+    )
+
+
+@router.get("/capabilities/ai", response_model=AiCapability)
+def ai_capability() -> AiCapability:
+    runtime = build_ai_runtime()
+    return AiCapability(
+        provider=runtime.provider,
+        model=runtime.model,
+        configured=runtime.configured,
+        fallback_policy=runtime.fallback_policy,
+    )
+
+
+@router.post("/sources/upload", response_model=SourceUploadResponse)
+async def upload_source(file: UploadFile = File(...)) -> SourceUploadResponse:
+    filename = PurePath(file.filename or "source.csv").name
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=422, detail="Only CSV source files are accepted")
+    content = await file.read(10 * 1024 * 1024 + 1)
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="CSV source file exceeds the 10 MB limit")
+    parsed = parse_source_csv(content)
+    upload_id = f"UPLOAD_{uuid4().hex[:12].upper()}"
+    object_path = f"runs/{DEMO_RUN_ID}/uploads/{upload_id}_{filename}"
+    settings = get_settings()
+    storage = SupabaseStorage(settings)
+    storage_status = "VALIDATED_ONLY"
+    persisted_path: str | None = None
+    if storage.configured and settings.database_url:
+        with session_scope() as session:
+            stored = await ArtifactService(storage, session).store(
+                artifact_id=upload_id,
+                kind="SOURCE_CSV",
+                object_path=object_path,
+                content=content,
+                content_type="text/csv",
+                run_id=DEMO_RUN_ID,
+            )
+        storage_status = "PRIVATE_STORAGE"
+        persisted_path = stored.object_path
+    return SourceUploadResponse(
+        upload_id=upload_id,
+        filename=filename,
+        row_count=parsed.row_count,
+        columns=parsed.columns,
+        decimal_values_checked=parsed.decimal_values_checked,
+        storage_status=storage_status,
+        object_path=persisted_path,
+    )
 
 
 @router.post("/demo/load", response_model=DemoLoadResponse)
@@ -289,6 +366,9 @@ def create_mutation_test(run_id: str) -> MutationTestSummary:
         store.dataset.payments,
         unsupported_fee_control=candidate.status == "APPROVED",
     )
+    if get_settings().database_url:
+        with session_scope() as session:
+            RunRepository(session).save_mutation_test(mutation_test)
     return mutation_test
 
 

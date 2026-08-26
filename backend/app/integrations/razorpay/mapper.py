@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from app.domain.models import CanonicalEventEdge, FinancialEvent
-from app.integrations.razorpay.schemas import ReconItem, SettlementItem
+from app.integrations.razorpay.schemas import PaymentItem, ReconItem, RefundItem, SettlementItem
 
 
 def _money_from_subunits(value: int) -> Decimal:
@@ -13,6 +13,63 @@ def _money_from_subunits(value: int) -> Decimal:
 
 def _event_id(kind: str, external_id: str) -> str:
     return f"rzp:{kind.lower()}:{external_id}"
+
+
+def map_payment(item: PaymentItem, *, run_id: str, sync_id: str) -> FinancialEvent:
+    raw = item.model_dump(mode="json")
+    return FinancialEvent(
+        id=_event_id("PAYMENT", item.id),
+        run_id=run_id,
+        source="RAZORPAY",
+        external_id=item.id,
+        event_type="PAYMENT",
+        amount=_money_from_subunits(item.amount),
+        currency=item.currency.upper(),
+        timestamp=datetime.fromtimestamp(item.created_at, timezone.utc),
+        status=item.status,
+        raw_payload=raw,
+        normalized_payload={
+            "sync_id": sync_id,
+            "order_id": item.order_id,
+            "method": item.method,
+            "captured": item.captured,
+            "international": item.international,
+            "amount_refunded": str(_money_from_subunits(item.amount_refunded)),
+            "fee": str(_money_from_subunits(item.fee or 0)),
+            "tax": str(_money_from_subunits(item.tax or 0)),
+        },
+    )
+
+
+def map_refund(
+    item: RefundItem, *, run_id: str, sync_id: str
+) -> tuple[FinancialEvent, CanonicalEventEdge]:
+    raw = item.model_dump(mode="json")
+    event = FinancialEvent(
+        id=_event_id("REFUND", item.id),
+        run_id=run_id,
+        source="RAZORPAY",
+        external_id=item.id,
+        event_type="REFUND",
+        amount=_money_from_subunits(item.amount),
+        currency=item.currency.upper(),
+        timestamp=datetime.fromtimestamp(item.created_at, timezone.utc),
+        status=item.status,
+        raw_payload=raw,
+        normalized_payload={
+            "sync_id": sync_id,
+            "payment_id": item.payment_id,
+            "receipt": item.receipt,
+        },
+    )
+    edge = _edge(
+        run_id,
+        _event_id("PAYMENT", item.payment_id),
+        event.id,
+        "REFUNDED_BY",
+        sync_id,
+    )
+    return event, edge
 
 
 def map_recon_item(

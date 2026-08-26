@@ -1,5 +1,18 @@
 # sl3dge — Tech Stack & Engineering Handoff for Codex
 
+## Specification Authority
+
+Authority order:
+
+1. `features.md` defines product scope and priority.
+2. `backend.md` defines backend behavior, API, and domain contracts.
+3. `frontend.md` defines UI behavior and the recorded demo flow.
+4. `techstack.md` defines engineering implementation choices.
+
+If two sections conflict, the later section explicitly marked **authoritative**
+wins. This document contains one authoritative engineering build order and one
+authoritative differentiated acceptance test.
+
 ## 0. Goal
 
 This document is the engineering contract for implementing **sl3dge**.
@@ -57,7 +70,9 @@ sl3dge/
 
 Do not over-engineer into microservices.
 
-One frontend + one backend + one Postgres instance is enough.
+One frontend + one backend + one PostgreSQL database is enough. Supabase hosts
+the deployed Postgres and private object storage; it does not add another
+application backend.
 
 ---
 
@@ -79,7 +94,8 @@ SQLAlchemy 2.x
 Alembic
 
 ## Database
-PostgreSQL 16+
+Supabase Postgres (PostgreSQL 16+) in deployed environments; local PostgreSQL is
+the swappable development fallback through `DATABASE_URL`.
 
 ## Batch data processing
 Polars
@@ -149,11 +165,15 @@ Playwright for one full demo-flow e2e test.
 
 # 4. AI Layer
 
-Use exactly one provider abstraction.
+Use exactly one provider abstraction. The reproducible development/demo default
+is Groq with `openai/gpt-oss-120b`, configured by environment rather than
+hardcoded in business logic:
 
-Possible providers:
-- OpenAI
-- Gemini
+```env
+LLM_PROVIDER=groq
+LLM_MODEL=openai/gpt-oss-120b
+GROQ_API_KEY=
+```
 
 Implementation should expose an internal interface such as:
 
@@ -170,6 +190,10 @@ class LLMClient(Protocol):
 ```
 
 Do not spread provider-specific calls through services.
+
+If provider, model, or key configuration is missing, AI-only actions return an
+explicit unavailable/degraded response. The full deterministic transaction,
+control, mutation, coverage, and case pipeline remains operational.
 
 ---
 
@@ -211,9 +235,32 @@ The project should not advertise "agentic" at the cost of maintainability.
 
 ---
 
-# 7. Database Decision
+# 7. Database and Storage Decision
 
-Use PostgreSQL.
+Use Supabase as infrastructure:
+
+```text
+Next.js → FastAPI → Supabase Postgres
+                    └─ private Supabase Storage
+```
+
+FastAPI remains the only application API and finance trust boundary. Continue
+using SQLAlchemy 2.x, Alembic, Pydantic, and repository/domain models through a
+standard PostgreSQL connection string. Do not use `supabase-js` for finance
+tables and do not let the browser query Postgres directly.
+
+Use private Supabase Storage buckets for merchant agreements, uploaded source
+files, and optional evidence artifacts. Store bucket/path/checksum/content-type/
+size/provenance metadata in Postgres; do not store large file bodies in rows.
+
+Runtime deployments use the transaction pooler with bounded SQLAlchemy pooling.
+Alembic uses a direct or session-mode migration URL. Avoid named prepared
+statement assumptions under transaction pooling. Normal queries use a
+least-privilege database role.
+
+Supabase Auth and Edge Functions are not required. Realtime is optional P2
+run-progress polish. Local PostgreSQL remains supported by swapping connection
+configuration only.
 
 Do not introduce:
 - Neo4j
@@ -253,6 +300,11 @@ receive decimal values as strings where precision matters.
 
 Use formatting helpers only for presentation.
 
+Control DSL and API JSON encode monetary amounts, rates, and monetary tolerances
+as decimal strings. Pydantic parses them into `Decimal` before execution. Raw
+JSON floating-point values are invalid for MDR/GST/fee rates, money, and
+currency tolerances.
+
 ---
 
 # 9. Time Handling
@@ -286,7 +338,19 @@ Examples:
     "card_scope": "domestic"
   },
   "parameters": {
-    "rate": "0.0155"
+    "rate": "0.0155",
+    "tolerance": "0.01"
+  }
+}
+```
+
+```json
+{
+  "type": "GST_ON_FEE",
+  "conditions": {},
+  "parameters": {
+    "rate": "0.18",
+    "tolerance": "0.01"
   }
 }
 ```
@@ -302,6 +366,10 @@ Examples:
 ```
 
 The backend owns all executable implementations.
+
+`tolerance` is a currency amount, not a rate. Settlement arithmetic and any
+other money comparison use the same decimal-string representation and
+`Decimal` parsing. Integer parameters such as `business_days` remain integers.
 
 This is safer and easier to test.
 
@@ -339,6 +407,13 @@ Each edge stores:
 - confidence
 - matching method
 - evidence
+
+`FUZZY` matching is deterministic/scored, never LLM-decided. Supported scoring
+features include normalized string similarity, Decimal amount equality or typed
+tolerance, timestamp proximity, and reference-token overlap. The matcher emits
+an explicit confidence score and feature evidence. A score below the configured
+deterministic threshold, or an ambiguous tie, returns `UNRESOLVED` and creates no
+edge. LLMs cannot create `EventEdge` records or force ambiguous matches.
 
 The graph is persisted in Postgres and rendered via React Flow.
 
@@ -409,7 +484,10 @@ During active development, frontend/backend may run directly on host while Postg
 
 ---
 
-# 14. Example docker-compose.yml Shape
+# 14. Local PostgreSQL Fallback — docker-compose Shape
+
+This Compose database is for offline/local development only. Deployed
+environments use Supabase Postgres through environment configuration.
 
 ```yaml
 services:
@@ -453,23 +531,32 @@ Exact production hardening is not required for the hackathon.
 Root `.env.example`:
 
 ```env
-POSTGRES_DB=sl3dge
-POSTGRES_USER=sl3dge
-POSTGRES_PASSWORD=sl3dge
+DATABASE_URL=postgresql+psycopg://app_role:...@...pooler.supabase.com:6543/postgres
+MIGRATION_DATABASE_URL=postgresql+psycopg://migration_role:...@db....supabase.co:5432/postgres
+SUPABASE_URL=https://PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STORAGE_BUCKET=sl3dge-private
 
-DATABASE_URL=postgresql+psycopg://sl3dge:sl3dge@localhost:5432/sl3dge
+# Local fallback example:
+# DATABASE_URL=postgresql+psycopg://sl3dge:sl3dge@localhost:5432/sl3dge
+# MIGRATION_DATABASE_URL=postgresql+psycopg://sl3dge:sl3dge@localhost:5432/sl3dge
 
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 
-LLM_PROVIDER=openai
-LLM_API_KEY=
-LLM_MODEL=
+LLM_PROVIDER=groq
+LLM_MODEL=openai/gpt-oss-120b
+GROQ_API_KEY=
 
 DEMO_SEED=20260825
 CORS_ORIGINS=http://localhost:3000
 ```
 
 No secrets committed.
+
+All Supabase privileged credentials, Groq keys, and Razorpay credentials are
+backend-only. Never put them in `NEXT_PUBLIC_*`. The browser calls FastAPI, and
+FastAPI accesses Postgres and Storage. Runtime SQLAlchemy uses a bounded pool
+with `pool_pre_ping`; Alembic uses the migration URL.
 
 ---
 
@@ -531,10 +618,11 @@ polars
 python-multipart
 httpx
 python-dateutil
+supabase  # backend-only Storage client; never used instead of SQLAlchemy for DB access
+groq      # selected demo provider behind LLMClient
 ```
 
-AI provider SDK:
-only the selected provider SDK.
+Keep provider and Storage SDKs behind internal adapters.
 
 Dev:
 
@@ -597,9 +685,7 @@ No need for a large document-processing stack.
 
 # 21. Data Fixtures
 
-Check demo fixture metadata into the repo if useful.
-
-Suggested:
+Check the authoritative demo fixture metadata into the repo:
 
 ```text
 data/demo/
@@ -614,12 +700,32 @@ data/demo/
   manifest.json
 ```
 
-`manifest.json`:
+`data/demo/manifest.json` is generated/verified against the synthetic generator.
+Its exact seeded counts are:
 
 ```json
 {
   "seed": 20260825,
-  "payment_count": 500,
+  "records": {
+    "orders": 500,
+    "payments": 500,
+    "settlements": 84,
+    "bank_entries": 84,
+    "refunds": 5,
+    "chargebacks": 6,
+    "financial_events": 1179,
+    "event_edges": 1495,
+    "control_evaluations": 2018
+  },
+  "ground_truth": {
+    "pass": 439,
+    "mdr_rate_deviation": 25,
+    "incorrect_gst": 8,
+    "duplicate_refund": 5,
+    "settlement_sla": 10,
+    "unsupported_fee": 8,
+    "unresolved": 5
+  },
   "known_demo_ids": {
     "mdr_violation": "PAY_82HD9",
     "duplicate_refund": "REF_91",
@@ -630,7 +736,11 @@ data/demo/
 }
 ```
 
-This makes the recorded demo reproducible.
+The full manifest also records 439 `PASS`, 56 `VIOLATION`, 0 `WARNING`, 5
+`UNRESOLVED`; mutation results 50/47/3 with 0 false positives; and pre-approval
+coverage of 2,009 material, 2,000 governed, and 9 ungoverned edges. Decimal
+metrics and all acceptance economics are strings. These are exact expectations,
+not approximate performance targets.
 
 ---
 
@@ -690,14 +800,20 @@ Do not spend hackathon time on complex deployment pipelines.
 
 If public deployment is needed:
 
-Frontend:
-- Vercel
+```text
+Vercel / Next.js
+        ↓
+FastAPI on Railway / Render / Fly.io / similar
+        ├── Groq · openai/gpt-oss-120b (optional AI actions)
+        ├── Razorpay direct APIs + optional read-only MCP
+        ↓
+Supabase
+        ├── PostgreSQL
+        └── private Storage
+```
 
-Backend:
-- Railway / Render / Fly.io / similar
-
-Database:
-- managed Postgres
+Supabase is infrastructure, not a replacement for FastAPI or the sl3dge domain
+architecture. The frontend continues to call FastAPI only.
 
 For the video, local Docker is acceptable if stable.
 
@@ -789,78 +905,32 @@ No need for elaborate release branches.
 
 ---
 
-# 29. Build Order
+# 29. Authoritative Engineering Build Order
 
-## Phase 1 — Deterministic Core
+This is the only build order in this document and matches `backend.md`:
 
-Backend:
-- schema
-- synthetic data
-- controls
-- event graph
-- run summary
-
-Frontend:
-- run screen
-- result screen
-- transaction inspector
-
-Goal:
-Demonstrate hidden overcharge with no AI.
-
----
-
-## Phase 2 — Visual Proof
-
-Backend:
-- transaction graph endpoint
-- evidence endpoint
-- root-cause clustering
-
-Frontend:
-- React Flow graph
-- root-cause screen
-- exception inbox
-
-Goal:
-Make the core moat visually obvious.
-
----
-
-## Phase 3 — AI Verification Loop
-
-Backend:
-- agreement extraction
-- hypothesis generation
-- hypothesis verification
-
-Frontend:
-- agreement side-by-side extraction
-- hypothesis card
-- verification result
-
-Goal:
-Demonstrate AI discovery + deterministic verification.
-
----
-
-## Phase 4 — Reliability
-
-- ground-truth metrics
-- seeded regression tests
-- demo IDs fixed
-- error states
-- Docker
-- e2e demo flow
-
----
-
-## Phase 5 — Optional Differentiators
-
-Only after core demo is stable:
-- schema drift
-- evidence pack export
-- natural-language query layer
+```text
+1. Exact seeded manifest + hidden ground truth
+2. Canonical domain models
+3. Source ingestion and normalization
+4. Deterministic/scored Financial Event Graph matching
+5. Approved, typed, Decimal control registry
+6. Deterministic control engine
+7. Expected-vs-Actual, batch metrics, and PAY_82HD9 acceptance slice
+8. Financial Mutation Testing on derived data
+9. Mutation coverage and control blind-spot detection
+10. Candidate-control proposal with agreement provenance
+11. Historical + mutation backtest and explicit approval gate
+12. Violation Lineage and counterfactual settlement
+13. Root-cause clustering
+14. Bounded AI hypothesis + independent deterministic verifier
+15. Agreement extraction and executable-control provenance UI/API
+16. Control Coverage, exception case workflow, and time-versioned controls
+17. Direct read-only Razorpay reconciliation ingestion into canonical events/edges
+18. Optional read-only Razorpay MCP evidence tools
+19. Supabase Postgres/Storage persistence, regression tests, and seeded E2E demo
+20. P2 only: temporal replay, schema drift, webhooks, and evidence export
+```
 
 ---
 
@@ -891,8 +961,9 @@ Core deterministic run:
 
 ```text
 500 payments
-1,200+ events
-1,000+ control evaluations
+1,179 financial events
+1,495 event edges
+2,018 control evaluations
 ```
 
 Target:
@@ -908,35 +979,6 @@ Prefer:
 AI actions may be asynchronous at request level, but do not make the user wait through unnecessary chains.
 
 For recorded demo reliability, allow cached AI results for the seeded demo if needed, but keep the deterministic verifier live.
-
----
-
-# 32. Core Product Acceptance Test
-
-The implementation is not done until this test passes:
-
-1. Load seeded NovaCart agreement.
-2. Extract/approve 1.55% domestic MDR control.
-3. Load seeded 500-payment dataset.
-4. Execute control run.
-5. Gateway net and bank credit for `PAY_82HD9` are equal.
-6. sl3dge still flags `PAY_82HD9`.
-7. Expected MDR = ₹155.
-8. Actual MDR = ₹175.
-9. Expected GST = ₹27.90.
-10. Actual GST = ₹31.50.
-11. Verified leakage = ₹23.60.
-12. Financial event graph shows full lifecycle.
-13. Root-cause cluster groups similar MDR violations.
-14. AI proposes policy-change hypothesis.
-15. Verifier checks approved agreement/amendments.
-16. Hypothesis is rejected.
-17. Duplicate refund control works.
-18. SLA control works.
-19. At least one ambiguous case remains unresolved.
-20. Evaluation reports precision and recall.
-
-If this works end-to-end, the project has a strong demo even without P2 features.
 
 ---
 
@@ -1096,42 +1138,34 @@ Frontend:
 - lineage renders
 - control version timeline renders
 
-## Updated Build Phases
+## Authoritative Differentiated Acceptance Test
 
-```text
-Phase 1 — Deterministic Core
-Phase 2 — Mutation Testing + Blind Spots
-Phase 3 — Visual Proof: Event Graph, Counterfactuals, Lineage
-Phase 4 — AI Verification Loop
-Phase 5 — Candidate-Control Backtesting + Coverage + Versioning
-Phase 6 — Reliability / Seeded E2E Demo
-Phase 7 — Optional Temporal Replay / Schema Drift / Evidence Export
-```
+This is the only acceptance test in this document. Engineering completion
+requires:
 
-## Updated Differentiated Acceptance Test
-
-The project is not done until:
-
-1. agreement produces approved MDR control
-2. 500-payment demo loads
-3. hidden overcharge is caught despite gateway-bank match
-4. correct counterfactual settlement is reconstructed
-5. event graph renders
-6. violation lineage identifies primary/downstream failures
-7. AI hypothesis is generated
-8. verifier rejects unsupported policy change
-9. at least 8 mutation types can be injected
-10. Mutation Detection Rate is calculated
-11. at least one deliberate blind spot is visible
-12. candidate control can be proposed for that blind spot
-13. candidate control is backtested
-14. detection coverage improves
-15. false-positive delta is shown
-16. control remains inactive until explicit approval
-17. control coverage identifies governed/ungoverned edges
-18. time-versioned control selection works at a boundary
-19. unresolved case stays unresolved
-20. precision/recall against hidden ground truth still work
+1. Generator output equals `data/demo/manifest.json`, including exact IDs and counts.
+2. The seeded run has 500 payments, 1,179 events, 1,495 edges, and 2,018 evaluations.
+3. `PAY_82HD9` passes gateway-bank matching but fails the 1.55% approved MDR control with `23.60` verified leakage.
+4. `REF_91`, `SET_1042`, `RC_MDR_01`, and `UNR_003` resolve to their documented proof cases.
+5. All financial JSON rates, amounts, and tolerances are decimal strings parsed to `Decimal`.
+6. FUZZY matching is deterministic/scored and sub-threshold or ambiguous matches remain `UNRESOLVED`.
+7. The lifecycle graph, exact counterfactual settlement, and primary/downstream lineage render from backend data.
+8. A bounded AI hypothesis is independently verified as `REJECTED` for the seeded MDR cluster.
+9. At least eight mutation types execute on derived data while canonical data remains unchanged.
+10. The seeded mutation result is 50 injected, 47 detected, 3 missed, and 0 false positives.
+11. The unsupported-fee blind spot yields a clause-linked `DRAFT` candidate.
+12. Backtesting improves detection to 49/50 with false-positive delta 0.
+13. Approval is impossible before a successful backtest and explicit user action.
+14. Pre-approval coverage is exactly 2,009 material, 2,000 governed, and 9 ungoverned edges.
+15. Time-versioned control selection changes from v1 to v2 at the 1 September boundary without rewriting completed runs.
+16. The exception case enforces `OPEN → VERIFIED → ESCALATED/RESOLVED` with an audit trail.
+17. Five ambiguous cases remain unresolved and no AI creates a financial edge or verdict.
+18. Direct Razorpay ingestion is GET-only and maps into the canonical event graph.
+19. Optional Razorpay MCP data is supplementary evidence, never financial truth.
+20. FastAPI/SQLAlchemy repositories run against local PostgreSQL or Supabase Postgres by configuration alone.
+21. Agreements/uploads/evidence use private Supabase Storage objects with Postgres metadata.
+22. The browser receives no Supabase privileged credential, Groq key, or Razorpay secret.
+23. The deterministic acceptance path works fully with no LLM configuration.
 
 ---
 
@@ -1184,4 +1218,3 @@ RAZORPAY_API_BASE_URL=https://api.razorpay.com/v1
 
 Do not expose these through `NEXT_PUBLIC_*` variables. Webhooks are P2, and n8n
 is out of scope without a concrete implementation blocker.
-```

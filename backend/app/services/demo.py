@@ -6,6 +6,7 @@ from decimal import Decimal
 from time import perf_counter
 
 from app.controls.engine import evaluate_payment
+from app.core.config import get_settings
 from app.core.money import money
 from app.domain.models import (
     CaseAuditEntry,
@@ -36,8 +37,19 @@ from app.domain.models import (
     ViolationLineageNode,
     ViolationLineageResponse,
 )
-from app.services.governance import governance
-from app.synthetic.generator import DEMO_SEED, KNOWN_PAYMENT_ID, SyntheticDataset, generate_dataset
+from app.persistence.database import session_scope
+from app.persistence.repository import RunRepository
+from app.services.governance import CONTROLS, governance
+from app.synthetic.generator import (
+    DEMO_SEED,
+    KNOWN_PAYMENT_ID,
+    KNOWN_REFUND_ID,
+    KNOWN_ROOT_CAUSE_ID,
+    KNOWN_SETTLEMENT_ID,
+    KNOWN_UNRESOLVED_ID,
+    SyntheticDataset,
+    generate_dataset,
+)
 
 DEMO_RUN_ID = "RUN_NOVACART_AUG_2026"
 
@@ -49,6 +61,7 @@ class DemoStore:
         self.violations: list[Violation] = []
         self.root_causes: list[RootCause] = []
         self.cases: list[ExceptionCase] = []
+        self.persistence_status = "IN_MEMORY"
 
     def load(self) -> DemoLoadResponse:
         started = perf_counter()
@@ -58,17 +71,37 @@ class DemoStore:
         self.root_causes = self._build_root_causes(self.violations)
         self.cases = self._build_cases()
         self.summary = self._build_summary(self.dataset, started)
+        settings = get_settings()
+        if settings.database_url:
+            with session_scope() as session:
+                persisted_events, persisted_edges = RunRepository(session).replace_demo_run(
+                    run_id=DEMO_RUN_ID,
+                    dataset=self.dataset,
+                    summary=self.summary,
+                    violations=self.violations,
+                    root_causes=self.root_causes,
+                    controls=CONTROLS,
+                )
+            if (
+                persisted_events != self.summary.event_count
+                or persisted_edges != self.summary.relationship_count
+            ):
+                raise RuntimeError("Persisted canonical graph does not match the seeded manifest")
+            self.persistence_status = "POSTGRES"
+        else:
+            self.persistence_status = "IN_MEMORY"
         return DemoLoadResponse(
             run_id=DEMO_RUN_ID,
             name="NovaCart · August 2026",
             counts=self.dataset.counts,
             known_demo_ids={
                 "mdr_violation": KNOWN_PAYMENT_ID,
-                "duplicate_refund": "PAY_0033",
-                "sla_violation": "PAY_0038",
-                "root_cause": "RC_MDR_01",
-                "unresolved": "PAY_0056",
+                "duplicate_refund": KNOWN_REFUND_ID,
+                "sla_violation": KNOWN_SETTLEMENT_ID,
+                "root_cause": KNOWN_ROOT_CAUSE_ID,
+                "unresolved": KNOWN_UNRESOLVED_ID,
             },
+            persistence_status=self.persistence_status,
         )
 
     def ensure_loaded(self) -> None:
@@ -726,6 +759,7 @@ class DemoStore:
                 continue
             unresolved.append(
                 UnresolvedMatch(
+                    id=payment.unresolved_case_id or f"UNR_{payment.payment_id}",
                     payment_id=payment.payment_id,
                     amount=payment.actual_net,
                     settlement_id=payment.settlement_id,

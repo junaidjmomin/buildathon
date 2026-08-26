@@ -32,6 +32,8 @@ export default function PaymentPage() {
   if (payment.isPending) return <AppShell><div className="grid min-h-[calc(100vh-64px)] place-items-center"><LoaderCircle className="animate-spin text-[#1e6b51]" /></div></AppShell>;
   if (!payment.data || payment.isError) return <AppShell><main className="p-8">Payment evidence could not be loaded.</main></AppShell>;
   const data = payment.data;
+  const isUnresolved = data.status === "UNRESOLVED";
+  const traditionalMatch = data.bank_credit !== null && data.gateway_net === data.bank_credit;
 
   return (
     <AppShell>
@@ -39,7 +41,7 @@ export default function PaymentPage() {
         <Link href="/" className="mb-6 inline-flex items-center gap-2 text-xs font-medium text-[#5e6a64] hover:text-[#1e6b51]"><ArrowLeft size={14} /> Back to control run</Link>
         <section className="mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>
-            <div className="mb-2 flex items-center gap-2"><span className="rounded-md bg-[#ffe5d8] px-2 py-1 text-[10px] font-bold tracking-[0.1em] text-[#c65024]">CONTROL VIOLATION</span><span className="text-xs text-[#6f7a74]">100% evidence confidence</span></div>
+            <div className="mb-2 flex items-center gap-2"><span className={`rounded-md px-2 py-1 text-[10px] font-bold tracking-[0.1em] ${isUnresolved ? "bg-[#eceeed] text-[#5d6862]" : "bg-[#ffe5d8] text-[#c65024]"}`}>{data.status === "VIOLATION" ? "CONTROL VIOLATION" : data.status}</span><span className="text-xs text-[#6f7a74]">{isUnresolved ? "Evidence boundary preserved" : "100% evidence confidence"}</span></div>
             <h1 className="font-mono text-3xl font-semibold tracking-[-0.04em]">{data.payment_id}</h1>
             <p className="mt-2 text-sm text-[#66716b]">{data.descriptor} · {formatMoney(data.amount)}</p>
           </div>
@@ -47,12 +49,12 @@ export default function PaymentPage() {
         </section>
 
         <section className="mb-6 grid gap-4 md:grid-cols-2">
-          <Comparison label="Traditional reconciliation" icon={Banknote} rows={[["Gateway net", formatMoney(data.gateway_net)], ["Bank credit", formatMoney(data.bank_credit)]]} result="MATCH" pass />
-          <Comparison label="sl3dge control verification" icon={Scale} rows={[["Expected net", formatMoney(data.expected_net)], ["Actual net", formatMoney(data.gateway_net)]]} result="VIOLATION" />
+          <Comparison label="Traditional reconciliation" icon={Banknote} rows={[["Gateway net", formatMoney(data.gateway_net)], ["Bank credit", formatMoney(data.bank_credit)]]} result={traditionalMatch ? "MATCH" : "UNRESOLVED"} pass={traditionalMatch} />
+          <Comparison label="sl3dge control verification" icon={Scale} rows={[["Expected net", formatMoney(data.expected_net)], ["Actual net", formatMoney(data.gateway_net)]]} result={data.status} pass={data.status === "PASS"} />
         </section>
 
         <section className="panel mb-6 overflow-hidden rounded-2xl">
-          <div className="flex items-center justify-between border-b border-[#e2e5df] px-5 py-4"><div><h2 className="text-sm font-semibold">Expected vs actual</h2><p className="mt-1 text-xs text-[#78827d]">Expected state is calculated independently from the settlement record.</p></div><span className="rounded-full bg-[#dff2e8] px-2.5 py-1 text-[10px] font-semibold text-[#1e6b51]">DECIMAL VERIFIED</span></div>
+          <div className="flex flex-col justify-between gap-3 border-b border-[#e2e5df] px-5 py-4 sm:flex-row sm:items-center"><div><h2 className="text-sm font-semibold">Expected vs actual</h2><p className="mt-1 text-xs text-[#78827d]">Expected state is calculated independently from the settlement record.</p></div><div className="text-left sm:text-right"><span className="rounded-full bg-[#dff2e8] px-2.5 py-1 text-[10px] font-semibold text-[#1e6b51]">DECIMAL VERIFIED</span><p className="mt-2 font-mono text-[9px] text-[#68736d]">{data.applied_control_id} · v{data.applied_control_version} · {data.applied_control_effective_period}</p></div></div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left">
               <thead className="bg-[#f8f9f6] text-[10px] uppercase tracking-[0.12em] text-[#78827d]"><tr><th className="px-5 py-3">Cash component</th><th className="px-4 py-3 text-right">Expected</th><th className="px-4 py-3 text-right">Actual</th><th className="px-5 py-3 text-right">Status</th></tr></thead>
@@ -121,7 +123,8 @@ export default function PaymentPage() {
 }
 
 function Comparison({ label, icon: Icon, rows, result, pass = false }: { label: string; icon: typeof Banknote; rows: [string, string][]; result: string; pass?: boolean }) {
-  return <div className={`rounded-2xl border p-5 ${pass ? "border-[#cce2d5] bg-[#f5fbf7]" : "border-[#efc6b3] bg-[#fff7f2]"}`}><div className="mb-5 flex items-center justify-between"><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.09em]"><Icon size={15} /> {label}</div><span className={`flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold ${pass ? "bg-[#dff2e8] text-[#1e6b51]" : "bg-[#ffe2d2] text-[#b54822]"}`}>{pass ? <Check size={10} /> : <X size={10} />}{result}</span></div><div className="space-y-2">{rows.map(([name, value]) => <div key={name} className="flex justify-between text-sm"><span className="text-[#66716b]">{name}</span><strong className="number-tabular">{value}</strong></div>)}</div></div>;
+  const unresolved = result === "UNRESOLVED";
+  return <div className={`rounded-2xl border p-5 ${pass ? "border-[#cce2d5] bg-[#f5fbf7]" : unresolved ? "border-[#d9ded9] bg-[#f7f8f5]" : "border-[#efc6b3] bg-[#fff7f2]"}`}><div className="mb-5 flex items-center justify-between"><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.09em]"><Icon size={15} /> {label}</div><span className={`flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold ${pass ? "bg-[#dff2e8] text-[#1e6b51]" : unresolved ? "bg-[#e5e8e5] text-[#5f6a64]" : "bg-[#ffe2d2] text-[#b54822]"}`}>{pass ? <Check size={10} /> : unresolved ? <CircleAlert size={10} /> : <X size={10} />}{result}</span></div><div className="space-y-2">{rows.map(([name, value]) => <div key={name} className="flex justify-between text-sm"><span className="text-[#66716b]">{name}</span><strong className="number-tabular">{value}</strong></div>)}</div></div>;
 }
 
 function StatusBadge({ status }: { status: EvaluationStatus }) {

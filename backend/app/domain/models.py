@@ -158,6 +158,7 @@ class CaseTransitionRequest(ApiModel):
 
 
 class UnresolvedMatch(ApiModel):
+    id: str
     payment_id: str
     status: EvaluationStatus = EvaluationStatus.UNRESOLVED
     amount: Decimal
@@ -188,12 +189,14 @@ class PaymentLifecycle(ApiModel):
     captured_at: datetime
     actual_fee: Decimal
     actual_tax: Decimal
+    refund_id: str | None = None
     refund_amount: Decimal = Decimal("0")
     refund_deduction: Decimal = Decimal("0")
     unsupported_fee: Decimal = Decimal("0")
     settled_at: datetime
     actual_net: Decimal
     bank_credit: Decimal | None
+    unresolved_case_id: str | None = None
     status: str = "captured"
     chargeback_fee: Decimal = Decimal("0")
     chargeback_fee_deductions: int = 0
@@ -330,6 +333,33 @@ class DemoLoadResponse(ApiModel):
     name: str
     counts: dict[str, int]
     known_demo_ids: dict[str, str]
+    persistence_status: str = "IN_MEMORY"
+
+
+class InfrastructureCapability(ApiModel):
+    database_configured: bool
+    database_mode: str
+    storage_configured: bool
+    storage_bucket: str
+    storage_policy: str
+
+
+class SourceUploadResponse(ApiModel):
+    upload_id: str
+    filename: str
+    row_count: int
+    columns: list[str]
+    decimal_values_checked: int
+    storage_status: str
+    object_path: str | None = None
+
+
+class AiCapability(ApiModel):
+    provider: str
+    model: str
+    configured: bool
+    deterministic_pipeline_available: bool = True
+    fallback_policy: str
 
 
 class HypothesisResponse(ApiModel):
@@ -515,3 +545,4 @@ class RazorpaySyncSummary(ApiModel):
     events_created: int
     edges_created: int
     synced_at: datetime
+    persistence_status: str = "IN_MEMORY"

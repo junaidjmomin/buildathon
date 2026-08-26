@@ -3,14 +3,28 @@ from __future__ import annotations
 import os
 from calendar import monthrange
 from datetime import datetime, timezone
+from decimal import Decimal
 
-from app.domain.models import RazorpayConnectionStatus, RazorpaySyncRequest, RazorpaySyncSummary
+from app.core.config import get_settings
+from app.domain.models import (
+    FinancialEvent,
+    RazorpayConnectionStatus,
+    RazorpaySyncRequest,
+    RazorpaySyncSummary,
+)
 from app.integrations.razorpay.client import RazorpayClient
-from app.integrations.razorpay.mapper import map_recon_item, map_settlement
+from app.integrations.razorpay.mapper import (
+    map_payment,
+    map_recon_item,
+    map_refund,
+    map_settlement,
+)
 from app.integrations.razorpay.payments import fetch_payments
 from app.integrations.razorpay.recon import fetch_reconciliation
 from app.integrations.razorpay.refunds import fetch_refunds
 from app.integrations.razorpay.settlements import fetch_settlements
+from app.persistence.database import session_scope
+from app.persistence.repository import RunRepository
 
 last_sync: RazorpaySyncSummary | None = None
 
@@ -50,13 +64,58 @@ async def sync_razorpay(
         active, from_timestamp=int(start.timestamp()), to_timestamp=int(end.timestamp())
     )
 
-    events = []
-    edges = []
+    event_index = {
+        event.id: event
+        for event in (
+            map_payment(item, run_id=run_id, sync_id=sync_id) for item in payments
+        )
+    }
+    edge_index = {}
+    for item in refunds:
+        event, edge = map_refund(item, run_id=run_id, sync_id=sync_id)
+        event_index[event.id] = event
+        edge_index[edge.id] = edge
     for item in recon:
         mapped_events, mapped_edges = map_recon_item(item, run_id=run_id, sync_id=sync_id)
-        events.extend(mapped_events)
-        edges.extend(mapped_edges)
-    events.extend(map_settlement(item, run_id=run_id, sync_id=sync_id) for item in settlements)
+        event_index.update((event.id, event) for event in mapped_events)
+        edge_index.update((edge.id, edge) for edge in mapped_edges)
+    for item in settlements:
+        event = map_settlement(item, run_id=run_id, sync_id=sync_id)
+        event_index[event.id] = event
+    synced_at = datetime.now(timezone.utc)
+    referenced_ids = {
+        endpoint
+        for edge in edge_index.values()
+        for endpoint in (edge.from_event_id, edge.to_event_id)
+    }
+    for missing_id in referenced_ids - event_index.keys():
+        event_index[missing_id] = FinancialEvent(
+            id=missing_id,
+            run_id=run_id,
+            source="RAZORPAY",
+            external_id=missing_id.rsplit(":", 1)[-1],
+            event_type="UNRESOLVED_REFERENCE",
+            amount=Decimal("0.00"),
+            currency="INR",
+            timestamp=synced_at,
+            status="unresolved",
+            raw_payload={},
+            normalized_payload={
+                "sync_id": sync_id,
+                "reason": "Referenced entity was outside the requested sync window.",
+            },
+        )
+    persistence_status = "IN_MEMORY"
+    if get_settings().database_url:
+        with session_scope() as session:
+            RunRepository(session).save_canonical_sync(
+                run_id=run_id,
+                sync_id=sync_id,
+                synced_at=synced_at,
+                events=list(event_index.values()),
+                edges=list(edge_index.values()),
+            )
+        persistence_status = "POSTGRES"
     last_sync = RazorpaySyncSummary(
         sync_id=sync_id,
         status="COMPLETE",
@@ -64,8 +123,9 @@ async def sync_razorpay(
         refunds_imported=len(refunds),
         settlements_imported=len(settlements),
         reconciliation_records_imported=len(recon),
-        events_created=len(events),
-        edges_created=len(edges),
-        synced_at=datetime.now(timezone.utc),
+        events_created=len(event_index),
+        edges_created=len(edge_index),
+        synced_at=synced_at,
+        persistence_status=persistence_status,
     )
     return last_sync

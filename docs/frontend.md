@@ -1,5 +1,17 @@
 # sl3dge — Frontend Handoff for Codex
 
+## Specification Authority
+
+Authority order:
+
+1. `features.md` defines product scope and priority.
+2. `backend.md` defines backend behavior, API, and domain contracts.
+3. `frontend.md` defines UI behavior and the recorded demo flow.
+4. `techstack.md` defines engineering implementation choices.
+
+If two sections conflict, the later section explicitly marked **authoritative**
+wins. This document contains one authoritative 22-step recorded demo flow.
+
 ## 0. Mission
 
 Build a frontend that makes sl3dge's core distinction visually obvious:
@@ -172,13 +184,13 @@ Latest Run
 500 transactions
 
 Controls Evaluated
-1,215
+2,018
 
 Verified Leakage
-₹12,638.40
+₹13,280.24
 
 Unresolved
-3
+5
 ```
 
 Below:
@@ -356,14 +368,14 @@ Then show:
 500 Orders
 84 Settlements
 84 Bank Credits
-47 Refunds
+5 Refunds
 6 Chargebacks
 ```
 
 CTA:
 
 ```text
-Run 1,215 Controls
+Run 2,018 Controls
 ```
 
 ## Manual path
@@ -388,9 +400,9 @@ Use real stage updates:
 
 ```text
 ✓ Sources normalized
-✓ 1,221 events created
-✓ 1,170 relationships linked
-✓ 1,215 controls evaluated
+✓ 1,179 events created
+✓ 1,495 relationships linked
+✓ 2,018 controls evaluated
 ✓ Root causes generated
 ```
 
@@ -410,32 +422,33 @@ Hero metrics:
 500
 Transactions
 
-1,215
+2,018
 Controls Evaluated
 
-98.9%
+100.0%
 Precision
 
-96.7%
+100.0%
 Violation Recall
 
-₹12,638.40
+₹13,280.24
 Verified Leakage
 
-3
+5
 Unresolved
 ```
 
 Secondary:
 
 ```text
-PASS          1,173
-VIOLATION        31
-WARNING           8
-UNRESOLVED        3
+PASS             439
+VIOLATION         56
+WARNING            0
+UNRESOLVED          5
 ```
 
-Show throughput:
+Show measured throughput. The following values are illustrative runtime output,
+not seeded manifest counts:
 
 ```text
 4.8 sec
@@ -450,10 +463,11 @@ Table:
 
 ```text
 Root Cause                    Affected   Impact
-Domestic Visa MDR deviation       23     ₹8,421.70
-Duplicate refund deductions        2     ₹2,000.00
-Unsupported fees                   4     ₹1,748.00
-Incorrect GST                      2       ₹468.70
+Duplicate refund deductions        5    ₹10,729.80
+Domestic card MDR deviation       25     ₹2,042.82
+Unsupported fees                   8       ₹392.00
+Incorrect GST                      8       ₹115.62
+Settlement SLA                    10         ₹0.00
 ```
 
 Click opens root cause detail.
@@ -632,9 +646,9 @@ Requirements:
 Need a second demo graph for duplicate refund:
 
 ```text
-REFUND_91
-   ├──► SET_51 deduction ₹1,000
-   └──► SET_59 deduction ₹1,000  VIOLATION
+REF_91
+   ├──► SET_005 deduction ₹729.80
+   └──► SET_005 deduction ₹729.80  VIOLATION
 ```
 
 ---
@@ -685,10 +699,10 @@ Critical demo screen.
 Header:
 
 ```text
-Domestic Visa MDR Deviation
+Domestic Card MDR Deviation
 
-23 affected transactions
-₹8,421.70 verified impact
+25 affected transactions
+₹2,042.82 verified impact
 ```
 
 Show:
@@ -1091,78 +1105,28 @@ UNR_003      ambiguous unresolved case
 
 Coordinate exact IDs with backend.
 
----
+The NovaCart UI must display the exact `data/demo/manifest.json` values:
 
-# 37. Demo Recording Flow
+```text
+500 payments · 500 orders · 84 settlements · 84 bank entries
+5 refunds · 6 chargebacks · 1,179 events · 1,495 edges
+2,018 control evaluations
+439 PASS · 56 VIOLATION · 0 WARNING · 5 UNRESOLVED
+₹13,280.24 verified leakage
+```
 
-The UI must support this exact sequence with minimal clicking.
-
-## 1. Agreement
-Load synthetic merchant agreement.
-
-## 2. Extract controls
-Show 1.55% MDR + clause provenance.
-
-## 3. Load demo data
-Show 500 payments / 1,200+ events.
-
-## 4. Run controls
-Show real execution.
-
-## 5. Results
-Show precision, recall, leakage, unresolved.
-
-## 6. Open hidden overcharge
-Show bank and gateway matching but sl3dge failing it.
-
-## 7. Expected vs actual
-Show ₹23.60 leakage.
-
-## 8. Trace money
-Show graph.
-
-## 9. Root cause
-Show 23 similar violations.
-
-## 10. Generate hypothesis
-Show AI proposes rate change.
-
-## 11. Verify hypothesis
-Show contract rejects policy-change hypothesis.
-
-## 12. Duplicate refund or SLA
-Show a second control category.
-
-## 13. Unresolved
-Show safe refusal.
-
-## 14. Return to scorecard
-Finish with metrics.
+Mutation and coverage screens use the same manifest: 50 mutations, 47 detected,
+3 missed, 0 false positives; 2,009 material edges, 2,000 governed, and 9
+ungoverned before candidate approval.
 
 ---
 
-# 38. Definition of Done — Frontend MVP
+# 37. Frontend Completion Gate
 
-Frontend is demo-ready when:
-
-- agreement import/extraction screen works
-- clause provenance is visible
-- control library works
-- demo dataset can be loaded
-- run execution can be triggered
-- run summary renders real backend metrics
-- violation table works
-- hidden MDR overcharge inspector works
-- traditional match vs sl3dge violation comparison is visible
-- expected-vs-actual table is clear
-- transaction event graph renders
-- root-cause page renders
-- hypothesis can be generated
-- verification result can be shown
-- second violation type can be inspected
-- unresolved case is visible
-- no core demo feature depends on placeholder data
-- no core flow requires a generic chat interface
+Frontend completion is defined only by the **Authoritative Frontend Acceptance
+Checklist** below. The sole recorded sequence is the **Authoritative 22-Step
+Recorded Demo Flow**; this section intentionally contains no shorter competing
+flow.
 
 ---
 
@@ -1210,7 +1174,7 @@ Results must visibly show:
 47 detected
 3 missed
 Mutation Detection Rate: 94%
-False Positives: 1
+False Positives: 0
 ```
 
 Coverage table example:
@@ -1257,17 +1221,17 @@ Show before/after quality, not AI prose.
 ```text
 BEFORE
 47 / 50 mutations detected
-1 false positive
+0 false positives
 
 AFTER CANDIDATE CONTROL
-50 / 50 mutations detected
-1 false positive
+49 / 50 mutations detected
+0 false positives
 ```
 
 Show deltas:
 
 ```text
-Detection Coverage +6%
+Detection Coverage +4%
 False Positives No change
 ```
 
@@ -1311,10 +1275,10 @@ SETTLEMENT
 Metrics:
 
 ```text
-1,248 monetary relationships
-1,181 governed
-67 ungoverned
-Coverage 94.6%
+2,009 material relationships
+2,000 governed
+9 ungoverned
+Coverage 99.55%
 ```
 
 Ungoverned edges are clickable.
@@ -1341,9 +1305,9 @@ Expected bank-credit difference
 Summary:
 
 ```text
-92 control failures
-23 primary violations
-69 downstream effects
+131 lineage nodes
+56 primary violations
+75 downstream effects
 ```
 
 ## Counterfactual Settlement — P1
@@ -1352,26 +1316,26 @@ Add a `Counterfactual` tab to Transaction Inspector.
 
 ```text
                     Actual        Correct
-Gross               ₹100,000      ₹100,000
-MDR                 -₹1,750       -₹1,550
-GST                   -₹315         -₹279
-Refund              -₹5,000       -₹5,000
+Gross                ₹10,000       ₹10,000
+MDR                    -₹175         -₹155
+GST                  -₹31.50       -₹27.90
+Refund                 ₹0.00          ₹0.00
 ──────────────────────────────────────────
-Settlement           ₹92,935       ₹93,171
+Settlement          ₹9,793.50     ₹9,817.10
 ```
 
 Hero callout:
 
 ```text
-Correct settlement should have been ₹93,171
-Difference ₹236
+Correct settlement should have been ₹9,817.10
+Difference ₹23.60
 ```
 
 Drivers:
 
 ```text
-₹200 excess MDR
-₹36 excess GST
+₹20.00 excess MDR
+₹3.60 excess GST
 ```
 
 ## Time-Versioned Controls — P1
@@ -1402,7 +1366,7 @@ Replay August using:
 [Custom control set]
 ```
 
-Results:
+Illustrative P2 replay output (not seeded manifest values):
 
 ```text
 Old expected fees ₹7,75,000
@@ -1410,30 +1374,30 @@ New expected fees ₹8,25,000
 Difference ₹50,000
 ```
 
-## Updated Recorded Demo Flow
+## Authoritative 22-Step Recorded Demo Flow
 
 ```text
 1. Load NovaCart agreement
 2. Show clause → approved MDR control
-3. Load 500-payment dataset
-4. Run controls
+3. Load exact manifest: 500 payments / 1,179 events / 1,495 edges
+4. Run 2,018 deterministic control evaluations
 5. Show gateway-bank match that still fails sl3dge
-6. Expected vs Actual
-7. Counterfactual Settlement
-8. Trace Money
-9. Violation Lineage
-10. Systemic root cause
-11. AI hypothesis
-12. Independent verification rejects unsupported policy change
-13. Test My Controls
-14. Run 50 mutations
-15. Show 47 detected / 3 missed
-16. Open blind spot
-17. AI proposes candidate control from agreement
-18. Backtest candidate control
-19. Show coverage improves without extra false positives
-20. Explicitly approve candidate control
-21. Show unresolved case
+6. Show Expected vs Actual and ₹23.60 verified leakage
+7. Reconstruct the ₹9,817.10 counterfactual settlement
+8. Trace the complete Financial Event Graph
+9. Show one PRIMARY MDR violation and three DOWNSTREAM effects
+10. Open systemic root cause RC_MDR_01
+11. Generate a bounded AI policy-change hypothesis
+12. Deterministic verifier returns REJECTED
+13. Run 50 isolated financial mutations
+14. Show 47 detected / 3 missed / 0 false positives
+15. Open the unsupported-fee blind spot
+16. Show the clause-linked candidate remains DRAFT
+17. Backtest 47/50 → 49/50 with false-positive delta 0
+18. Explicitly approve the candidate control
+19. Show control coverage updating from the measured baseline
+20. Verify and ESCALATE or RESOLVE the evidence-backed case
+21. Open UNR_003 and show deterministic refusal to guess
 22. Finish on measurable scorecard
 ```
 
@@ -1451,17 +1415,27 @@ ControlVersionTimeline
 TemporalReplayComparison
 ```
 
-## Additional Frontend Definition of Done
+## Authoritative Frontend Acceptance Checklist
 
-- mutation testing is a real backend-driven screen
-- missed mutations can be inspected
-- blind spots are visible
-- candidate-control backtest shows before/after metrics
-- candidate activation requires explicit approval
-- violation lineage renders primary vs downstream effects
-- counterfactual settlement renders actual vs correct cash flows
-- control coverage can expose an ungoverned edge
-- time-versioned controls are visible
+This is the only frontend acceptance checklist in this document:
+
+- agreement extraction and exact clause provenance render from the backend
+- immutable control versions and effective periods are visible
+- the exact seeded manifest counts and stable IDs render without placeholders
+- the run summary renders real precision, recall, leakage, unresolved, timing,
+  mutation, coverage, and lineage metrics
+- `PAY_82HD9` visibly passes traditional gateway-bank matching and fails sl3dge
+- Expected-vs-Actual, counterfactual settlement, and event lifecycle render
+- root-cause hypothesis generation and independent `REJECTED` verification render
+- mutation testing, missed mutations, and blind spots are backend-driven
+- candidate backtest shows 47/50 → 49/50 and false-positive delta 0
+- candidate activation requires a completed backtest and explicit approval
+- control coverage exposes governed and ungoverned edges
+- exception UI enforces `OPEN → VERIFIED → ESCALATED/RESOLVED`
+- `UNR_003` visibly remains unresolved instead of being guessed
+- Razorpay sync shows imported counts/status without exposing credentials
+- Supabase, Groq, and Razorpay privileged credentials never enter browser code
+- no core demo feature requires an LLM or generic chat interface
 
 ---
 
@@ -1479,7 +1453,8 @@ Upload Files
 The Razorpay path uses a backend-owned connection. The frontend must never ask
 for, store or display the API secret.
 
-Required states:
+Required states. The numeric block below is an **illustrative live/test-account
+sync response**, not the seeded NovaCart manifest:
 
 ```text
 [Connect Razorpay]

@@ -11,6 +11,10 @@ from app.domain.models import PaymentLifecycle
 
 DEMO_SEED = 20260825
 KNOWN_PAYMENT_ID = "PAY_82HD9"
+KNOWN_REFUND_ID = "REF_91"
+KNOWN_SETTLEMENT_ID = "SET_1042"
+KNOWN_ROOT_CAUSE_ID = "RC_MDR_01"
+KNOWN_UNRESOLVED_ID = "UNR_003"
 
 
 @dataclass(frozen=True)
@@ -53,10 +57,16 @@ def generate_dataset(seed: int = DEMO_SEED, payment_count: int = 500) -> Synthet
         contracted_tax = expected_gst(contracted_fee)
         actual_fee = contracted_fee
         actual_tax = contracted_tax
+        refund_id: str | None = None
         refund_amount = Decimal("0")
         refund_deduction = Decimal("0")
         unsupported_fee = Decimal("0")
         settled_at = add_business_days(captured_at, 2)
+        settlement_group = index // 6
+        settlement_id = (
+            KNOWN_SETTLEMENT_ID if settlement_group == 6 else f"SET_{settlement_group:03d}"
+        )
+        unresolved_case_id: str | None = None
 
         if scenario == "MDR_RATE_DEVIATION":
             actual_fee = expected_fee(amount, Decimal("0.0175"))
@@ -66,18 +76,22 @@ def generate_dataset(seed: int = DEMO_SEED, payment_count: int = 500) -> Synthet
         elif scenario == "DUPLICATE_REFUND":
             refund_amount = money(min(amount / Decimal("5"), Decimal("2500")))
             refund_deduction = money(refund_amount * 2)
+            refund_id = KNOWN_REFUND_ID if index == 33 else f"REF_{index + 58}"
         elif scenario == "SETTLEMENT_SLA":
             settled_at = add_business_days(captured_at, 5)
         elif scenario == "UNSUPPORTED_FEE":
             unsupported_fee = Decimal("49.00")
+
+        if scenario == "UNRESOLVED":
+            unresolved_case_id = KNOWN_UNRESOLVED_ID if index == 56 else f"UNR_{index - 53:03d}"
 
         actual_net = money(amount - actual_fee - actual_tax - refund_deduction - unsupported_fee)
         bank_credit = None if scenario == "UNRESOLVED" else actual_net
         payment = PaymentLifecycle(
             payment_id=payment_id,
             order_id=f"ORD_{index:04d}",
-            settlement_id=f"SET_{index // 6:03d}",
-            bank_txn_id=None if bank_credit is None else f"BANK_{index // 6:03d}",
+            settlement_id=settlement_id,
+            bank_txn_id=None if bank_credit is None else f"BANK_{settlement_group:03d}",
             amount=amount,
             payment_method="card",
             card_network="Visa" if index % 3 else "Mastercard",
@@ -85,12 +99,14 @@ def generate_dataset(seed: int = DEMO_SEED, payment_count: int = 500) -> Synthet
             captured_at=captured_at,
             actual_fee=actual_fee,
             actual_tax=actual_tax,
+            refund_id=refund_id,
             refund_amount=refund_amount,
             refund_deduction=refund_deduction,
             unsupported_fee=unsupported_fee,
             settled_at=settled_at,
             actual_net=actual_net,
             bank_credit=bank_credit,
+            unresolved_case_id=unresolved_case_id,
         )
         payments.append(payment)
         ground_truth[payment_id] = scenario

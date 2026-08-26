@@ -1,5 +1,18 @@
 # sl3dge — Product Features & Novelty Handoff
 
+## Specification Authority
+
+Authority order:
+
+1. `features.md` defines product scope and priority.
+2. `backend.md` defines backend behavior, API, and domain contracts.
+3. `frontend.md` defines UI behavior and the recorded demo flow.
+4. `techstack.md` defines engineering implementation choices.
+
+If two sections conflict, the later section explicitly marked **authoritative**
+wins. This document contains one product-priority definition; the other handoff
+documents must implement it without introducing competing scope.
+
 ## 0. Why This Document Exists
 
 This document separates:
@@ -233,7 +246,7 @@ Missed                       3
 
 Mutation Detection Rate     94%
 
-False Positives               1
+False Positives               0
 ```
 
 Coverage by control:
@@ -349,7 +362,7 @@ Before
 
 After candidate control
 
-50 / 50 mutations detected
+49 / 50 mutations detected
 
 New false positives:
 0
@@ -456,13 +469,13 @@ Then compute:
 ```text
 CONTROL COVERAGE
 
-1,248 monetary relationships
+2,009 material relationships
 
-1,181 governed
-67 ungoverned
+2,000 governed
+9 ungoverned
 
 Coverage
-94.6%
+99.55%
 ```
 
 The system should highlight ungoverned lifecycle edges.
@@ -505,6 +518,8 @@ Example:
 WHAT-IF REPLAY
 
 500 August transactions
+
+Illustrative P2 replay output, not seeded manifest values:
 
 Old contract expected fees
 ₹7,75,000
@@ -551,13 +566,13 @@ sl3dge should identify the upstream primary violation.
 Example:
 
 ```text
-92 CONTROL FAILURES
+131 LINEAGE NODES
 
 collapsed into
 
 1 SYSTEMIC ROOT CAUSE
-23 primary violations
-69 downstream effects
+56 primary violations
+75 downstream effects
 ```
 
 This feature should be called:
@@ -581,12 +596,12 @@ Example:
 ```text
 ACTUAL
 
-Gross                   ₹100,000
-MDR                      -₹1,750
-GST                        -₹315
-Refund                   -₹5,000
+Gross                    ₹10,000
+MDR                        -₹175
+GST                      -₹31.50
+Refund                     ₹0.00
 ────────────────────────────────
-Settlement               ₹92,935
+Settlement              ₹9,793.50
 ```
 
 vs:
@@ -594,25 +609,25 @@ vs:
 ```text
 EXPECTED
 
-Gross                   ₹100,000
-MDR                      -₹1,550
-GST                        -₹279
-Refund                   -₹5,000
+Gross                    ₹10,000
+MDR                        -₹155
+GST                      -₹27.90
+Refund                     ₹0.00
 ────────────────────────────────
-Settlement               ₹93,171
+Settlement              ₹9,817.10
 ```
 
 Difference:
 
 ```text
-₹236
+₹23.60
 ```
 
 Breakdown:
 
 ```text
-₹200 excess MDR
-₹36 excess GST
+₹20.00 excess MDR
+₹3.60 excess GST
 ```
 
 This makes control violations operationally understandable.
