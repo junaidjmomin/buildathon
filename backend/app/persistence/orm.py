@@ -218,6 +218,12 @@ class ControlProposalRecord(Base):
             "status",
             "created_at",
         ),
+        Index(
+            "ix_control_proposals_tenant_agreement_clause",
+            "tenant_id",
+            "agreement_id",
+            "clause_id",
+        ),
     )
 
     tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
@@ -363,6 +369,12 @@ class ExceptionCaseRecord(Base):
             "ix_exception_cases_tenant_root",
             "tenant_id",
             "root_cause_id",
+        ),
+        Index(
+            "ix_exception_cases_tenant_run_violation",
+            "tenant_id",
+            "run_id",
+            "primary_violation_id",
         ),
     )
 

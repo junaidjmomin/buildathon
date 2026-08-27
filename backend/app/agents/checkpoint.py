@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -11,6 +12,15 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.core.config import Settings, get_settings
+
+
+def _configure_windows_event_loop() -> None:
+    """Use the psycopg-compatible event loop for the Windows CLI entry point."""
+    if sys.platform != "win32":
+        return
+    policy_factory = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if policy_factory is not None:
+        asyncio.set_event_loop_policy(policy_factory())
 
 
 def _checkpoint_dsn(settings: Settings) -> str:
@@ -50,6 +60,7 @@ def main() -> None:
     parser.add_argument("command", choices=["setup"])
     args = parser.parse_args()
     if args.command == "setup":
+        _configure_windows_event_loop()
         asyncio.run(setup_checkpoint_schema())
 
 

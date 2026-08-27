@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
+from threading import RLock
 from time import perf_counter
 
 from app.controls.engine import evaluate_payment
@@ -56,6 +57,7 @@ DEMO_RUN_ID = "RUN_NOVACART_AUG_2026"
 
 class DemoStore:
     def __init__(self) -> None:
+        self._load_lock = RLock()
         self.dataset: SyntheticDataset | None = None
         self.summary: RunSummary | None = None
         self.violations: list[Violation] = []
@@ -64,6 +66,10 @@ class DemoStore:
         self.persistence_status = "IN_MEMORY"
 
     def load(self) -> DemoLoadResponse:
+        with self._load_lock:
+            return self._load_unlocked()
+
+    def _load_unlocked(self) -> DemoLoadResponse:
         started = perf_counter()
         governance.reset()
         self.dataset = generate_dataset(DEMO_SEED)
@@ -107,7 +113,9 @@ class DemoStore:
 
     def ensure_loaded(self) -> None:
         if self.dataset is None:
-            self.load()
+            with self._load_lock:
+                if self.dataset is None:
+                    self._load_unlocked()
 
     def _payment(self, payment_id: str) -> PaymentLifecycle:
         self.ensure_loaded()

@@ -81,12 +81,13 @@ FastAPI -> SQLAlchemy repository -> PostgreSQL
 
 The database implementation is in [backend/app/persistence/database.py](backend/app/persistence/database.py). `DATABASE_URL` selects PostgreSQL; when it is absent, development/demo services can use in-memory state. Alembic manages schema changes.
 
-Current implementation status: PostgreSQL is used for selected writes, including
-some demo loading, audit records, artifact metadata, and Razorpay sync data. Most
-API reads for the seeded demo, including summaries, violations, root causes,
-payment views, and cases, still come from the process-global `DemoStore` rather
-than repository-backed queries. The database diagram therefore describes the
-target durable architecture, not a complete database-backed read path.
+Current implementation status: production run, summary, violation, root-cause,
+case, agreement/control-governance, sync-job, audit, and artifact paths are
+repository-backed. The seeded NovaCart experience intentionally keeps a
+process-local `DemoStore` read model for repeatable interactive presentation and
+persists its canonical events, edges, controls, outcomes, violations, and root
+causes when PostgreSQL is configured. Production route guards prevent live
+merchant routes from falling back to seeded or process-local state.
 
 Supabase Storage is separate from Postgres:
 
@@ -141,28 +142,36 @@ The deterministic control and verification layers remain authoritative even when
 
 | Area | Current behavior | Boundary or limitation |
 | --- | --- | --- |
-| Frontend to backend | Typed Next.js client calls FastAPI `/api/v1` routes | API reads are primarily demo-store backed |
-| Database | SQLAlchemy and Alembic support PostgreSQL/Supabase | Selected writes are persisted; most demo reads remain in memory |
-| Razorpay | GET-only, paginated, bounded ingestion through durable idempotent jobs and worker leases | Requires backend credentials and deployment-time worker configuration |
-| Supabase Storage | Backend-only adapter can upload source artifacts | Requires configuration; bucket privacy and policies are external deployment responsibilities |
+| Frontend to backend | Typed Next.js client calls FastAPI `/api/v1` routes with OIDC access tokens | Seeded demo reads use the dedicated deterministic demo read model |
+| Database | SQLAlchemy/Alembic repositories support local PostgreSQL and Supabase; production routes fail closed without it | Runtime identity, backups, quotas, and monitoring are deployment responsibilities |
+| Controls | All five authoritative live controls run deterministically from approved, effective control versions | Merchant-specific approved controls must exist before a live run |
+| Razorpay | GET-only, paginated, bounded ingestion through durable idempotent jobs and worker leases | Sandbox/live certification awaits Razorpay credentials |
+| Supabase Storage | Backend-only private-object adapter stores bytes; PostgreSQL stores metadata and provenance | Bucket privacy, retention, and policies are deployment responsibilities |
 | MCP | Capability metadata endpoint | No remote MCP invocation or evidence retrieval is implemented |
-| AI | Groq structured-output adapter with deterministic fallback | Model output is advisory and cannot establish financial truth |
+| AI | Groq structured-output adapter has been exercised with the configured demo model and has deterministic fallback | Model output is advisory and cannot establish financial truth |
 | LangGraph | Three explicit graphs with checkpoints, bounded retries, deterministic verification, traces, and human gates | Production requires the checkpoint Postgres DSN |
+| Identity/tenancy | Auth0 OIDC login, namespaced tenant/role claims, transaction tenant context, and forced RLS are implemented | Production tenant/role assignment remains an operator responsibility |
 
-## Detailed Sweep Notes
+## Verification and Remaining Launch Gates
 
-These are important follow-up risks before describing the system as production-ready:
+The configured development services have been exercised with the current code:
 
-- Tenant isolation needs a full review. OIDC principals exist, but many demo endpoints read global `DemoStore` state without filtering by `principal.tenant_id`.
-- Tenant RLS covers the current tenant-owned persistence tables; it still needs a
-  deployment test against the actual least-privilege Supabase runtime role.
-- Razorpay synchronization currently persists the live MDR control slice. The
-  remaining financial controls must be connected before calling the entire live
-  control suite complete.
-- Supabase Storage is accessed with backend credentials, but bucket privacy and storage policies are deployment configuration rather than enforced by the application migrations.
-- The backend test suite covers seeded behavior, adapters, job idempotency, and
-  agent guardrails, but still needs real-Supabase RLS and live-sandbox contract
-  tests before launch.
+- Alembic reached revision `0009_foreign_key_support_indexes` on Supabase.
+- A temporary least-privilege runtime role proved cross-tenant read/update/insert
+  isolation on every tenant-owned table, then was removed.
+- Private Supabase Storage upload and exact-path compensation delete passed.
+- Groq `openai/gpt-oss-120b` returned schema-valid structured output; removing
+  its key leaves deterministic routes functional.
+- Auth0 authorization-code/PKCE login and namespaced tenant/role claims reached
+  the application successfully.
+- The complete seeded load persisted its canonical graph and reproduced the
+  exact manifest counts and stable IDs.
+
+Remaining gates are external or environment-specific: Razorpay sandbox/live
+contract tests need credentials; the deployment owner must configure Storage
+policies, backups/PITR, quotas, alerts, DNS/TLS, rate limiting, retention, and
+security/privacy approval. Docker images are built in CI, but this Windows host
+does not have Docker for an additional local container smoke test.
 
 ## Is LangGraph Used?
 
@@ -190,7 +199,7 @@ Frontend
 ```
 
 The central rule is: AI and MCP can add context, but only deterministic sl3dge
-verification can establish financial truth. The seeded demo path is the most
-complete; repository-backed live read models, full live-control coverage, real
-MCP evidence retrieval, and deployment-environment verification remain launch
-gates.
+verification can establish financial truth. Repository-backed live read models
+and the five-control suite are implemented. Razorpay credentialed contract
+testing, optional real MCP evidence retrieval, and production account-level
+operations remain launch gates.

@@ -32,6 +32,17 @@ export default function AgreementsPage() {
     mutationFn: () => api.extractAgreementControls(agreement!.id),
     onSuccess: (data) => queryClient.setQueryData(["agreement-proposals", agreement?.id], data),
   });
+  const refreshProposals = () =>
+    queryClient.invalidateQueries({ queryKey: ["agreement-proposals", agreement?.id] });
+  const verify = useMutation({
+    mutationFn: (proposalId: string) => api.verifyControlProposal(proposalId),
+    onSuccess: refreshProposals,
+  });
+  const approve = useMutation({
+    mutationFn: ({ proposalId, expectedVersion }: { proposalId: string; expectedVersion: number }) =>
+      api.approveControlProposal(proposalId, expectedVersion),
+    onSuccess: refreshProposals,
+  });
   const upload = useMutation({
     mutationFn: api.uploadAgreement,
     onSuccess: (created) => {
@@ -111,6 +122,7 @@ export default function AgreementsPage() {
         </section>
 
         {extract.isError ? <p role="alert" className="mb-5 rounded-xl border border-[#efc6b3] bg-[#fff7f2] px-4 py-3 text-xs text-[#a9431f]">{extract.error.message}</p> : null}
+        {verify.isError || approve.isError ? <p role="alert" className="mb-5 rounded-xl border border-[#efc6b3] bg-[#fff7f2] px-4 py-3 text-xs text-[#a9431f]">{(verify.error ?? approve.error)?.message}</p> : null}
 
         <section className="panel mb-6 rounded-2xl p-5">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
@@ -128,13 +140,25 @@ export default function AgreementsPage() {
 
           <div className="space-y-3">
             <div className="flex items-end justify-between"><div><h2 className="text-sm font-semibold">Structured control proposals</h2><p className="mt-1 text-xs text-[#78827d]">Every parameter points back to a clause</p></div><span className="text-[10px] font-semibold text-[#1e6b51]">{proposals.data.length} extracted</span></div>
+            {DEMO_MODE ? <p className="rounded-xl border border-[#dce4dd] bg-[#f6f8f5] px-4 py-3 text-[11px] leading-5 text-[#66716b]">Verification and maker-checker approval are enabled for durable production proposals. Seeded demo controls remain read-only.</p> : null}
             {proposals.data.map((proposal) => {
               const control = proposal.proposed_control;
               const clause = clauses.get(proposal.clause_id);
+              const isVerifying = verify.isPending && verify.variables === proposal.id;
+              const isApproving = approve.isPending && approve.variables?.proposalId === proposal.id;
+              const reviewable = proposal.status === "DRAFT" || proposal.status === "REVIEW_REQUIRED";
+              const verificationPassed = proposal.verification_status === "PASSED";
               return <div key={proposal.id} className={`rounded-xl border p-4 ${proposal.status === "DRAFT" ? "border-[#efc6b3] bg-[#fff8f4]" : "border-[#dbe3dc] bg-white"}`}>
                 <div className="flex items-start justify-between gap-4"><div><p className="text-[9px] font-bold uppercase tracking-[0.13em] text-[#68746d]">{control.logical_control_key} · v{control.version}</p><h3 className="mt-1 text-sm font-semibold">{control.name}</h3><p className="mt-1 text-xs text-[#66716b]">{control.expected} · {control.scope}</p></div><span className={`rounded-full px-2 py-1 text-[9px] font-bold ${proposal.status === "APPROVED" ? "bg-[#dff2e8] text-[#1e6b51]" : "bg-[#ffe5d8] text-[#bd4e24]"}`}>{proposal.status}</span></div>
                 <div className="mt-3 grid gap-3 rounded-lg bg-[#f5f7f3] p-3 text-[10px] sm:grid-cols-2"><div><span className="text-[#7a847e]">Parameters</span><p className="mt-1 font-mono font-semibold">{JSON.stringify(control.parameters)}</p></div><div><span className="text-[#7a847e]">Applicability</span><p className="mt-1 font-mono font-semibold">{control.conditions.join(" · ")}</p></div></div>
                 <div className="mt-3 flex items-center gap-2 text-[10px] text-[#65716b]"><span className="font-semibold text-[#1e6b51]">Clause {clause?.reference}</span><ArrowRight size={11} /><span>{control.id}</span><span className="ml-auto">{formatPercent(proposal.confidence, 0)} extraction confidence</span></div>
+                <div className="mt-3 border-t border-[#e1e6e0] pt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px]"><span className="font-semibold">Deterministic verification: <span className={verificationPassed ? "text-[#1e6b51]" : proposal.verification_status === "FAILED" ? "text-[#b34a25]" : "text-[#77817b]"}>{proposal.verification_status}</span></span><span className="font-mono text-[#7a847e]">review v{proposal.version}</span></div>
+                  {proposal.verification_result ? <div className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-[10px] text-[#65716b]"><p>{proposal.verification_result.checks.filter((check) => check.status === "PASSED").length}/{proposal.verification_result.checks.length} checks passed · {proposal.verification_result.detected_mutation_count}/{proposal.verification_result.mutation_probe_count} mutations detected</p><p className="mt-1 truncate font-mono text-[9px] text-[#849089]">{proposal.verification_result.input_fingerprint}</p></div> : null}
+                  {!DEMO_MODE && reviewable ? <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => verify.mutate(proposal.id)} disabled={verify.isPending || approve.isPending} className="flex items-center gap-1.5 rounded-lg border border-[#b8c9bc] bg-white px-3 py-2 text-[10px] font-semibold text-[#1e6b51] disabled:opacity-50">{isVerifying ? <LoaderCircle size={12} className="animate-spin" /> : <ShieldCheck size={12} />} Verify deterministically</button><button type="button" onClick={() => approve.mutate({ proposalId: proposal.id, expectedVersion: proposal.version })} disabled={!verificationPassed || verify.isPending || approve.isPending} className="flex items-center gap-1.5 rounded-lg bg-[#112a2b] px-3 py-2 text-[10px] font-semibold text-white disabled:opacity-40">{isApproving ? <LoaderCircle size={12} className="animate-spin" /> : <Check size={12} />} Approve control</button></div> : null}
+                  {!DEMO_MODE && verificationPassed && reviewable ? <p className="mt-2 text-[9px] leading-4 text-[#7a847e]">Maker-checker rule: approval must be completed by a different signed-in reviewer.</p> : null}
+                  {proposal.status === "APPROVED" ? <p className="mt-2 text-[9px] text-[#1e6b51]">Approved by {proposal.approved_by ?? "authorized reviewer"} with immutable source provenance.</p> : null}
+                </div>
               </div>;
             })}
           </div>

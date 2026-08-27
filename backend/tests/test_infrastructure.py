@@ -5,16 +5,20 @@ import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from threading import Barrier
+from time import perf_counter, sleep
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session
 
+from app.agents import checkpoint
 from app.ai.provider import build_ai_runtime
 from app.core.config import Settings, get_settings
 from app.domain.models import (
@@ -31,6 +35,8 @@ from app.persistence.orm import (
     AgentExecutionRecord,
     ArtifactRecord,
     Base,
+    EventEdgeRecord,
+    EventRecord,
     RootCauseRecord,
     RunRecord,
     SourceSnapshotRecord,
@@ -42,13 +48,34 @@ from app.persistence.repository import (
     CaseRepository,
     JobRepository,
     LeaseOwnershipError,
+    RunRepository,
     SourceSnapshotRepository,
     canonical_records,
 )
+from app.services.demo import DemoStore
 from app.services.governance import CONTROLS
 from app.storage.service import ArtifactService
 from app.storage.supabase import StorageNotConfiguredError, SupabaseStorage
 from app.synthetic.generator import generate_dataset
+
+
+def test_checkpoint_cli_selects_psycopg_compatible_windows_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configured_policy = object()
+    selected: list[object] = []
+    monkeypatch.setattr(checkpoint.sys, "platform", "win32")
+    monkeypatch.setattr(
+        checkpoint.asyncio,
+        "WindowsSelectorEventLoopPolicy",
+        lambda: configured_policy,
+        raising=False,
+    )
+    monkeypatch.setattr(checkpoint.asyncio, "set_event_loop_policy", selected.append)
+
+    checkpoint._configure_windows_event_loop()
+
+    assert selected == [configured_policy]
 
 
 def test_canonical_seeded_graph_matches_manifest() -> None:
@@ -57,6 +84,59 @@ def test_canonical_seeded_graph_matches_manifest() -> None:
     assert len(edges) == 1495
     assert all(isinstance(event.amount, Decimal) for event in events)
     assert all(isinstance(edge.confidence, Decimal) for edge in edges)
+
+
+def test_demo_run_parent_is_flushed_before_foreign_key_children() -> None:
+    engine = create_engine("sqlite://")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record) -> None:  # type: ignore[no-untyped-def]
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    dataset = generate_dataset()
+    store = DemoStore()
+    summary = store._build_summary(dataset, perf_counter())
+
+    with Session(engine) as session:
+        event_count, edge_count = RunRepository(session).replace_demo_run(
+            run_id="RUN_NOVACART_AUG_2026",
+            dataset=dataset,
+            summary=summary,
+            violations=[],
+            root_causes=[],
+            controls=[],
+        )
+        session.flush()
+
+        assert session.scalar(select(func.count()).select_from(RunRecord)) == 1
+        assert session.scalar(select(func.count()).select_from(EventRecord)) == event_count
+        assert session.scalar(select(func.count()).select_from(EventEdgeRecord)) == edge_count
+
+
+def test_concurrent_first_demo_reads_initialize_the_seed_only_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = DemoStore()
+    gate = Barrier(8)
+    load_calls: list[int] = []
+
+    def fake_load_unlocked() -> None:
+        load_calls.append(1)
+        sleep(0.05)
+        store.dataset = generate_dataset()
+
+    def ensure_loaded(_: int) -> None:
+        gate.wait()
+        store.ensure_loaded()
+
+    monkeypatch.setattr(store, "_load_unlocked", fake_load_unlocked)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(ensure_loaded, range(8)))
+
+    assert len(load_calls) == 1
 
 
 def test_settlement_and_bank_events_store_batch_aggregates() -> None:

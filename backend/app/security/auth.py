@@ -78,7 +78,7 @@ def authenticate(
     subject = str(claims.get("sub", "")).strip()
     if (
         not re.fullmatch(r"[A-Za-z0-9._:-]{1,120}", tenant_id)
-        or not re.fullmatch(r"[A-Za-z0-9._:@+-]{1,160}", subject)
+        or not re.fullmatch(r"[A-Za-z0-9._:@+|-]{1,160}", subject)
         or not roles
         or len(roles) > 32
     ):

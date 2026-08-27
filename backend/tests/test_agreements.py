@@ -16,7 +16,7 @@ from app.ingestion.pdf import AgreementPdfError, extract_agreement_pages
 from app.main import app
 from app.persistence.database import get_engine, get_session_factory
 from app.persistence.orm import ArtifactRecord, Base
-from app.persistence.repository import AgreementRepository
+from app.persistence.repository import AgreementRepository, ProposalConcurrencyError
 from app.storage.supabase import StoredObject
 
 api_router = import_module("app.api.router")
@@ -119,6 +119,7 @@ def test_agreement_and_draft_proposals_are_durable_and_tenant_scoped() -> None:
         clause_id="CLAUSE_LIVE_1",
         logical_control_key="DOMESTIC_CARD_MDR",
         parameters={"rate": "0.0155", "tolerance": "0.01"},
+        conditions=["payment.method == 'card'"],
     )
     proposal = ControlProposal(
         id="PROP_LIVE_1",
@@ -174,6 +175,56 @@ def test_agreement_and_draft_proposals_are_durable_and_tenant_scoped() -> None:
         assert loaded.content_hash == "a" * 64
         assert proposals == [proposal]
         assert repository.list(tenant_id="merchant_b") == []
+
+        with pytest.raises(ValueError, match="verification must pass"):
+            repository.approve_proposal(
+                tenant_id="merchant_a",
+                proposal_id=proposal.id,
+                expected_version=1,
+                actor_id="checker-a",
+            )
+
+        verification = repository.verify_proposal(
+            tenant_id="merchant_a",
+            proposal_id=proposal.id,
+            actor_id="analyst-a",
+        )
+        assert verification.status == "PASSED"
+        assert verification.version == 2
+        assert verification.detected_mutation_count == verification.mutation_probe_count
+        assert any(check["name"] == "agreement_clause_provenance" for check in verification.checks)
+
+        with pytest.raises(ProposalConcurrencyError, match="refresh before retrying"):
+            repository.approve_proposal(
+                tenant_id="merchant_a",
+                proposal_id=proposal.id,
+                expected_version=1,
+                actor_id="checker-a",
+            )
+        with pytest.raises(ValueError, match="different verifier and approver"):
+            repository.approve_proposal(
+                tenant_id="merchant_a",
+                proposal_id=proposal.id,
+                expected_version=2,
+                actor_id="analyst-a",
+            )
+
+        approved = repository.approve_proposal(
+            tenant_id="merchant_a",
+            proposal_id=proposal.id,
+            expected_version=2,
+            actor_id="checker-a",
+        )
+        reviewed = repository.get_proposal(
+            tenant_id="merchant_a",
+            proposal_id=proposal.id,
+        )
+        assert approved.status == "APPROVED"
+        assert reviewed is not None
+        assert reviewed.status == "APPROVED"
+        assert reviewed.version == 3
+        assert reviewed.verified_by == "analyst-a"
+        assert reviewed.approved_by == "checker-a"
 
 
 def test_agreement_upload_is_content_addressed_and_idempotent(

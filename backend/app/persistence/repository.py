@@ -304,6 +304,9 @@ class RunRepository:
                 created_at=datetime.now(timezone.utc),
             )
         )
+        # Persist the composite parent key before bulk event inserts. SQLAlchemy's
+        # insert-many path does not infer object-level ordering without relationships.
+        self.session.flush()
         self.session.add_all(events)
         self.session.flush()
         self.session.add_all(edges)

@@ -291,6 +291,33 @@ export interface ControlProposal {
   source_excerpt: string;
   extraction_method: string;
   proposed_control: Control;
+  version: number;
+  verification_status: "NOT_RUN" | "PASSED" | "FAILED";
+  verification_result: ControlProposalVerificationResult | null;
+  verified_by: string | null;
+  verified_at: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+}
+
+export interface ControlProposalVerificationResult {
+  status: "PASSED" | "FAILED";
+  checks: Array<{
+    name: string;
+    status: "PASSED" | "FAILED";
+    detail: string;
+  }>;
+  mutation_probe_count: number;
+  detected_mutation_count: number;
+  input_fingerprint: string;
+}
+
+export interface ControlProposalVerification extends ControlProposalVerificationResult {
+  proposal_id: string;
+  control_id: string;
+  version: number;
+  verified_by: string;
+  verified_at: string;
 }
 
 export interface ControlCoverageSummary {

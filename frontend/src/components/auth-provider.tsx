@@ -82,6 +82,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (stored?.expired) await manager.removeUser();
       } catch {
         if (active) {
+          if (windowPathIsCallback()) {
+            window.history.replaceState({}, "", "/");
+          }
           setError("Sign-in could not be completed. Retry through organization SSO.");
         }
       } finally {
@@ -110,11 +113,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [enabled, signIn, signOut, user],
   );
 
-  if (enabled && (loading || windowPathIsCallback())) {
-    return <AuthGate mode="loading" />;
-  }
   if (enabled && error) {
     return <AuthGate mode="error" message={error} onSignIn={signIn} />;
+  }
+  if (enabled && (loading || windowPathIsCallback())) {
+    return <AuthGate mode="loading" />;
   }
   if (enabled && !user) {
     return <AuthGate mode="sign-in" onSignIn={signIn} />;

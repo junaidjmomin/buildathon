@@ -1,9 +1,11 @@
 import type {
   Agreement,
   BackgroundJob,
+  Control,
   ControlBacktest,
   ControlCoverageSummary,
   ControlProposal,
+  ControlProposalVerification,
   CounterfactualSettlement,
   DemoLoadResponse,
   ExceptionCase,
@@ -91,7 +93,7 @@ async function request<T>(
 }
 
 export const api = {
-  loadDemo: () => request<DemoLoadResponse>("/demo/load", { method: "POST" }),
+  loadDemo: () => request<DemoLoadResponse>("/demo/load", { method: "POST" }, 60_000),
   runs: () => request<RunListItem[]>("/runs"),
   summary: (runId: string) => request<RunSummary>(`/runs/${segment(runId)}/summary`),
   violations: (runId: string) => request<Violation[]>(`/runs/${segment(runId)}/violations`),
@@ -125,6 +127,17 @@ export const api = {
       { method: "POST" },
       60_000,
     ),
+  verifyControlProposal: (proposalId: string) =>
+    request<ControlProposalVerification>(
+      `/control-proposals/${segment(proposalId)}/verify`,
+      { method: "POST" },
+      60_000,
+    ),
+  approveControlProposal: (proposalId: string, expectedVersion: number) =>
+    request<Control>(`/control-proposals/${segment(proposalId)}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ expected_version: expectedVersion }),
+    }),
   controlCoverage: (runId: string) =>
     request<ControlCoverageSummary>(`/runs/${segment(runId)}/control-coverage`),
   exceptionCases: (runId: string) =>

@@ -18,7 +18,7 @@ from app.persistence.database import get_engine
 settings = get_settings()
 settings.validate_runtime()
 logging.basicConfig(level=logging.INFO, format="%(message)s")
-REQUIRED_SCHEMA_REVISION = "0008_control_proposal_reviews"
+REQUIRED_SCHEMA_REVISION = "0009_foreign_key_support_indexes"
 
 app = FastAPI(
     title="sl3dge API",

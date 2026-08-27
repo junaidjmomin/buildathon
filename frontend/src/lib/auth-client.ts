@@ -8,6 +8,7 @@ import {
 const AUTH_MODE = process.env.NEXT_PUBLIC_AUTH_MODE ?? "disabled";
 const OIDC_AUTHORITY = process.env.NEXT_PUBLIC_OIDC_AUTHORITY ?? "";
 const OIDC_CLIENT_ID = process.env.NEXT_PUBLIC_OIDC_CLIENT_ID ?? "";
+const OIDC_AUDIENCE = process.env.NEXT_PUBLIC_OIDC_AUDIENCE ?? "";
 const OIDC_SCOPE = process.env.NEXT_PUBLIC_OIDC_SCOPE ?? "openid profile email";
 const PRODUCTION = process.env.NEXT_PUBLIC_APP_MODE === "production";
 
@@ -21,8 +22,8 @@ export function getUserManager(): UserManager {
   if (!isOidcEnabled()) {
     throw new Error("OIDC authentication is disabled");
   }
-  if (!OIDC_AUTHORITY || !OIDC_CLIENT_ID) {
-    throw new Error("OIDC authority and client ID are required");
+  if (!OIDC_AUTHORITY || !OIDC_CLIENT_ID || !OIDC_AUDIENCE) {
+    throw new Error("OIDC authority, client ID and API audience are required");
   }
   if (typeof window === "undefined") {
     throw new Error("OIDC UserManager is available only in the browser");
@@ -42,6 +43,7 @@ export function getUserManager(): UserManager {
     post_logout_redirect_uri: origin,
     response_type: "code",
     scope: OIDC_SCOPE,
+    extraQueryParams: { audience: OIDC_AUDIENCE },
     automaticSilentRenew: true,
     monitorSession: false,
     loadUserInfo: false,
