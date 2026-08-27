@@ -7,7 +7,7 @@ from app.core.config import Settings
 from app.integrations.razorpay.client import RazorpayClient
 from app.integrations.razorpay.mapper import map_payment, map_recon_item, map_refund
 from app.integrations.razorpay.schemas import PaymentItem, ReconItem, RefundItem
-from app.integrations.razorpay.sync import _build_mdr_evaluations
+from app.integrations.razorpay.sync import _build_mdr_evaluations, _mdr_root_cause
 
 
 def test_recon_payment_maps_into_canonical_events_and_edges() -> None:
@@ -39,12 +39,14 @@ def test_recon_payment_maps_into_canonical_events_and_edges() -> None:
     assert events[1].amount == Decimal("24.58")
     assert events[2].amount == Decimal("4.42")
     assert events[0].normalized_payload["settlement_utr"] == "1568176960vxp0rj"
+    assert all(event.normalized_payload["mapping_version"] == "1" for event in events)
     assert {edge.relationship for edge in edges} == {
         "CHARGED_FEE",
         "CHARGED_TAX",
         "INCLUDED_IN",
     }
     assert all(edge.run_id == "RUN_1" for edge in edges)
+    assert all(edge.evidence["mapping_version"] == "1" for edge in edges)
 
 
 def test_razorpay_status_never_exposes_credentials() -> None:
@@ -183,3 +185,12 @@ def test_live_payment_runs_decimal_mdr_control_and_creates_violation() -> None:
     assert evaluation.tolerance_amount == Decimal("0.01")
     assert evaluation.outcome.value == "VIOLATION"
     assert evaluation.violation is not None
+    root = _mdr_root_cause(
+        run_id="RUN_1",
+        evaluations=evaluations,
+        violations=[evaluation.violation],
+    )
+    assert root is not None
+    assert root.expected_value == "0.0155"
+    assert root.observed_value == "0.0175"
+    assert root.verified_impact == Decimal("20.00")

@@ -1387,8 +1387,8 @@ Difference ₹50,000
 8. Trace the complete Financial Event Graph
 9. Show one PRIMARY MDR violation and three DOWNSTREAM effects
 10. Open systemic root cause RC_MDR_01
-11. Generate a bounded AI policy-change hypothesis
-12. Deterministic verifier returns REJECTED
+11. Run the bounded trace: collect evidence → fetch context → load control → generate and test hypothesis
+12. Show the first hypothesis REJECTED → alternate hypothesis → VERIFIED → case attached
 13. Run 50 isolated financial mutations
 14. Show 47 detected / 3 missed / 0 false positives
 15. Open the unsupported-fee blind spot
@@ -1426,7 +1426,8 @@ This is the only frontend acceptance checklist in this document:
   mutation, coverage, and lineage metrics
 - `PAY_82HD9` visibly passes traditional gateway-bank matching and fails sl3dge
 - Expected-vs-Actual, counterfactual settlement, and event lifecycle render
-- root-cause hypothesis generation and independent `REJECTED` verification render
+- the root-cause trace renders evidence collection, first-hypothesis rejection,
+  alternate-hypothesis verification, and case attachment from backend state
 - mutation testing, missed mutations, and blind spots are backend-driven
 - candidate backtest shows 47/50 → 49/50 and false-positive delta 0
 - candidate activation requires a completed backtest and explicit approval

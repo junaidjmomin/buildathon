@@ -1,27 +1,28 @@
 from __future__ import annotations
 
 from calendar import monthrange
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from hashlib import sha256
+from time import perf_counter
 from typing import Any
 
-from app.controls.dsl import MdrRateParameters
+from app.controls.live import LiveControlEvaluation, build_live_control_evaluations
 from app.core.config import get_settings
-from app.core.money import expected_fee, money
+from app.core.money import money
 from app.domain.models import (
     Control,
     ControlType,
-    EvaluationStatus,
     FinancialEvent,
     RazorpayConnectionStatus,
     RazorpaySyncRequest,
     RazorpaySyncSummary,
+    RootCause,
     Violation,
 )
 from app.integrations.razorpay.client import RazorpayClient
 from app.integrations.razorpay.mapper import (
+    RAZORPAY_MAPPING_VERSION,
     map_payment,
     map_recon_item,
     map_refund,
@@ -38,24 +39,52 @@ from app.persistence.repository import (
     RunRepository,
     SourceSnapshotRepository,
 )
-from app.services.governance import CONTROLS, governance
+from app.services.governance import CONTROLS
 
 last_sync: RazorpaySyncSummary | None = None
+REQUIRED_LIVE_CONTROL_KEYS = frozenset(
+    {
+        "DOMESTIC_CARD_MDR",
+        "GST_ON_VALID_FEE",
+        "CAPTURE_TO_SETTLEMENT_SLA",
+        "SETTLEMENT_BANK_ARITHMETIC",
+        "REFUND_PRINCIPAL_INTEGRITY",
+    }
+)
 
 
-@dataclass(frozen=True)
-class LiveMdrEvaluation:
-    evaluation_id: str
-    event: FinancialEvent
-    control: Control
-    outcome: EvaluationStatus
-    expected_amount: Decimal
-    actual_amount: Decimal | None
-    tolerance_amount: Decimal
-    difference_amount: Decimal | None
-    financial_impact: Decimal
-    input_fingerprint: str
-    violation: Violation | None
+class IncompleteControlRegistryError(RuntimeError):
+    pass
+
+
+def _validate_live_control_registry(controls: list[Control]) -> None:
+    available = {
+        control.logical_control_key for control in controls if control.status == "APPROVED"
+    }
+    missing = sorted(REQUIRED_LIVE_CONTROL_KEYS - available)
+    if missing:
+        raise IncompleteControlRegistryError(
+            "Tenant control registry is incomplete; missing approved controls: "
+            + ", ".join(missing)
+        )
+
+
+def _live_controls_for_tenant(tenant_id: str) -> list[Control]:
+    settings = get_settings()
+    if not settings.database_url:
+        return list(CONTROLS)
+    with session_scope(tenant_id=tenant_id) as session:
+        persisted = RunRepository(session).list_controls(
+            tenant_id=tenant_id,
+            approved_only=True,
+        )
+    if persisted:
+        if settings.environment in {"staging", "production"}:
+            _validate_live_control_registry(persisted)
+        return persisted
+    if settings.environment in {"staging", "production"}:
+        _validate_live_control_registry([])
+    return list(CONTROLS)
 
 
 def connection_status(
@@ -117,7 +146,9 @@ async def sync_razorpay(
     client: RazorpayClient | None = None,
 ) -> RazorpaySyncSummary:
     global last_sync
+    started = perf_counter()
     active = client or RazorpayClient()
+    live_controls = _live_controls_for_tenant(tenant_id)
     start_day = request.day or 1
     end_day = request.day or monthrange(request.year, request.month)[1]
     start = datetime(request.year, request.month, start_day, tzinfo=timezone.utc)
@@ -181,6 +212,7 @@ async def sync_razorpay(
             raw_payload={},
             normalized_payload={
                 "sync_id": sync_id,
+                "mapping_version": RAZORPAY_MAPPING_VERSION,
                 "reason": "Referenced entity was outside the requested sync window",
                 "missing_event_ids": missing_ids,
                 "rejected_edge_id": edge.id,
@@ -190,14 +222,20 @@ async def sync_razorpay(
         )
     persistence_status = "IN_MEMORY"
     persisted_events = list(event_index.values())
-    evaluations = _build_mdr_evaluations(persisted_events)
+    evaluations = build_live_control_evaluations(
+        persisted_events,
+        list(edge_index.values()),
+        live_controls,
+    )
     if get_settings().database_url:
         with session_scope(tenant_id=tenant_id) as session:
             snapshot_repository = SourceSnapshotRepository(session)
             snapshot_ids: dict[str, list[str]] = {}
+            snapshot_checksums: dict[str, list[str]] = {}
             provenance = {
                 "sync_id": sync_id,
                 "job_id": job_id,
+                "mapping_version": RAZORPAY_MAPPING_VERSION,
                 "read_only": True,
                 "window_start": start.isoformat(),
                 "window_end": end.isoformat(),
@@ -228,6 +266,7 @@ async def sync_razorpay(
                     ),
                 )
                 snapshot_ids.setdefault(external_id, []).append(snapshot.id)
+                snapshot_checksums.setdefault(external_id, []).append(snapshot.content_sha256)
             persisted_events = []
             for event in event_index.values():
                 base_external_id = event.external_id.split(":", 1)[0]
@@ -237,6 +276,9 @@ async def sync_razorpay(
                             "normalized_payload": {
                                 **event.normalized_payload,
                                 "source_snapshot_ids": snapshot_ids.get(base_external_id, []),
+                                "source_snapshot_sha256": snapshot_checksums.get(
+                                    base_external_id, []
+                                ),
                             }
                         }
                     )
@@ -250,20 +292,34 @@ async def sync_razorpay(
                 tenant_id=tenant_id,
             )
             run_repository = RunRepository(session)
-            run_repository.save_controls(CONTROLS, tenant_id=tenant_id)
+            run_repository.save_controls(live_controls, tenant_id=tenant_id)
             session.flush()
-            evaluations = _build_mdr_evaluations(persisted_events)
+            evaluations = build_live_control_evaluations(
+                persisted_events,
+                list(edge_index.values()),
+                live_controls,
+            )
             evaluation_repository = ControlEvaluationRepository(session)
+            mdr_evaluations = [
+                item for item in evaluations if item.control.control_type == ControlType.MDR_RATE
+            ]
+            mdr_violations = [
+                item.violation for item in mdr_evaluations if item.violation is not None
+            ]
+            root_cause = _mdr_root_cause(
+                run_id=run_id,
+                evaluations=mdr_evaluations,
+                violations=mdr_violations,
+            )
             for evaluation in evaluations:
-                snapshot_ids = evaluation.event.normalized_payload.get("source_snapshot_ids", [])
                 evaluation_repository.save(
                     tenant_id=tenant_id,
                     run_id=run_id,
                     evaluation_id=evaluation.evaluation_id,
                     control_id=evaluation.control.id,
                     control_version=evaluation.control.version,
-                    target_type="PAYMENT",
-                    target_id=evaluation.event.external_id,
+                    target_type=evaluation.target_type,
+                    target_id=evaluation.target_id,
                     outcome=evaluation.outcome.value,
                     expected_amount=evaluation.expected_amount,
                     actual_amount=evaluation.actual_amount,
@@ -273,24 +329,39 @@ async def sync_razorpay(
                     confidence=Decimal("1"),
                     input_fingerprint=evaluation.input_fingerprint,
                     engine_version="sl3dge-deterministic-v1",
-                    source_snapshot_ids=(
-                        list(snapshot_ids) if isinstance(snapshot_ids, list) else []
-                    ),
-                    evidence={
-                        "event_id": evaluation.event.id,
-                        "calculation": (
-                            f"{evaluation.event.amount} * {evaluation.control.parameters['rate']}"
-                        ),
-                        "authority": "DETERMINISTIC",
-                    },
+                    source_snapshot_ids=evaluation.source_snapshot_ids,
+                    evidence=evaluation.evidence,
                     evaluated_at=synced_at,
                 )
                 if evaluation.violation is not None:
+                    violation = evaluation.violation.model_copy(
+                        update={
+                            "root_cause_id": (
+                                root_cause.id
+                                if root_cause is not None
+                                and evaluation.control.control_type == ControlType.MDR_RATE
+                                else None
+                            )
+                        }
+                    )
                     run_repository.save_violation(
-                        evaluation.violation,
+                        violation,
                         run_id=run_id,
                         tenant_id=tenant_id,
                     )
+            if root_cause is not None:
+                run_repository.save_root_cause(
+                    root_cause,
+                    run_id=run_id,
+                    tenant_id=tenant_id,
+                )
+            processing_ms = max(1, int((perf_counter() - started) * 1000))
+            run_repository.finalize_live_run(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                control_evaluation_count=len(evaluations),
+                processing_ms=processing_ms,
+            )
         persistence_status = "POSTGRES"
     last_sync = RazorpaySyncSummary(
         sync_id=sync_id,
@@ -335,83 +406,45 @@ def _merge_event(existing: FinancialEvent | None, incoming: FinancialEvent) -> F
     )
 
 
-def _build_mdr_evaluations(events: list[FinancialEvent]) -> list[LiveMdrEvaluation]:
-    evaluations: list[LiveMdrEvaluation] = []
-    for event in events:
-        if event.event_type != "PAYMENT":
-            continue
-        normalized = event.normalized_payload
-        method = normalized.get("method") or normalized.get("payment_method")
-        if method != "card":
-            continue
-        international = normalized.get("international")
-        if international is True:
-            continue
-        try:
-            control = governance.effective_control("DOMESTIC_CARD_MDR", event.timestamp.date())
-        except KeyError:
-            continue
-        parameters = MdrRateParameters.model_validate(control.parameters)
-        expected = expected_fee(event.amount, parameters.rate)
-        raw_actual = normalized.get("fee")
-        try:
-            actual = Decimal(str(raw_actual)) if raw_actual is not None else None
-        except Exception:
-            actual = None
-        difference = money(actual - expected) if actual is not None else None
-        unresolved = international is None or actual is None or event.status == "unresolved"
-        if unresolved:
-            outcome = EvaluationStatus.UNRESOLVED
-        elif abs(difference or Decimal("0")) > parameters.tolerance:
-            outcome = EvaluationStatus.VIOLATION
-        else:
-            outcome = EvaluationStatus.PASS
-        impact = (
-            max(difference or Decimal("0"), Decimal("0"))
-            if outcome == EvaluationStatus.VIOLATION
-            else Decimal("0")
-        )
-        fingerprint_source = "|".join(
-            [
-                event.id,
-                str(event.amount),
-                str(actual),
-                control.id,
-                str(control.version),
-                str(parameters.rate),
-                str(parameters.tolerance),
-            ]
-        )
-        fingerprint = sha256(fingerprint_source.encode()).hexdigest()
-        evaluation_id = f"EVAL_MDR_{fingerprint[:24].upper()}"
-        violation = None
-        if outcome == EvaluationStatus.VIOLATION:
-            violation = Violation(
-                id=f"V_MDR_{fingerprint[:24].upper()}",
-                payment_id=event.external_id,
-                category="MDR rate deviation",
-                control_type=ControlType.MDR_RATE,
-                expected=str(expected),
-                actual=str(actual),
-                difference=difference or Decimal("0"),
-                financial_impact=impact,
-                confidence=Decimal("1"),
-                status=EvaluationStatus.VIOLATION,
-                occurred_at=event.timestamp,
-            )
-        evaluations.append(
-            LiveMdrEvaluation(
-                evaluation_id=evaluation_id,
-                event=event,
-                control=control,
-                outcome=outcome,
-                expected_amount=expected,
-                actual_amount=actual,
-                tolerance_amount=parameters.tolerance,
-                difference_amount=difference,
-                financial_impact=impact,
-                input_fingerprint=fingerprint,
-                violation=violation,
-            )
-        )
-    return evaluations
+def _build_mdr_evaluations(events: list[FinancialEvent]) -> list[LiveControlEvaluation]:
+    """Compatibility wrapper used by focused unit tests and investigation code."""
+
+    return [
+        evaluation
+        for evaluation in build_live_control_evaluations(events, [], CONTROLS)
+        if evaluation.control.control_type == ControlType.MDR_RATE
+    ]
+
+
+def _mdr_root_cause(
+    *,
+    run_id: str,
+    evaluations: list[LiveControlEvaluation],
+    violations: list[Violation],
+) -> RootCause | None:
+    if not violations:
+        return None
+    violating = [item for item in evaluations if item.violation is not None]
+    observed_rates = sorted(
+        {
+            str(item.actual_amount / item.event.amount)
+            for item in violating
+            if item.actual_amount is not None and item.event.amount != 0
+        }
+    )
+    expected_rates = sorted({str(item.control.parameters["rate"]) for item in violating})
+    root_id = f"RC_RZP_MDR_{sha256(run_id.encode()).hexdigest()[:12].upper()}"
+    return RootCause(
+        id=root_id,
+        title="Systemic Razorpay MDR rate deviation",
+        category="MDR rate deviation",
+        affected_count=len(violations),
+        verified_impact=money(sum((item.financial_impact for item in violations), Decimal("0"))),
+        expected_value=", ".join(expected_rates),
+        observed_value=", ".join(observed_rates),
+        first_seen=min(item.occurred_at for item in violations),
+        last_seen=max(item.occurred_at for item in violations),
+        verification_status="DETERMINISTICALLY_CLUSTERED",
+        primary_violation_count=len(violations),
+        downstream_effect_count=0,
+    )

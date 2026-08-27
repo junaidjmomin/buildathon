@@ -369,8 +369,25 @@ class AgreementControlCompiler:
 
     async def _validate_schemas(self, state: ControlWorkflowState) -> ControlWorkflowState:
         try:
-            ControlCandidateBatch.model_validate({"candidates": state["proposals"]})
-            valid = True
+            batch = ControlCandidateBatch.model_validate({"candidates": state["proposals"]})
+            clauses = {str(clause.get("id")): clause for clause in state["clauses"]}
+            valid = bool(batch.candidates)
+            for candidate in batch.candidates:
+                clause = clauses.get(candidate.clause_id)
+                if clause is None:
+                    valid = False
+                    break
+                clause_from = clause.get("effective_from")
+                clause_to = clause.get("effective_to")
+                if clause_from and candidate.effective_from.isoformat() < str(clause_from):
+                    valid = False
+                    break
+                if clause_to and (
+                    candidate.effective_to is None
+                    or candidate.effective_to.isoformat() > str(clause_to)
+                ):
+                    valid = False
+                    break
         except ValidationError:
             valid = False
         return {

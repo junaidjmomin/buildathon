@@ -52,16 +52,7 @@ class SupabaseStorage:
             raise StorageNotConfiguredError(
                 "Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on the backend"
             )
-        clean_path = object_path.strip("/")
-        segments = clean_path.split("/")
-        if (
-            not clean_path
-            or ".." in segments
-            or any(not segment for segment in segments)
-            or "\\" in clean_path
-            or any(ord(character) < 32 for character in clean_path)
-        ):
-            raise ValueError("Storage object path must be a safe relative path")
+        clean_path = self._safe_path(object_path)
         encoded_path = quote(clean_path, safe="/-_.")
         url = (
             f"{self.settings.supabase_url.rstrip('/')}/storage/v1/object/"
@@ -84,3 +75,44 @@ class SupabaseStorage:
             byte_size=len(content),
             sha256=sha256(content).hexdigest(),
         )
+
+    async def delete(self, object_path: str) -> None:
+        """Delete one exact object, used to compensate failed metadata commits."""
+
+        if not self.configured:
+            raise StorageNotConfiguredError(
+                "Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on the backend"
+            )
+        clean_path = self._safe_path(object_path)
+        url = (
+            f"{self.settings.supabase_url.rstrip('/')}/storage/v1/object/"
+            f"{self.settings.supabase_storage_bucket}"
+        )
+        service_key = self.settings.supabase_service_role_key.get_secret_value()
+        headers = {
+            "Authorization": f"Bearer {service_key}",
+            "apikey": service_key,
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(transport=self.transport, timeout=30) as client:
+            response = await client.request(
+                "DELETE",
+                url,
+                json={"prefixes": [clean_path]},
+                headers=headers,
+            )
+            response.raise_for_status()
+
+    @staticmethod
+    def _safe_path(object_path: str) -> str:
+        clean_path = object_path.strip("/")
+        segments = clean_path.split("/")
+        if (
+            not clean_path
+            or ".." in segments
+            or any(not segment for segment in segments)
+            or "\\" in clean_path
+            or any(ord(character) < 32 for character in clean_path)
+        ):
+            raise ValueError("Storage object path must be a safe relative path")
+        return clean_path

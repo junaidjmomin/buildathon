@@ -84,6 +84,30 @@ class ControlProposal(ApiModel):
     source_excerpt: str
     extraction_method: str
     proposed_control: Control
+    version: int = 1
+    verification_status: str = "NOT_RUN"
+    verification_result: dict[str, Any] | None = None
+    verified_by: str | None = None
+    verified_at: datetime | None = None
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+
+
+class ControlProposalApprovalRequest(ApiModel):
+    expected_version: int = Field(ge=1)
+
+
+class ControlProposalVerification(ApiModel):
+    proposal_id: str
+    control_id: str
+    status: str
+    version: int
+    checks: list[dict[str, Any]]
+    mutation_probe_count: int
+    detected_mutation_count: int
+    input_fingerprint: str
+    verified_by: str
+    verified_at: datetime
 
 
 class CoverageStatus(str, Enum):
@@ -140,6 +164,7 @@ class CaseEvidence(ApiModel):
 class ExceptionCase(ApiModel):
     id: str
     run_id: str
+    root_cause_id: str | None = None
     title: str
     payment_id: str
     primary_violation_id: str
@@ -151,10 +176,12 @@ class ExceptionCase(ApiModel):
     created_at: datetime
     updated_at: datetime
     resolution_note: str | None = None
+    version: int = 1
 
 
 class CaseTransitionRequest(ApiModel):
     note: str = ""
+    expected_version: int | None = Field(default=None, ge=1)
 
 
 class UnresolvedMatch(ApiModel):
@@ -302,6 +329,19 @@ class RunSummary(ApiModel):
     evaluations_per_second: int
     confusion_matrix: ConfusionMatrix
     completed_at: datetime
+    ground_truth_available: bool = True
+    metrics_scope: str = "SEEDED_GROUND_TRUTH"
+
+
+class RunListItem(ApiModel):
+    id: str
+    name: str
+    status: str
+    source: str
+    transaction_count: int
+    event_count: int
+    control_evaluation_count: int
+    completed_at: datetime | None = None
 
 
 class GraphNode(ApiModel):

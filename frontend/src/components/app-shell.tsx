@@ -6,12 +6,15 @@ import {
   Gauge,
   GitBranch,
   LayoutDashboard,
+  LogOut,
   ShieldCheck,
   Sparkles,
   TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
+import { useAuth } from "@/components/auth-provider";
 
 const items = [
   { label: "Overview", icon: LayoutDashboard, href: "/" },
@@ -24,6 +27,7 @@ const items = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const auth = useAuth();
   const demoMode = process.env.NEXT_PUBLIC_APP_MODE !== "production";
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[236px_1fr]">
@@ -71,8 +75,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span>·</span>
             <span>{demoMode ? "Seeded demo" : "Production workspace"}</span>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-[#cdd7cf] bg-white px-3 py-1.5 text-[11px] font-medium text-[#1e6b51]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#2a9b6a]" /> Verification-first
+          <div className="flex items-center gap-2">
+            {auth.enabled ? (
+              <span className="hidden max-w-44 truncate text-[11px] font-medium text-[#52615a] sm:inline">
+                {auth.displayName}
+              </span>
+            ) : null}
+            <div className="flex items-center gap-2 rounded-full border border-[#cdd7cf] bg-white px-3 py-1.5 text-[11px] font-medium text-[#1e6b51]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#2a9b6a]" /> Verification-first
+            </div>
+            {auth.enabled ? (
+              <button
+                aria-label="Sign out"
+                className="grid h-8 w-8 place-items-center rounded-full border border-[#cdd7cf] bg-white text-[#52615a] hover:text-[#17211d]"
+                onClick={() => void auth.signOut()}
+                title="Sign out"
+                type="button"
+              >
+                <LogOut aria-hidden="true" size={14} />
+              </button>
+            ) : null}
           </div>
         </header>
         <nav

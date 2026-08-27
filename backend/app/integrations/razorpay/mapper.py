@@ -6,6 +6,8 @@ from decimal import Decimal
 from app.domain.models import CanonicalEventEdge, FinancialEvent
 from app.integrations.razorpay.schemas import PaymentItem, ReconItem, RefundItem, SettlementItem
 
+RAZORPAY_MAPPING_VERSION = "1"
+
 
 def _money_from_subunits(value: int) -> Decimal:
     return (Decimal(value) / Decimal("100")).quantize(Decimal("0.01"))
@@ -30,6 +32,7 @@ def map_payment(item: PaymentItem, *, run_id: str, sync_id: str) -> FinancialEve
         raw_payload=raw,
         normalized_payload={
             "sync_id": sync_id,
+            "mapping_version": RAZORPAY_MAPPING_VERSION,
             "order_id": item.order_id,
             "method": item.method,
             "captured": item.captured,
@@ -58,6 +61,7 @@ def map_refund(
         raw_payload=raw,
         normalized_payload={
             "sync_id": sync_id,
+            "mapping_version": RAZORPAY_MAPPING_VERSION,
             "payment_id": item.payment_id,
             "receipt": item.receipt,
         },
@@ -91,6 +95,7 @@ def map_recon_item(
         raw_payload=raw,
         normalized_payload={
             "sync_id": sync_id,
+            "mapping_version": RAZORPAY_MAPPING_VERSION,
             "payment_id": item.payment_id,
             "order_id": item.order_id,
             "settlement_id": item.settlement_id,
@@ -120,7 +125,11 @@ def map_recon_item(
                 currency=item.currency.upper(),
                 timestamp=primary.timestamp,
                 raw_payload=raw,
-                normalized_payload={"sync_id": sync_id, "base_event_id": event_id},
+                normalized_payload={
+                    "sync_id": sync_id,
+                    "mapping_version": RAZORPAY_MAPPING_VERSION,
+                    "base_event_id": event_id,
+                },
             )
         )
         edges.append(_edge(run_id, event_id, fee_id, "CHARGED_FEE", sync_id))
@@ -137,7 +146,11 @@ def map_recon_item(
                 currency=item.currency.upper(),
                 timestamp=primary.timestamp,
                 raw_payload=raw,
-                normalized_payload={"sync_id": sync_id, "base_event_id": event_id},
+                normalized_payload={
+                    "sync_id": sync_id,
+                    "mapping_version": RAZORPAY_MAPPING_VERSION,
+                    "base_event_id": event_id,
+                },
             )
         )
         edges.append(_edge(run_id, event_id, tax_id, "CHARGED_TAX", sync_id))
@@ -173,6 +186,7 @@ def map_settlement(item: SettlementItem, *, run_id: str, sync_id: str) -> Financ
         raw_payload=raw,
         normalized_payload={
             "sync_id": sync_id,
+            "mapping_version": RAZORPAY_MAPPING_VERSION,
             "utr": item.utr,
             "fees": str(_money_from_subunits(item.fees)),
             "tax": str(_money_from_subunits(item.tax)),
@@ -191,5 +205,9 @@ def _edge(
         relationship=relationship,
         confidence=Decimal("1"),
         method="EXACT",
-        evidence={"source": "razorpay", "sync_id": sync_id},
+        evidence={
+            "source": "razorpay",
+            "sync_id": sync_id,
+            "mapping_version": RAZORPAY_MAPPING_VERSION,
+        },
     )

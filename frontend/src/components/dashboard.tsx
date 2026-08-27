@@ -31,27 +31,50 @@ export function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const activeRun = runId ?? DEMO_RUN;
+  const productionRuns = useQuery({
+    queryKey: ["runs"],
+    queryFn: api.runs,
+    enabled: !DEMO_MODE,
+  });
+  const activeRun = DEMO_MODE
+    ? (runId ?? DEMO_RUN)
+    : productionRuns.data?.find(
+        (run) => run.source === "RAZORPAY" && run.status === "COMPLETE",
+      )?.id;
   const summary = useQuery({
-    queryKey: ["run-summary", activeRun], queryFn: () => api.summary(activeRun), enabled: DEMO_MODE && Boolean(runId),
+    queryKey: ["run-summary", activeRun], queryFn: () => api.summary(activeRun ?? ""), enabled: Boolean(activeRun) && (!DEMO_MODE || Boolean(runId)),
   });
   const violations = useQuery({
-    queryKey: ["violations", activeRun], queryFn: () => api.violations(activeRun), enabled: DEMO_MODE && Boolean(runId),
+    queryKey: ["violations", activeRun], queryFn: () => api.violations(activeRun ?? ""), enabled: Boolean(activeRun) && (!DEMO_MODE || Boolean(runId)),
   });
   const roots = useQuery({
-    queryKey: ["root-causes", activeRun], queryFn: () => api.rootCauses(activeRun), enabled: DEMO_MODE && Boolean(runId),
+    queryKey: ["root-causes", activeRun], queryFn: () => api.rootCauses(activeRun ?? ""), enabled: Boolean(activeRun) && (!DEMO_MODE || Boolean(runId)),
   });
   const coverage = useQuery({
-    queryKey: ["control-coverage", activeRun], queryFn: () => api.controlCoverage(activeRun), enabled: DEMO_MODE && Boolean(runId),
+    queryKey: ["control-coverage", activeRun], queryFn: () => api.controlCoverage(activeRun ?? ""), enabled: DEMO_MODE && Boolean(runId),
   });
 
-  if (!DEMO_MODE) {
+  if (!DEMO_MODE && productionRuns.isPending) {
+    return (
+      <main className="grid min-h-[calc(100vh-64px)] place-items-center p-8 text-center">
+        <div><LoaderCircle className="mx-auto mb-4 animate-spin text-[#1e6b51]" size={28} /><p className="text-sm font-medium">Loading tenant runs</p></div>
+      </main>
+    );
+  }
+
+  if (!DEMO_MODE && productionRuns.isError) {
+    return (
+      <main className="mx-auto max-w-4xl px-5 py-16 md:px-8"><div className="panel rounded-2xl p-8 text-center" role="alert"><FileWarning className="mx-auto mb-4 text-[#e86f3a]" /><h1 className="text-xl font-semibold">Runs could not be loaded</h1><p className="mt-2 text-sm text-[#66716b]">Retry after checking the authenticated API connection.</p><button className="mt-5 rounded-lg bg-[#112a2b] px-4 py-2 text-sm font-medium text-white" onClick={() => void productionRuns.refetch()}>Retry</button></div></main>
+    );
+  }
+
+  if (!DEMO_MODE && !activeRun) {
     return (
       <main className="mx-auto max-w-4xl px-5 py-16 md:px-8">
         <div className="panel rounded-2xl p-8 md:p-12">
           <ShieldCheck className="mb-5 text-[#1e6b51]" size={30} />
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1e6b51]">Production workspace</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em]">No verified run selected</h1>
+          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em]">No completed Razorpay run</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-[#66716b]">Production never loads synthetic data or executes controls merely because a page opened. Connect an approved source and start an explicit, auditable run.</p>
           <Link href="/data" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white">Open data sources <ArrowRight size={15} /></Link>
         </div>
@@ -59,25 +82,25 @@ export function Dashboard() {
     );
   }
 
-  if (load.isPending || summary.isPending) {
+  if ((DEMO_MODE && load.isPending) || summary.isPending) {
     return (
       <main className="grid min-h-[calc(100vh-64px)] place-items-center p-8 text-center">
         <div><LoaderCircle className="mx-auto mb-4 animate-spin text-[#1e6b51]" size={28} />
-          <p className="text-sm font-medium">Running NovaCart controls</p>
-          <p className="mt-1 text-xs text-[#66716b]">Rebuilding expected state from the agreement…</p>
+          <p className="text-sm font-medium">{DEMO_MODE ? "Running NovaCart controls" : "Loading the latest completed run"}</p>
+          <p className="mt-1 text-xs text-[#66716b]">{DEMO_MODE ? "Rebuilding expected state from the agreement…" : "Reading tenant-scoped deterministic results…"}</p>
         </div>
       </main>
     );
   }
 
-  if (load.isError || summary.isError) {
+  if ((DEMO_MODE && load.isError) || summary.isError) {
     return (
       <main className="mx-auto max-w-6xl p-9">
         <div className="panel mt-12 rounded-2xl p-8 text-center">
           <FileWarning className="mx-auto mb-4 text-[#e86f3a]" />
           <h1 className="text-xl font-semibold">The control API is unavailable</h1>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#66716b]">Start FastAPI on port 8000 and retry. Financial results are never simulated in the browser.</p>
-          <button onClick={() => load.mutate()} className="mt-5 rounded-lg bg-[#112a2b] px-4 py-2 text-sm font-medium text-white">Retry connection</button>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#66716b]">{DEMO_MODE ? "Start FastAPI on port 8000 and retry. Financial results are never simulated in the browser." : "The authenticated run summary could not be loaded. No unavailable financial value has been replaced with demo data."}</p>
+          <button onClick={() => DEMO_MODE ? load.mutate() : void summary.refetch()} className="mt-5 rounded-lg bg-[#112a2b] px-4 py-2 text-sm font-medium text-white">Retry connection</button>
         </div>
       </main>
     );
@@ -101,36 +124,41 @@ export function Dashboard() {
   const rootMax = Math.max(...(roots.data ?? []).map((root) => Number(root.verified_impact)), 1);
   const primaryCount = (roots.data ?? []).reduce((total, root) => total + root.primary_violation_count, 0);
   const downstreamCount = (roots.data ?? []).reduce((total, root) => total + root.downstream_effect_count, 0);
+  const outcomeTotal = Math.max(
+    data.breakdown.passed +
+      data.breakdown.violation +
+      data.breakdown.warning +
+      data.breakdown.unresolved,
+    1,
+  );
 
   return (
     <main className="mx-auto max-w-[1440px] px-5 py-7 md:px-8 md:py-9">
       <section className="mb-7 flex flex-col justify-between gap-5 md:flex-row md:items-end">
         <div>
           <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1e6b51]"><Check size={13} /> Run complete</div>
-          <h1 className="text-3xl font-semibold tracking-[-0.035em] md:text-[38px]">August control run</h1>
+          <h1 className="text-3xl font-semibold tracking-[-0.035em] md:text-[38px]">{data.name}</h1>
           <p className="mt-2 text-sm text-[#66716b]">Rebuilt expected cash movement across {data.event_count.toLocaleString("en-IN")} financial events.</p>
         </div>
-        <button onClick={() => load.mutate()} className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white shadow-lg shadow-[#112a2b]/10 transition hover:-translate-y-0.5">
-          <Play size={15} fill="currentColor" /> Run controls again
-        </button>
+        {DEMO_MODE ? <button onClick={() => load.mutate()} className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white shadow-lg shadow-[#112a2b]/10 transition hover:-translate-y-0.5"><Play size={15} fill="currentColor" /> Run controls again</button> : <Link href="/data" className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white">Sync another run <ArrowRight size={15} /></Link>}
       </section>
 
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <Metric icon={DatabaseZap} label="Transactions" value={data.transaction_count.toLocaleString("en-IN")} />
         <Metric icon={Fingerprint} label="Controls evaluated" value={data.control_evaluation_count.toLocaleString("en-IN")} />
-        <Metric icon={ShieldCheck} label="Precision" value={formatPercent(data.precision)} tone="green" />
-        <Metric icon={ScanSearch} label="Violation recall" value={formatPercent(data.recall)} tone="green" />
+        <Metric icon={ShieldCheck} label="Precision" value={data.ground_truth_available ? formatPercent(data.precision) : "Not scored"} tone="green" />
+        <Metric icon={ScanSearch} label="Violation recall" value={data.ground_truth_available ? formatPercent(data.recall) : "Not scored"} tone="green" />
         <Metric icon={CircleDollarSign} label="Verified leakage" value={formatMoney(data.verified_leakage, true)} tone="orange" />
         <Metric icon={ShieldAlert} label="Unresolved" value={String(data.unresolved_count)} />
-        <Metric icon={ShieldCheck} label="Control coverage" value={coverage.data ? formatPercent(coverage.data.coverage_percentage) : "—"} tone="green" />
+        <Metric icon={ShieldCheck} label="Control coverage" value={coverage.data ? formatPercent(coverage.data.coverage_percentage) : "Not measured"} tone="green" />
         <Metric icon={GitBranch} label="Primary / downstream" value={`${primaryCount} / ${downstreamCount}`} />
       </section>
 
       <section className="mb-6 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
         <div className="panel overflow-hidden rounded-2xl">
           <div className="flex items-center justify-between border-b border-[#e2e5df] px-5 py-4">
-            <div><h2 className="text-sm font-semibold">Control outcomes</h2><p className="mt-1 text-xs text-[#7a847e]">Payment-level deterministic classification</p></div>
-            <span className="rounded-full bg-[#eef1ec] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#66716b]">Ground-truth scored</span>
+            <div><h2 className="text-sm font-semibold">Control outcomes</h2><p className="mt-1 text-xs text-[#7a847e]">{data.ground_truth_available ? "Seeded payment-level deterministic classification" : "Deterministic control-evaluation outcomes; no labeled ground truth"}</p></div>
+            <span className="rounded-full bg-[#eef1ec] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#66716b]">{data.ground_truth_available ? "Ground-truth scored" : "Live control outcomes"}</span>
           </div>
           <div className="grid grid-cols-2 gap-px bg-[#e2e5df] sm:grid-cols-4">
             <Outcome label="Pass" value={data.breakdown.passed} color="#2b8a61" />
@@ -140,14 +168,15 @@ export function Dashboard() {
           </div>
           <div className="px-5 py-5">
             <div className="flex h-2.5 overflow-hidden rounded-full bg-[#ecefe9]">
-              <div className="bg-[#2b8a61]" style={{ width: `${(data.breakdown.passed / data.transaction_count) * 100}%` }} />
-              <div className="bg-[#e86f3a]" style={{ width: `${(data.breakdown.violation / data.transaction_count) * 100}%` }} />
-              <div className="bg-[#707b75]" style={{ width: `${(data.breakdown.unresolved / data.transaction_count) * 100}%` }} />
+              <div className="bg-[#2b8a61]" style={{ width: `${(data.breakdown.passed / outcomeTotal) * 100}%` }} />
+              <div className="bg-[#e86f3a]" style={{ width: `${(data.breakdown.violation / outcomeTotal) * 100}%` }} />
+              <div className="bg-[#d6a234]" style={{ width: `${(data.breakdown.warning / outcomeTotal) * 100}%` }} />
+              <div className="bg-[#707b75]" style={{ width: `${(data.breakdown.unresolved / outcomeTotal) * 100}%` }} />
             </div>
             <div className="mt-5 flex flex-wrap gap-x-7 gap-y-2 text-xs text-[#66716b]">
               <span className="flex items-center gap-2"><Clock3 size={13} /> {data.processing_ms} ms processing</span>
               <span>{data.evaluations_per_second.toLocaleString("en-IN")} evaluations/sec</span>
-              <span>{formatPercent(data.false_positive_rate)} false-positive rate</span>
+              <span>{data.ground_truth_available ? `${formatPercent(data.false_positive_rate)} false-positive rate` : "Ground-truth metrics unavailable for live data"}</span>
             </div>
           </div>
         </div>
@@ -189,7 +218,7 @@ export function Dashboard() {
                   <tr key={item.id} className="group hover:bg-[#f9faf7]">
                     <td className="px-5 py-3.5 font-mono text-[11px] font-semibold text-[#1e6b51]">{item.payment_id}</td>
                     <td className="px-3 py-3.5 font-medium">{item.category}</td><td className="px-3 py-3.5 text-[#66716b]">{item.expected}</td><td className="px-3 py-3.5 text-[#b14e29]">{item.actual}</td><td className="number-tabular px-3 py-3.5 text-right font-semibold">{formatMoney(item.financial_impact)}</td>
-                    <td className="px-3"><Link href={`/runs/${activeRun}/payments/${item.payment_id}`}><ArrowRight size={15} className="text-[#89928d] group-hover:text-[#1e6b51]" /></Link></td>
+                    <td className="px-3">{DEMO_MODE ? <Link href={`/runs/${activeRun}/payments/${item.payment_id}`}><ArrowRight size={15} className="text-[#89928d] group-hover:text-[#1e6b51]" /></Link> : item.root_cause_id ? <Link href={`/root-causes/${item.root_cause_id}`} aria-label={`Open root cause for ${item.payment_id}`}><ArrowRight size={15} className="text-[#89928d] group-hover:text-[#1e6b51]" /></Link> : null}</td>
                   </tr>
                 ))}
               </tbody>
@@ -198,18 +227,18 @@ export function Dashboard() {
         </div>
       </section>
 
-      <Link href={`/runs/${activeRun}/payments/PAY_82HD9`} className="group flex flex-col justify-between gap-5 rounded-2xl border border-[#efc6b3] bg-[#fff7f2] p-5 transition hover:border-[#e86f3a]/60 md:flex-row md:items-center">
+      {DEMO_MODE ? <><Link href={`/runs/${activeRun}/payments/PAY_82HD9`} className="group flex flex-col justify-between gap-5 rounded-2xl border border-[#efc6b3] bg-[#fff7f2] p-5 transition hover:border-[#e86f3a]/60 md:flex-row md:items-center">
         <div className="flex items-start gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#ffe4d6] text-[#cc5a2c]"><ShieldAlert size={19} /></span><div><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#bd522a]">Featured proof · PAY_82HD9</p><h3 className="mt-1 text-base font-semibold">Gateway and bank match. The money is still wrong.</h3><p className="mt-1 text-xs leading-5 text-[#765f54]">Inspect the contracted 1.55% MDR against the observed 1.75% deduction.</p></div></div>
         <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-[#a9431f]">Open financial proof <ArrowRight size={16} className="transition group-hover:translate-x-1" /></span>
       </Link>
       <Link href={`/runs/${activeRun}/mutation-test`} className="group mt-4 flex flex-col justify-between gap-5 rounded-2xl border border-[#cbded3] bg-[#f4fbf7] p-5 transition hover:border-[#2d7a5d]/60 md:flex-row md:items-center">
         <div className="flex items-start gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#dff2e8] text-[#1e6b51]"><Beaker size={19} /></span><div><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#1e6b51]">Control quality</p><h3 className="mt-1 text-base font-semibold">Would your controls catch the money being wrong?</h3><p className="mt-1 text-xs leading-5 text-[#5e7168]">Inject 50 isolated financial failures and measure real detection coverage.</p></div></div>
         <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-[#1e6b51]">Test my controls <ArrowRight size={16} className="transition group-hover:translate-x-1" /></span>
-      </Link>
+      </Link></> : <section className="rounded-2xl border border-[#cbded3] bg-[#f4fbf7] p-5"><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#1e6b51]">Live Razorpay verification</p><h3 className="mt-1 text-base font-semibold">Actual gateway evidence has been tested against approved controls.</h3><p className="mt-1 text-xs leading-5 text-[#5e7168]">Open a root cause to run the bounded investigation trace, or sync another immutable run.</p><div className="mt-4 flex flex-wrap gap-3">{roots.data?.[0] ? <Link href={`/root-causes/${roots.data[0].id}`} className="inline-flex items-center gap-2 rounded-lg bg-[#112a2b] px-3 py-2 text-xs font-semibold text-white">Investigate root cause <ArrowRight size={13} /></Link> : null}<Link href="/data" className="inline-flex items-center gap-2 rounded-lg border border-[#cbded3] bg-white px-3 py-2 text-xs font-semibold">Open data sources</Link></div></section>}
       <section className="mt-4 grid gap-3 md:grid-cols-3">
         <QuickLink href="/agreements" label="Agreement provenance" detail="Clause → typed control → immutable version" />
-        <QuickLink href={`/runs/${activeRun}/coverage`} label="Control coverage" detail="Measure governed and ungoverned money edges" />
-        <QuickLink href="/exceptions" label="Evidence cases" detail="Verify, escalate or resolve with an audit trail" />
+        {DEMO_MODE ? <QuickLink href={`/runs/${activeRun}/coverage`} label="Control coverage" detail="Measure governed and ungoverned money edges" /> : <QuickLink href="/data" label="Source provenance" detail="Immutable snapshots, checksums and sync job status" />}
+        {DEMO_MODE ? <QuickLink href="/exceptions" label="Evidence cases" detail="Verify, escalate or resolve with an audit trail" /> : roots.data?.[0] ? <QuickLink href={`/root-causes/${roots.data[0].id}`} label="Agent investigation" detail="Hypothesize, reject, retry and verify" /> : <QuickLink href="/data" label="No root cause yet" detail="Sync evidence and run deterministic controls" />}
       </section>
     </main>
   );

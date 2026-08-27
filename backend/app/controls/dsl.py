@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class ControlParameterError(ValueError):
@@ -43,6 +43,31 @@ class GstFeeParameters(BaseModel):
 
 
 class SettlementArithmeticParameters(BaseModel):
+    tolerance: Decimal
+
+    @field_validator("tolerance", mode="before")
+    @classmethod
+    def parse_decimal_strings(cls, value: Any) -> Decimal:
+        return _decimal_string(value)
+
+
+class RefundIntegrityParameters(BaseModel):
+    maximum_deductions: int = Field(ge=1, le=10)
+    refund_fee: Decimal
+    tolerance: Decimal
+
+    @field_validator("refund_fee", "tolerance", mode="before")
+    @classmethod
+    def parse_decimal_strings(cls, value: Any) -> Decimal:
+        return _decimal_string(value)
+
+
+class SettlementSlaParameters(BaseModel):
+    business_days: int = Field(ge=0, le=30)
+
+
+class UnsupportedFeeParameters(BaseModel):
+    allowlist: list[str] = Field(min_length=1, max_length=100)
     tolerance: Decimal
 
     @field_validator("tolerance", mode="before")

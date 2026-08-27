@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Annotated, Any
@@ -24,7 +25,7 @@ class Principal:
 
 @lru_cache(maxsize=4)
 def _jwk_client(url: str) -> PyJWKClient:
-    return PyJWKClient(url, cache_keys=True, lifespan=300)
+    return PyJWKClient(url, cache_keys=True, lifespan=300, timeout=5)
 
 
 def _roles(value: Any) -> frozenset[str]:
@@ -74,13 +75,19 @@ def authenticate(
         ) from exc
     tenant_id = str(claims.get(settings.oidc_tenant_claim, "")).strip()
     roles = _roles(claims.get(settings.oidc_roles_claim))
-    if not tenant_id or not roles:
+    subject = str(claims.get("sub", "")).strip()
+    if (
+        not re.fullmatch(r"[A-Za-z0-9._:-]{1,120}", tenant_id)
+        or not re.fullmatch(r"[A-Za-z0-9._:@+-]{1,160}", subject)
+        or not roles
+        or len(roles) > 32
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Token is missing tenant or role claims",
+            detail="Token has invalid tenant, subject, or role claims",
         )
     return Principal(
-        subject=str(claims["sub"]),
+        subject=subject,
         tenant_id=tenant_id,
         roles=roles,
         auth_mode="oidc",

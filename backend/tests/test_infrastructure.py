@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -16,16 +17,35 @@ from sqlalchemy.orm import Session
 
 from app.ai.provider import build_ai_runtime
 from app.core.config import Settings, get_settings
+from app.domain.models import (
+    CaseEvidence,
+    ControlType,
+    ExceptionCaseStatus,
+    RootCause,
+    Violation,
+)
 from app.ingestion.csv import parse_source_csv
 from app.main import app
 from app.persistence.database import get_engine, get_session_factory
-from app.persistence.orm import AgentExecutionRecord, ArtifactRecord, Base, SourceSnapshotRecord
+from app.persistence.orm import (
+    AgentExecutionRecord,
+    ArtifactRecord,
+    Base,
+    RootCauseRecord,
+    RunRecord,
+    SourceSnapshotRecord,
+    ViolationRecord,
+)
 from app.persistence.repository import (
     AgentExecutionRepository,
+    CaseConcurrencyError,
+    CaseRepository,
     JobRepository,
+    LeaseOwnershipError,
     SourceSnapshotRepository,
     canonical_records,
 )
+from app.services.governance import CONTROLS
 from app.storage.service import ArtifactService
 from app.storage.supabase import StorageNotConfiguredError, SupabaseStorage
 from app.synthetic.generator import generate_dataset
@@ -143,6 +163,29 @@ def test_storage_upload_is_private_backend_request() -> None:
     assert stored.byte_size == 9
 
 
+def test_storage_compensation_deletes_only_the_exact_object_path() -> None:
+    captured: dict[str, str] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["url"] = str(request.url)
+        captured["body"] = request.content.decode()
+        return httpx.Response(200, json=[])
+
+    settings = Settings(
+        SUPABASE_URL="https://demo.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY="backend-secret",
+        SUPABASE_STORAGE_BUCKET="sl3dge-private",
+    )
+    storage = SupabaseStorage(settings, transport=httpx.MockTransport(handler))
+    asyncio.run(storage.delete("tenants/merchant_a/uploads/UPLOAD_1.csv"))
+    assert captured["method"] == "DELETE"
+    assert captured["url"].endswith("/storage/v1/object/sl3dge-private")
+    assert json.loads(captured["body"]) == {"prefixes": ["tenants/merchant_a/uploads/UPLOAD_1.csv"]}
+    with pytest.raises(ValueError, match="safe relative path"):
+        asyncio.run(storage.delete("tenants/merchant_a/../merchant_b/source.csv"))
+
+
 def test_artifact_service_stores_only_private_object_metadata_in_postgres() -> None:
     async def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"Key": "agreements/novacart-v1.pdf"})
@@ -247,13 +290,18 @@ def test_background_jobs_are_idempotent_leased_and_bounded() -> None:
             claimed,
             error_code="UPSTREAM_TIMEOUT",
             safe_message="Upstream timed out",
+            worker_id="worker-1",
             retry_delay_seconds=0,
         )
         assert claimed.status == "RETRYABLE"
         claimed_again = repository.claim_next(tenant_id="merchant_a", worker_id="worker-2")
         assert claimed_again is not None
         assert claimed_again.attempt_count == 2
-        repository.succeed(claimed_again, {"sync_id": "SYNC_1"})
+        repository.succeed(
+            claimed_again,
+            {"sync_id": "SYNC_1"},
+            worker_id="worker-2",
+        )
         assert claimed_again.status == "SUCCEEDED"
         assert claimed_again.result == {"sync_id": "SYNC_1"}
         assert (
@@ -284,6 +332,197 @@ def test_agent_execution_results_are_durable_and_tenant_scoped() -> None:
         assert repository.get(tenant_id="merchant_a", execution_id="INV_001") is saved
         assert repository.get(tenant_id="merchant_b", execution_id="INV_001") is None
         assert session.query(AgentExecutionRecord).count() == 1
+
+
+def test_tenant_control_registry_round_trips_decimal_strings() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        from app.persistence.repository import RunRepository
+
+        repository = RunRepository(session)
+        repository.save_controls(CONTROLS, tenant_id="merchant_a")
+        session.flush()
+        loaded = repository.list_controls(tenant_id="merchant_a", approved_only=True)
+
+    by_id = {control.id: control for control in loaded}
+    assert by_id["CTRL_MDR_DOMESTIC"].parameters["rate"] == "0.0155"
+    assert by_id["CTRL_MDR_DOMESTIC"].parameters["tolerance"] == "0.01"
+    assert by_id["CTRL_GST_FEE"].parameters["rate"] == "0.18"
+    assert "CTRL_UNSUPPORTED_FEE_CANDIDATE" not in by_id
+
+
+def test_expired_job_leases_are_reclaimed_without_stale_worker_overwrites() -> None:
+    from datetime import timedelta
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        repository = JobRepository(session)
+        record, _ = repository.enqueue(
+            tenant_id="merchant_a",
+            job_type="RAZORPAY_SYNC",
+            idempotency_key="reclaimable-job",
+            payload={"year": 2026, "month": 8},
+            max_attempts=3,
+        )
+        first = repository.claim_next(
+            tenant_id="merchant_a", worker_id="worker-old", lease_seconds=60
+        )
+        assert first is record
+        record.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        session.flush()
+        second = repository.claim_next(
+            tenant_id="merchant_a", worker_id="worker-new", lease_seconds=60
+        )
+        assert second is record
+        assert second.attempt_count == 2
+        assert (
+            repository.renew_lease(
+                tenant_id="merchant_a",
+                job_id=record.id,
+                worker_id="worker-old",
+                lease_seconds=60,
+            )
+            is False
+        )
+        with pytest.raises(LeaseOwnershipError):
+            repository.succeed(record, {}, worker_id="worker-old")
+        repository.succeed(record, {"sync_id": "SYNC_2"}, worker_id="worker-new")
+        assert record.status == "SUCCEEDED"
+
+
+def test_expired_job_at_attempt_limit_is_failed_not_reclaimed() -> None:
+    from datetime import timedelta
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        repository = JobRepository(session)
+        record, _ = repository.enqueue(
+            tenant_id="merchant_a",
+            job_type="RAZORPAY_SYNC",
+            idempotency_key="exhausted-job",
+            payload={"year": 2026, "month": 8},
+            max_attempts=1,
+        )
+        assert repository.claim_next(tenant_id="merchant_a", worker_id="worker-old")
+        record.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        session.flush()
+        assert repository.claim_next(tenant_id="merchant_a", worker_id="worker-new") is None
+        assert record.status == "FAILED"
+        assert record.error and record.error["code"] == "LEASE_EXHAUSTED"
+
+
+def test_durable_case_transitions_use_optimistic_concurrency() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    now = datetime(2026, 8, 27, tzinfo=timezone.utc)
+    root = RootCause(
+        id="RC_LIVE_1",
+        title="Systemic MDR deviation",
+        category="MDR rate deviation",
+        affected_count=1,
+        verified_impact="23.60",
+        expected_value="0.0155",
+        observed_value="0.0175",
+        first_seen=now,
+        last_seen=now,
+        verification_status="PROVEN",
+        primary_violation_count=1,
+    )
+    violation = Violation(
+        id="V_LIVE_1",
+        payment_id="pay_live_1",
+        category="MDR rate deviation",
+        control_type=ControlType.MDR_RATE,
+        expected="155.00",
+        actual="175.00",
+        difference="20.00",
+        financial_impact="23.60",
+        root_cause_id=root.id,
+        occurred_at=now,
+    )
+    with Session(engine) as session:
+        session.add(
+            RunRecord(
+                tenant_id="merchant_a",
+                id="RUN_LIVE_1",
+                name="Live run",
+                status="COMPLETE",
+                seed=None,
+                manifest={},
+                completed_at=now,
+                created_at=now,
+            )
+        )
+        session.add(
+            RootCauseRecord(
+                tenant_id="merchant_a",
+                run_id="RUN_LIVE_1",
+                id=root.id,
+                title=root.title,
+                category=root.category,
+                affected_count=1,
+                verified_impact=root.verified_impact,
+                verification_status="PROVEN",
+                evidence={"expected": "0.0155", "observed": "0.0175"},
+            )
+        )
+        session.add(
+            ViolationRecord(
+                tenant_id="merchant_a",
+                run_id="RUN_LIVE_1",
+                id=violation.id,
+                payment_id=violation.payment_id,
+                category=violation.category,
+                control_type=violation.control_type.value,
+                difference=violation.difference,
+                financial_impact=violation.financial_impact,
+                confidence=violation.confidence,
+                root_cause_id=root.id,
+                occurred_at=now,
+                evidence={"expected": violation.expected, "actual": violation.actual},
+            )
+        )
+        session.flush()
+        repository = CaseRepository(session)
+        created = repository.create_from_investigation(
+            tenant_id="merchant_a",
+            case_id="CASE_LIVE_1",
+            root_cause=root,
+            violations=[violation],
+            evidence=[
+                CaseEvidence(
+                    id="EVIDENCE_1",
+                    kind="DETERMINISTIC_CALCULATION",
+                    title="MDR calculation",
+                    summary="The effective control was exceeded.",
+                    source_id="EVAL_1",
+                    verified=True,
+                )
+            ],
+            actor_id="analyst-a",
+        )
+        assert created.version == 1
+        verified = repository.transition(
+            tenant_id="merchant_a",
+            case_id=created.id,
+            target=ExceptionCaseStatus.VERIFIED,
+            actor_id="reviewer-b",
+            note="",
+            expected_version=1,
+        )
+        assert verified.version == 2
+        with pytest.raises(CaseConcurrencyError):
+            repository.transition(
+                tenant_id="merchant_a",
+                case_id=created.id,
+                target=ExceptionCaseStatus.ESCALATED,
+                actor_id="reviewer-c",
+                note="Escalating with evidence.",
+                expected_version=1,
+            )
 
 
 def test_migrations_are_immutable_and_upgrade_from_empty_database(tmp_path: Path) -> None:

@@ -35,6 +35,19 @@ export interface RunSummary {
   unresolved_count: number;
   processing_ms: number;
   evaluations_per_second: number;
+  ground_truth_available: boolean;
+  metrics_scope: string;
+}
+
+export interface RunListItem {
+  id: string;
+  name: string;
+  status: string;
+  source: "SEEDED" | "RAZORPAY";
+  transaction_count: number;
+  event_count: number;
+  control_evaluation_count: number;
+  completed_at: string | null;
 }
 
 export interface Violation {
@@ -45,6 +58,7 @@ export interface Violation {
   actual: string;
   financial_impact: string;
   status: EvaluationStatus;
+  root_cause_id: string | null;
 }
 
 export interface RootCause {
@@ -303,6 +317,7 @@ export type ExceptionCaseStatus = "OPEN" | "VERIFIED" | "ESCALATED" | "RESOLVED"
 export interface ExceptionCase {
   id: string;
   run_id: string;
+  root_cause_id: string | null;
   title: string;
   payment_id: string;
   primary_violation_id: string;
@@ -327,6 +342,7 @@ export interface ExceptionCase {
   created_at: string;
   updated_at: string;
   resolution_note: string | null;
+  version: number;
 }
 
 export interface UnresolvedMatch {

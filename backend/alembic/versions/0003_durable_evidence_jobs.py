@@ -72,9 +72,7 @@ def upgrade() -> None:
         "source_snapshots",
         ["tenant_id", "content_sha256"],
     )
-    op.create_index(
-        "ix_source_snapshots_tenant_run", "source_snapshots", ["tenant_id", "run_id"]
-    )
+    op.create_index("ix_source_snapshots_tenant_run", "source_snapshots", ["tenant_id", "run_id"])
 
     op.create_table(
         "control_evaluations",
@@ -163,8 +161,7 @@ def upgrade() -> None:
         sa.CheckConstraint("attempt_count >= 0", name="ck_background_jobs_attempt_count"),
         sa.CheckConstraint("max_attempts >= 1", name="ck_background_jobs_max_attempts"),
         sa.CheckConstraint(
-            "status IN ('QUEUED', 'RUNNING', 'RETRYABLE', 'SUCCEEDED', 'FAILED', "
-            "'CANCELLED')",
+            "status IN ('QUEUED', 'RUNNING', 'RETRYABLE', 'SUCCEEDED', 'FAILED', 'CANCELLED')",
             name="ck_background_jobs_status",
         ),
         sa.PrimaryKeyConstraint("tenant_id", "id"),

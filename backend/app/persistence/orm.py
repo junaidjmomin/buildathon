@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
     JSON,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKeyConstraint,
     Index,
@@ -31,6 +32,7 @@ class Base(DeclarativeBase):
 
 class RunRecord(Base):
     __tablename__ = "runs"
+    __table_args__ = (Index("ix_runs_tenant_completed", "tenant_id", "completed_at", "created_at"),)
 
     tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
@@ -51,6 +53,13 @@ class EventRecord(Base):
             ondelete="CASCADE",
         ),
         Index("ix_events_tenant_run_type", "tenant_id", "run_id", "event_type"),
+        Index(
+            "ix_events_tenant_run_type_external",
+            "tenant_id",
+            "run_id",
+            "event_type",
+            "external_id",
+        ),
         Index("ix_events_tenant_external", "tenant_id", "external_id"),
     )
 
@@ -105,6 +114,136 @@ class EventEdgeRecord(Base):
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT)
 
 
+class AgreementRecord(Base):
+    __tablename__ = "agreements"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "artifact_id"],
+            ["artifacts.tenant_id", "artifacts.id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "artifact_id",
+            name="uq_agreements_tenant_artifact",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "content_hash",
+            name="uq_agreements_tenant_content_hash",
+        ),
+        CheckConstraint(
+            "status IN ('UPLOADED', 'EXTRACTED', 'APPROVED', 'ARCHIVED')",
+            name="ck_agreements_status",
+        ),
+        Index("ix_agreements_tenant_created", "tenant_id", "created_at", "id"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
+    id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    artifact_id: Mapped[str] = mapped_column(String(120))
+    merchant: Mapped[str] = mapped_column(String(200))
+    title: Mapped[str] = mapped_column(String(240))
+    status: Mapped[str] = mapped_column(String(32))
+    effective_from: Mapped[date] = mapped_column(Date)
+    effective_to: Mapped[date | None] = mapped_column(Date)
+    source_type: Mapped[str] = mapped_column(String(64))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_by: Mapped[str] = mapped_column(String(160))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AgreementClauseRecord(Base):
+    __tablename__ = "agreement_clauses"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "agreement_id"],
+            ["agreements.tenant_id", "agreements.id"],
+            ondelete="CASCADE",
+        ),
+        Index(
+            "ix_agreement_clauses_tenant_agreement_page",
+            "tenant_id",
+            "agreement_id",
+            "page",
+            "id",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
+    agreement_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    reference: Mapped[str] = mapped_column(String(120))
+    page: Mapped[int] = mapped_column(Integer)
+    heading: Mapped[str] = mapped_column(String(240))
+    text: Mapped[str] = mapped_column(Text)
+    effective_from: Mapped[date] = mapped_column(Date)
+    effective_to: Mapped[date | None] = mapped_column(Date)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ControlProposalRecord(Base):
+    __tablename__ = "control_proposals"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "agreement_id"],
+            ["agreements.tenant_id", "agreements.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "agreement_id", "clause_id"],
+            [
+                "agreement_clauses.tenant_id",
+                "agreement_clauses.agreement_id",
+                "agreement_clauses.id",
+            ],
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "status IN ('DRAFT', 'REVIEW_REQUIRED', 'APPROVED', 'REJECTED')",
+            name="ck_control_proposals_status",
+        ),
+        CheckConstraint("version >= 1", name="ck_control_proposals_version"),
+        UniqueConstraint(
+            "tenant_id",
+            "control_id",
+            name="uq_control_proposals_tenant_control",
+        ),
+        Index(
+            "ix_control_proposals_tenant_agreement_status",
+            "tenant_id",
+            "agreement_id",
+            "status",
+            "created_at",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
+    id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    agreement_id: Mapped[str] = mapped_column(String(120))
+    clause_id: Mapped[str] = mapped_column(String(120))
+    control_id: Mapped[str] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(32))
+    confidence: Mapped[Decimal] = mapped_column(RATE)
+    rationale: Mapped[str] = mapped_column(Text)
+    source_excerpt: Mapped[str] = mapped_column(Text)
+    extraction_method: Mapped[str] = mapped_column(String(80))
+    proposed_control: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT)
+    execution_id: Mapped[str | None] = mapped_column(String(120))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    verification_status: Mapped[str] = mapped_column(String(32), default="NOT_RUN")
+    verification_result: Mapped[dict[str, Any] | None] = mapped_column(JSON_DOCUMENT)
+    verified_by: Mapped[str | None] = mapped_column(String(160))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[str | None] = mapped_column(String(160))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(160))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ControlRecord(Base):
     __tablename__ = "controls"
     __table_args__ = (
@@ -139,6 +278,19 @@ class ViolationRecord(Base):
             ondelete="CASCADE",
         ),
         Index("ix_violations_tenant_run_category", "tenant_id", "run_id", "category"),
+        Index(
+            "ix_violations_tenant_run_occurred",
+            "tenant_id",
+            "run_id",
+            "occurred_at",
+            "id",
+        ),
+        Index(
+            "ix_violations_tenant_root_occurred",
+            "tenant_id",
+            "root_cause_id",
+            "occurred_at",
+        ),
     )
 
     tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
@@ -163,6 +315,7 @@ class RootCauseRecord(Base):
             ["runs.tenant_id", "runs.id"],
             ondelete="CASCADE",
         ),
+        UniqueConstraint("tenant_id", "id", name="uq_root_causes_tenant_id"),
     )
 
     tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
@@ -174,6 +327,61 @@ class RootCauseRecord(Base):
     verified_impact: Mapped[Decimal] = mapped_column(MONEY)
     verification_status: Mapped[str] = mapped_column(String(32))
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT)
+
+
+class ExceptionCaseRecord(Base):
+    __tablename__ = "exception_cases"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            ["runs.tenant_id", "runs.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id", "primary_violation_id"],
+            ["violations.tenant_id", "violations.run_id", "violations.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id", "root_cause_id"],
+            ["root_causes.tenant_id", "root_causes.run_id", "root_causes.id"],
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "status IN ('OPEN', 'VERIFIED', 'ESCALATED', 'RESOLVED')",
+            name="ck_exception_cases_status",
+        ),
+        CheckConstraint("version >= 1", name="ck_exception_cases_version"),
+        Index(
+            "ix_exception_cases_tenant_run_status",
+            "tenant_id",
+            "run_id",
+            "status",
+            "updated_at",
+        ),
+        Index(
+            "ix_exception_cases_tenant_root",
+            "tenant_id",
+            "root_cause_id",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
+    id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80))
+    root_cause_id: Mapped[str] = mapped_column(String(120))
+    title: Mapped[str] = mapped_column(String(200))
+    payment_id: Mapped[str] = mapped_column(String(120))
+    primary_violation_id: Mapped[str] = mapped_column(String(120))
+    violation_ids: Mapped[list[str]] = mapped_column(JSON_DOCUMENT)
+    status: Mapped[str] = mapped_column(String(32))
+    verified_impact: Mapped[Decimal] = mapped_column(MONEY)
+    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON_DOCUMENT)
+    audit_trail: Mapped[list[dict[str, Any]]] = mapped_column(JSON_DOCUMENT)
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class MutationTestRecord(Base):
@@ -332,6 +540,15 @@ class ControlEvaluationRecord(Base):
             "tenant_id",
             "target_type",
             "target_id",
+        ),
+        Index(
+            "ix_control_evaluations_tenant_run_target_outcome",
+            "tenant_id",
+            "run_id",
+            "target_type",
+            "target_id",
+            "outcome",
+            "evaluated_at",
         ),
     )
 

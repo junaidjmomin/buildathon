@@ -10,11 +10,14 @@ import {
   LoaderCircle,
   ScanText,
   ShieldCheck,
+  UploadCloud,
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { api } from "@/lib/api";
 import { formatPercent } from "@/lib/format";
+
+const DEMO_MODE = process.env.NEXT_PUBLIC_APP_MODE !== "production";
 
 export default function AgreementsPage() {
   const queryClient = useQueryClient();
@@ -29,8 +32,15 @@ export default function AgreementsPage() {
     mutationFn: () => api.extractAgreementControls(agreement!.id),
     onSuccess: (data) => queryClient.setQueryData(["agreement-proposals", agreement?.id], data),
   });
+  const upload = useMutation({
+    mutationFn: api.uploadAgreement,
+    onSuccess: (created) => {
+      queryClient.setQueryData(["agreements"], [created]);
+      queryClient.setQueryData(["agreement-proposals", created.id], []);
+    },
+  });
 
-  if (agreements.isPending || proposals.isPending) {
+  if (agreements.isPending || (Boolean(agreement) && proposals.isPending)) {
     return (
       <AppShell>
         <div className="grid min-h-[calc(100vh-64px)] place-items-center">
@@ -39,8 +49,46 @@ export default function AgreementsPage() {
       </AppShell>
     );
   }
-  if (!agreement || !proposals.data) {
-    return <AppShell><main className="p-8">Agreement provenance could not be loaded.</main></AppShell>;
+  if (!agreement) {
+    return (
+      <AppShell>
+        <main className="mx-auto max-w-3xl px-5 py-10 md:px-8">
+          <section className="panel rounded-2xl p-6 md:p-8">
+            <div className="flex items-start gap-3">
+              <span className="grid h-11 w-11 place-items-center rounded-xl bg-[#e5f2eb] text-[#1e6b51]"><UploadCloud size={20} /></span>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#1e6b51]">Tenant agreement registry</p>
+                <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em]">Upload the governing merchant agreement</h1>
+                <p className="mt-2 text-sm leading-6 text-[#66716b]">The PDF is stored privately. sl3dge extracts provenance-linked pages, then the agent may propose typed controls for human review.</p>
+              </div>
+            </div>
+            <form
+              className="mt-7 grid gap-4 sm:grid-cols-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const formData = new FormData(event.currentTarget);
+                if (!formData.get("effective_to")) formData.delete("effective_to");
+                upload.mutate(formData);
+              }}
+            >
+              <label className="grid gap-1.5 text-xs font-medium">Merchant name<input name="merchant" required maxLength={200} className="rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
+              <label className="grid gap-1.5 text-xs font-medium">Agreement title<input name="title" required maxLength={240} className="rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
+              <label className="grid gap-1.5 text-xs font-medium">Effective from<input name="effective_from" type="date" required className="rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
+              <label className="grid gap-1.5 text-xs font-medium">Effective to <span className="font-normal text-[#7b857f]">(optional)</span><input name="effective_to" type="date" className="rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
+              <label className="grid gap-1.5 text-xs font-medium sm:col-span-2">Agreement PDF<input name="file" type="file" accept="application/pdf,.pdf" required className="rounded-xl border border-dashed border-[#cfd8d1] bg-[#f8faf7] px-3 py-5 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[#e5f2eb] file:px-3 file:py-2 file:font-semibold file:text-[#1e6b51]" /></label>
+              {upload.isError ? <p role="alert" className="text-xs text-[#b34a25] sm:col-span-2">{upload.error.message}</p> : null}
+              <button type="submit" disabled={upload.isPending} className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white disabled:opacity-60 sm:col-span-2">
+                {upload.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <UploadCloud size={15} />} Upload and extract agreement
+              </button>
+            </form>
+            {DEMO_MODE ? <p className="mt-4 text-center text-[10px] text-[#7a847e]">The seeded NovaCart agreement normally appears after loading the demo.</p> : null}
+          </section>
+        </main>
+      </AppShell>
+    );
+  }
+  if (!proposals.data) {
+    return <AppShell><main className="p-8">Agreement proposals could not be loaded.</main></AppShell>;
   }
 
   const clauses = new Map(agreement.clauses.map((clause) => [clause.id, clause]));
@@ -61,6 +109,8 @@ export default function AgreementsPage() {
             {extract.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <ScanText size={15} />} Extract structured controls
           </button>
         </section>
+
+        {extract.isError ? <p role="alert" className="mb-5 rounded-xl border border-[#efc6b3] bg-[#fff7f2] px-4 py-3 text-xs text-[#a9431f]">{extract.error.message}</p> : null}
 
         <section className="panel mb-6 rounded-2xl p-5">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">

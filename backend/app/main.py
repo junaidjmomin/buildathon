@@ -18,6 +18,7 @@ from app.persistence.database import get_engine
 settings = get_settings()
 settings.validate_runtime()
 logging.basicConfig(level=logging.INFO, format="%(message)s")
+REQUIRED_SCHEMA_REVISION = "0008_control_proposal_reviews"
 
 app = FastAPI(
     title="sl3dge API",
@@ -36,7 +37,7 @@ app.add_middleware(
     allow_origins=settings.parsed_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
 )
 app.include_router(router)
 
@@ -56,8 +57,11 @@ def readiness() -> dict[str, str]:
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
+            revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Database is unavailable") from exc
+    if revision != REQUIRED_SCHEMA_REVISION:
+        raise HTTPException(status_code=503, detail="Database schema is not current")
     return {"status": "ready", "database": "postgres"}
 
 

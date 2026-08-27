@@ -19,11 +19,13 @@ import type {
   RazorpayConnectionStatus,
   RazorpaySyncSummary,
   RunSummary,
+  RunListItem,
   SourceUploadResponse,
   UnresolvedMatch,
   Violation,
   ViolationLineageResponse,
 } from "@/types/api";
+import { getAccessToken, isOidcEnabled } from "@/lib/auth-client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -40,14 +42,23 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set("Accept", "application/json");
   if (!(init?.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  const accessToken = await getAccessToken();
+  if (isOidcEnabled() && !accessToken) {
+    throw new ApiError("Your session has expired. Sign in again to continue.", 401, null);
+  }
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   init?.signal?.addEventListener("abort", () => controller.abort(), { once: true });
   let response: Response;
   try {
@@ -81,6 +92,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   loadDemo: () => request<DemoLoadResponse>("/demo/load", { method: "POST" }),
+  runs: () => request<RunListItem[]>("/runs"),
   summary: (runId: string) => request<RunSummary>(`/runs/${segment(runId)}/summary`),
   violations: (runId: string) => request<Violation[]>(`/runs/${segment(runId)}/violations`),
   rootCauses: (runId: string) => request<RootCause[]>(`/runs/${segment(runId)}/root-causes`),
@@ -99,20 +111,35 @@ export const api = {
   counterfactual: (runId: string, paymentId: string) =>
     request<CounterfactualSettlement>(`/runs/${segment(runId)}/payments/${segment(paymentId)}/counterfactual`),
   agreements: () => request<Agreement[]>("/agreements"),
+  uploadAgreement: (formData: FormData) =>
+    request<Agreement>(
+      "/agreements/upload",
+      { method: "POST", body: formData },
+      60_000,
+    ),
   agreementProposals: (agreementId: string) =>
     request<ControlProposal[]>(`/agreements/${segment(agreementId)}/control-proposals`),
   extractAgreementControls: (agreementId: string) =>
-    request<ControlProposal[]>(`/agreements/${segment(agreementId)}/extract-controls`, { method: "POST" }),
+    request<ControlProposal[]>(
+      `/agreements/${segment(agreementId)}/extract-controls`,
+      { method: "POST" },
+      60_000,
+    ),
   controlCoverage: (runId: string) =>
     request<ControlCoverageSummary>(`/runs/${segment(runId)}/control-coverage`),
   exceptionCases: (runId: string) =>
     request<ExceptionCase[]>(`/runs/${segment(runId)}/cases`),
   unresolvedMatches: (runId: string) =>
     request<UnresolvedMatch[]>(`/runs/${segment(runId)}/unresolved`),
-  transitionCase: (caseId: string, action: "verify" | "escalate" | "resolve", note = "") =>
+  transitionCase: (
+    caseId: string,
+    action: "verify" | "escalate" | "resolve",
+    note = "",
+    expectedVersion?: number,
+  ) =>
     request<ExceptionCase>(`/cases/${segment(caseId)}/${action}`, {
       method: "POST",
-      body: JSON.stringify({ note }),
+      body: JSON.stringify({ note, expected_version: expectedVersion }),
     }),
   rootCause: (rootCauseId: string) => request<RootCause>(`/root-causes/${segment(rootCauseId)}`),
   generateHypothesis: (rootCauseId: string) =>

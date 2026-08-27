@@ -740,6 +740,7 @@ class DemoStore:
         occurred_at = datetime.now(timezone.utc)
         case.status = target
         case.updated_at = occurred_at
+        case.version += 1
         if target == ExceptionCaseStatus.RESOLVED:
             case.resolution_note = note
         case.audit_trail.append(

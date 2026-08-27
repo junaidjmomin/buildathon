@@ -133,9 +133,7 @@ def test_unverified_evidence_cannot_prove_financial_conclusion() -> None:
                 "observed_rate": "0.0175",
                 "difference_amount": "20.00",
             },
-            contract_controls=[
-                {"control_id": "CTRL_1", "rate": "0.0155", "tolerance": "0.01"}
-            ],
+            contract_controls=[{"control_id": "CTRL_1", "rate": "0.0155", "tolerance": "0.01"}],
         )
     )
     assert result.status == "UNRESOLVED"

@@ -101,9 +101,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("tenant_id", "id"),
     )
     op.create_index("ix_artifacts_case_id", "artifacts", ["case_id"])
-    op.create_index(
-        "ix_artifacts_tenant_run_kind", "artifacts", ["tenant_id", "run_id", "kind"]
-    )
+    op.create_index("ix_artifacts_tenant_run_kind", "artifacts", ["tenant_id", "run_id", "kind"])
 
     op.create_table(
         "events",
@@ -128,9 +126,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_events_occurred_at", "events", ["occurred_at"])
     op.create_index("ix_events_tenant_external", "events", ["tenant_id", "external_id"])
-    op.create_index(
-        "ix_events_tenant_run_type", "events", ["tenant_id", "run_id", "event_type"]
-    )
+    op.create_index("ix_events_tenant_run_type", "events", ["tenant_id", "run_id", "event_type"])
 
     op.create_table(
         "mutation_tests",

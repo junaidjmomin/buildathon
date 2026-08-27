@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const apiOrigin = process.env.NEXT_PUBLIC_API_BASE_URL
   ? new URL(process.env.NEXT_PUBLIC_API_BASE_URL).origin
   : "http://localhost:8000";
+const oidcOrigin = process.env.NEXT_PUBLIC_OIDC_AUTHORITY
+  ? new URL(process.env.NEXT_PUBLIC_OIDC_AUTHORITY).origin
+  : "";
 const production = process.env.NODE_ENV === "production";
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -10,7 +13,8 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  `connect-src 'self' ${apiOrigin}`,
+  `connect-src 'self' ${apiOrigin}${oidcOrigin ? ` ${oidcOrigin}` : ""}`,
+  `frame-src 'self'${oidcOrigin ? ` ${oidcOrigin}` : ""}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

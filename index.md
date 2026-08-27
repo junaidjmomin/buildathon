@@ -15,10 +15,14 @@ flowchart LR
     GRAPH --> ENGINE[Deterministic control engine]
     ENGINE --> RESULTS[Expected vs actual\nPASS / VIOLATION / WARNING / UNRESOLVED]
     RESULTS --> CASES[Root causes, cases, lineage]
-    CASES --> AI[AI provider abstraction]
-    AI -->|optional Groq chat completion| GROQ[Groq LLM]
-    CASES --> VERIFY[Backtest and evidence verification]
+    CASES --> AGENT[LangGraph controller\n3 bounded workflows]
+    AGENT --> AI[Structured provider abstraction]
+    AI -->|optional Groq structured output| GROQ[Groq LLM]
+    AGENT --> VERIFY[Deterministic verifier and backtests]
     VERIFY --> RESULTS
+    API --> JOBS[Durable job queue]
+    JOBS --> WORKER[Razorpay sync worker]
+    WORKER --> RZP
     API --> REPO[Repository + SQLAlchemy]
     REPO --> DB[(PostgreSQL\nSupabase or local)]
     API --> STORAGE[Private Supabase Storage]
@@ -55,12 +59,14 @@ FastAPI is created in [backend/app/main.py](backend/app/main.py) and registers t
 3. The deterministic control engine calculates expected values and compares them with actual values.
 4. Results become pass, violation, warning, or unresolved outcomes.
 5. Root-cause and exception services organize verified findings.
-6. Optional AI actions generate bounded hypotheses or explanations.
-7. Verification and backtesting classify those hypotheses independently.
+6. LangGraph coordinates three bounded workflows using explicit state, branches,
+   retries, checkpoints, traces, and human-approval stops.
+7. Optional structured AI output proposes hypotheses or draft controls.
+8. Deterministic verification and backtesting classify proposals independently.
 
-The core financial pipeline is designed to work without an LLM. In the current
-demo implementation, several AI-looking results are deterministic seeded
-responses rather than live model output; see [AI Boundary](#ai-boundary).
+The core financial pipeline works without an LLM. When Groq is configured the
+graphs consume strict structured output; when it is unavailable they degrade to
+bounded deterministic demo candidates without changing financial outcomes.
 
 ### Database and storage
 
@@ -106,7 +112,11 @@ MCP is an optional supplementary evidence boundary, represented by [backend/app/
 
 ## AI Boundary
 
-The provider abstraction is in [backend/app/ai/provider.py](backend/app/ai/provider.py). The configured default is Groq with the model from `LLM_MODEL`; the API key is supplied through `GROQ_API_KEY`. The backend exposes AI capability status and has a live Groq client abstraction, but current demo routes do not invoke `provider_client.generate()` for their business results. Seeded hypothesis and proposal responses are deterministic service data.
+The provider abstraction is in [backend/app/ai/provider.py](backend/app/ai/provider.py).
+The development default is Groq `openai/gpt-oss-120b`; the API key is supplied
+through `GROQ_API_KEY`. `ChatGroq.with_structured_output` produces strict
+Pydantic results for the three graph workflows, with deterministic fallbacks
+when the provider is not configured or fails.
 
 AI may assist with:
 
@@ -133,28 +143,36 @@ The deterministic control and verification layers remain authoritative even when
 | --- | --- | --- |
 | Frontend to backend | Typed Next.js client calls FastAPI `/api/v1` routes | API reads are primarily demo-store backed |
 | Database | SQLAlchemy and Alembic support PostgreSQL/Supabase | Selected writes are persisted; most demo reads remain in memory |
-| Razorpay | Fetches and maps payments, refunds, settlements, and reconciliation data | Sync currently stops at canonical events and edges; it does not run controls or create evaluations |
+| Razorpay | GET-only, paginated, bounded ingestion through durable idempotent jobs and worker leases | Requires backend credentials and deployment-time worker configuration |
 | Supabase Storage | Backend-only adapter can upload source artifacts | Requires configuration; bucket privacy and policies are external deployment responsibilities |
 | MCP | Capability metadata endpoint | No remote MCP invocation or evidence retrieval is implemented |
-| AI | Provider abstraction and capability reporting | Current demo business responses are seeded/deterministic; live provider calls are not wired into those actions |
-| LangGraph | Not installed or imported | Optional future orchestration choice only |
+| AI | Groq structured-output adapter with deterministic fallback | Model output is advisory and cannot establish financial truth |
+| LangGraph | Three explicit graphs with checkpoints, bounded retries, deterministic verification, traces, and human gates | Production requires the checkpoint Postgres DSN |
 
 ## Detailed Sweep Notes
 
 These are important follow-up risks before describing the system as production-ready:
 
 - Tenant isolation needs a full review. OIDC principals exist, but many demo endpoints read global `DemoStore` state without filtering by `principal.tenant_id`.
-- The tenant RLS migration should cover every tenant-owned table. The current migration does not cover all models that contain `tenant_id`, including source snapshots, control evaluations, and background jobs.
-- Razorpay synchronization currently provides canonical ingestion only. A separate control-run step is needed before live Razorpay data can produce deterministic evaluations and violations.
+- Tenant RLS covers the current tenant-owned persistence tables; it still needs a
+  deployment test against the actual least-privilege Supabase runtime role.
+- Razorpay synchronization currently persists the live MDR control slice. The
+  remaining financial controls must be connected before calling the entire live
+  control suite complete.
 - Supabase Storage is accessed with backend credentials, but bucket privacy and storage policies are deployment configuration rather than enforced by the application migrations.
-- The backend test suite covers seeded demo behavior and adapters, but should be supplemented with tenant-isolation, complete-RLS, real-sync persistence, MCP, provider transport, and API contract tests.
-- The frontend has a documented build risk: `frontend/src/lib/format.ts` uses BigInt syntax while `frontend/tsconfig.json` targets ES2017. Verify the frontend production build before relying on the UI status.
+- The backend test suite covers seeded behavior, adapters, job idempotency, and
+  agent guardrails, but still needs real-Supabase RLS and live-sandbox contract
+  tests before launch.
 
 ## Is LangGraph Used?
 
-**No, not currently.**
+**Yes, for three bounded workflows only.**
 
-The repository does not declare or import LangGraph. The current design uses ordinary FastAPI routes and service modules, with a direct provider abstraction for bounded AI calls. LangGraph is mentioned in the design documents only as an optional future choice if explicit orchestration nodes become genuinely useful. It should not be described as part of the current runtime architecture.
+The root-cause investigation, mutation blind-spot remediation, and
+agreement-to-control compiler are explicit LangGraph state machines. Production
+uses Postgres checkpoints and durable final execution records. Deterministic
+Python remains the only authority for financial calculations, graph matching,
+backtests, and verdicts.
 
 ## Trust Boundary Summary
 
@@ -166,7 +184,13 @@ Frontend
       -> private Supabase Storage                 [file bytes]
       -> Razorpay API                             [source integration]
       -> optional MCP evidence                    [supplementary only]
-      -> optional AI provider                     [proposal / explanation only]
+      -> LangGraph controller                     [bounded orchestration only]
+          -> optional AI provider                 [proposal / explanation only]
+          -> deterministic verifier               [authoritative verdict]
 ```
 
-The central rule is: AI and MCP can add context, but only deterministic sl3dge verification can establish financial truth. The current repository implements the demo control path most completely; database-backed reads, live AI actions, MCP evidence retrieval, and Razorpay-to-control execution remain incomplete or optional.
+The central rule is: AI and MCP can add context, but only deterministic sl3dge
+verification can establish financial truth. The seeded demo path is the most
+complete; repository-backed live read models, full live-control coverage, real
+MCP evidence retrieval, and deployment-environment verification remain launch
+gates.

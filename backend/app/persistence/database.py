@@ -16,9 +16,8 @@ def get_engine() -> Engine | None:
     if not settings.database_url:
         return None
     connect_args = {}
-    if (
-        settings.database_disable_prepared_statements
-        and settings.database_url.startswith("postgresql+psycopg")
+    if settings.database_disable_prepared_statements and settings.database_url.startswith(
+        "postgresql+psycopg"
     ):
         # Safe for Supabase transaction-mode poolers; session/direct URLs may opt back in.
         connect_args["prepare_threshold"] = None

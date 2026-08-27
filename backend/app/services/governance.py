@@ -220,7 +220,11 @@ def _control_templates() -> list[Control]:
             source_clause="Page 7 · Clause 7.2",
             clause_id="CLAUSE_7_2",
             logical_control_key="REFUND_PRINCIPAL_INTEGRITY",
-            parameters={"maximum_deductions": 1, "refund_fee": "0"},
+            parameters={
+                "maximum_deductions": 1,
+                "refund_fee": "0.00",
+                "tolerance": "0.01",
+            },
             conditions=["refund_status == processed"],
             extraction_method="SEEDED_STRUCTURED_EXTRACTION",
             approved_at=approved_at,

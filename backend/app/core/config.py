@@ -31,36 +31,26 @@ class Settings(BaseSettings):
     supabase_service_role_key: SecretStr = Field(
         default=SecretStr(""), alias="SUPABASE_SERVICE_ROLE_KEY"
     )
-    supabase_storage_bucket: str = Field(
-        default="sl3dge-private", alias="SUPABASE_STORAGE_BUCKET"
-    )
+    supabase_storage_bucket: str = Field(default="sl3dge-private", alias="SUPABASE_STORAGE_BUCKET")
 
     llm_provider: str = Field(default="groq", alias="LLM_PROVIDER")
     llm_model: str = Field(default="openai/gpt-oss-120b", alias="LLM_MODEL")
     groq_api_key: SecretStr = Field(default=SecretStr(""), alias="GROQ_API_KEY")
     llm_timeout_seconds: int = Field(default=30, alias="LLM_TIMEOUT_SECONDS", ge=5, le=120)
-    llm_max_output_tokens: int = Field(
-        default=1200, alias="LLM_MAX_OUTPUT_TOKENS", ge=128, le=4096
-    )
-    llm_max_input_chars: int = Field(
-        default=24000, alias="LLM_MAX_INPUT_CHARS", ge=2000, le=100000
-    )
+    llm_max_output_tokens: int = Field(default=1200, alias="LLM_MAX_OUTPUT_TOKENS", ge=128, le=4096)
+    llm_max_input_chars: int = Field(default=24000, alias="LLM_MAX_INPUT_CHARS", ge=2000, le=100000)
     agent_max_attempts: int = Field(default=2, alias="AGENT_MAX_ATTEMPTS", ge=1, le=5)
     agent_checkpoint_database_url: SecretStr = Field(
         default=SecretStr(""), alias="AGENT_CHECKPOINT_DATABASE_URL"
     )
 
     razorpay_key_id: SecretStr = Field(default=SecretStr(""), alias="RAZORPAY_KEY_ID")
-    razorpay_key_secret: SecretStr = Field(
-        default=SecretStr(""), alias="RAZORPAY_KEY_SECRET"
-    )
+    razorpay_key_secret: SecretStr = Field(default=SecretStr(""), alias="RAZORPAY_KEY_SECRET")
     razorpay_api_base_url: str = Field(
         default="https://api.razorpay.com/v1", alias="RAZORPAY_API_BASE_URL"
     )
     razorpay_mode: Literal["test", "live"] = Field(default="test", alias="RAZORPAY_MODE")
-    razorpay_timeout_seconds: int = Field(
-        default=20, alias="RAZORPAY_TIMEOUT_SECONDS", ge=3, le=60
-    )
+    razorpay_timeout_seconds: int = Field(default=20, alias="RAZORPAY_TIMEOUT_SECONDS", ge=3, le=60)
     razorpay_max_retries: int = Field(default=3, alias="RAZORPAY_MAX_RETRIES", ge=0, le=5)
     razorpay_max_pages: int = Field(default=100, alias="RAZORPAY_MAX_PAGES", ge=1, le=1000)
     razorpay_max_records: int = Field(
@@ -73,9 +63,7 @@ class Settings(BaseSettings):
         le=50 * 1024 * 1024,
     )
     worker_tenant_ids: str = Field(default="novacart_demo", alias="WORKER_TENANT_IDS")
-    worker_lease_seconds: int = Field(
-        default=900, alias="WORKER_LEASE_SECONDS", ge=60, le=3600
-    )
+    worker_lease_seconds: int = Field(default=900, alias="WORKER_LEASE_SECONDS", ge=60, le=3600)
     worker_poll_seconds: int = Field(default=2, alias="WORKER_POLL_SECONDS", ge=1, le=30)
 
     @property
@@ -85,12 +73,23 @@ class Settings(BaseSettings):
     cors_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000", alias="CORS_ORIGINS"
     )
-    trusted_hosts: str = Field(
-        default="localhost,127.0.0.1,testserver", alias="TRUSTED_HOSTS"
-    )
+    trusted_hosts: str = Field(default="localhost,127.0.0.1,testserver", alias="TRUSTED_HOSTS")
     force_https: bool = Field(default=False, alias="FORCE_HTTPS")
     max_upload_bytes: int = Field(
         default=10 * 1024 * 1024, alias="MAX_UPLOAD_BYTES", ge=1024, le=100 * 1024 * 1024
+    )
+    max_agreement_pages: int = Field(default=200, alias="MAX_AGREEMENT_PAGES", ge=1, le=1000)
+    max_pdf_page_content_bytes: int = Field(
+        default=5 * 1024 * 1024,
+        alias="MAX_PDF_PAGE_CONTENT_BYTES",
+        ge=1024,
+        le=50 * 1024 * 1024,
+    )
+    max_extracted_agreement_chars: int = Field(
+        default=500_000,
+        alias="MAX_EXTRACTED_AGREEMENT_CHARS",
+        ge=1000,
+        le=5_000_000,
     )
 
     auth_mode: Literal["disabled", "oidc"] = Field(default="disabled", alias="AUTH_MODE")
@@ -132,9 +131,12 @@ class Settings(BaseSettings):
             missing.append("AUTH_MODE=oidc")
         if not self.oidc_issuer or not self.oidc_audience or not self.oidc_jwks_url:
             missing.append("OIDC issuer, audience and JWKS URL")
+        if not self.oidc_issuer.startswith("https://") or not self.oidc_jwks_url.startswith(
+            "https://"
+        ):
+            missing.append("HTTPS OIDC issuer and JWKS URL")
         if any(
-            origin == "*" or origin.startswith("http://")
-            for origin in self.parsed_cors_origins
+            origin == "*" or origin.startswith("http://") for origin in self.parsed_cors_origins
         ):
             missing.append("HTTPS-only explicit CORS_ORIGINS")
         if not self.force_https:

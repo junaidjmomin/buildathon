@@ -104,8 +104,10 @@ class RazorpayClient:
                             retryable=True,
                         )
                     retry_after = response.headers.get("retry-after", "")
-                    delay = min(float(retry_after), 5.0) if retry_after.isdigit() else 0.5 * (
-                        2**attempt
+                    delay = (
+                        min(float(retry_after), 5.0)
+                        if retry_after.isdigit()
+                        else 0.5 * (2**attempt)
                     )
                     await asyncio.sleep(delay)
                     continue

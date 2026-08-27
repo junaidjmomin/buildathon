@@ -32,6 +32,26 @@ class ArtifactService:
             content_type=content_type,
             overwrite=overwrite,
         )
+        self.record(
+            stored=stored,
+            artifact_id=artifact_id,
+            kind=kind,
+            tenant_id=tenant_id,
+            run_id=run_id,
+            case_id=case_id,
+        )
+        return stored
+
+    def record(
+        self,
+        *,
+        stored: StoredObject,
+        artifact_id: str,
+        kind: str,
+        tenant_id: str,
+        run_id: str | None = None,
+        case_id: str | None = None,
+    ) -> None:
         self.session.merge(
             ArtifactRecord(
                 tenant_id=tenant_id,
@@ -47,4 +67,3 @@ class ArtifactService:
                 created_at=datetime.now(timezone.utc),
             )
         )
-        return stored

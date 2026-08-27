@@ -216,22 +216,25 @@ Not allowed:
 
 ---
 
-# 6. Why No LangGraph by Default
+# 6. LangGraph Orchestration Boundary
 
-LangGraph is optional, not assumed.
+LangGraph is required for exactly three bounded, stateful workflows:
 
-Use it only if the workflow genuinely benefits from explicit nodes such as:
+1. root-cause investigation
+2. mutation blind-spot remediation
+3. agreement-to-control compilation
 
-```text
-Collect Evidence
-→ Generate Hypothesis
-→ Verify Hypothesis
-→ Explain Result
-```
+Each workflow uses explicit typed state, named nodes, conditional edges, bounded
+retries, durable Postgres checkpoints in production, a sanitized execution trace,
+and a human gate where a control could change. LangChain structured output maps
+Groq responses into strict Pydantic schemas.
 
-If a normal service pipeline is simpler, use that.
-
-The project should not advertise "agentic" at the cost of maintainability.
+LangGraph never performs MDR/GST arithmetic, settlement calculations, matching,
+control pass/fail, leakage, precision/recall, mutation metrics, or backtests.
+Those decisions remain deterministic Python. Model output can propose a
+hypothesis or draft control, but only deterministic verification can produce
+`PROVEN`, `REJECTED`, or `UNRESOLVED`; only an authorized human can approve a
+control.
 
 ---
 
@@ -620,6 +623,10 @@ httpx
 python-dateutil
 supabase  # backend-only Storage client; never used instead of SQLAlchemy for DB access
 groq      # selected demo provider behind LLMClient
+langchain-core
+langchain-groq
+langgraph
+langgraph-checkpoint-postgres
 ```
 
 Keep provider and Storage SDKs behind internal adapters.
@@ -911,25 +918,27 @@ This is the only build order in this document and matches `backend.md`:
 
 ```text
 1. Exact seeded manifest + hidden ground truth
-2. Canonical domain models
-3. Source ingestion and normalization
-4. Deterministic/scored Financial Event Graph matching
-5. Approved, typed, Decimal control registry
-6. Deterministic control engine
-7. Expected-vs-Actual, batch metrics, and PAY_82HD9 acceptance slice
-8. Financial Mutation Testing on derived data
-9. Mutation coverage and control blind-spot detection
-10. Candidate-control proposal with agreement provenance
-11. Historical + mutation backtest and explicit approval gate
-12. Violation Lineage and counterfactual settlement
-13. Root-cause clustering
-14. Bounded AI hypothesis + independent deterministic verifier
-15. Agreement extraction and executable-control provenance UI/API
+2. Canonical domain contracts with tenant, audit, provenance, and Decimal invariants
+3. Supabase/local Postgres repositories, immutable Alembic migrations, RLS, and private Storage metadata
+4. Immutable source snapshots, ingestion, and normalization
+5. Deterministic/scored Financial Event Graph matching
+6. Approved, typed, time-versioned Decimal control registry
+7. Deterministic control engine with persisted evaluations and violations
+8. Expected-vs-Actual, batch metrics, and PAY_82HD9 acceptance slice
+9. Financial Mutation Testing on derived data with canonical-data integrity checks
+10. Mutation coverage and control blind-spot detection
+11. LangGraph blind-spot remediation with deterministic historical/mutation backtests and a human gate
+12. LangGraph agreement compilation with strict Pydantic output, schema/conflict checks, and a human gate
+13. Violation Lineage and counterfactual settlement
+14. Root-cause clustering
+15. LangGraph root-cause investigation with bounded alternatives, deterministic verification, checkpoints, trace, and case creation
 16. Control Coverage, exception case workflow, and time-versioned controls
-17. Direct read-only Razorpay reconciliation ingestion into canonical events/edges
+17. Durable, idempotent read-only Razorpay sync jobs into canonical snapshots/events/evaluations
 18. Optional read-only Razorpay MCP evidence tools
-19. Supabase Postgres/Storage persistence, regression tests, and seeded E2E demo
-20. P2 only: temporal replay, schema drift, webhooks, and evidence export
+19. Frontend execution-trace, job-status, approval, and deterministic evidence UX
+20. OIDC/RBAC, tenant isolation, secret boundaries, input limits, and production HTTP hardening
+21. Regression/E2E tests, CI, structured observability, backup/recovery, and deployment verification
+22. P2 only: temporal replay, schema drift, webhooks, Realtime progress, and evidence export
 ```
 
 ---
@@ -1150,7 +1159,7 @@ requires:
 5. All financial JSON rates, amounts, and tolerances are decimal strings parsed to `Decimal`.
 6. FUZZY matching is deterministic/scored and sub-threshold or ambiguous matches remain `UNRESOLVED`.
 7. The lifecycle graph, exact counterfactual settlement, and primary/downstream lineage render from backend data.
-8. A bounded AI hypothesis is independently verified as `REJECTED` for the seeded MDR cluster.
+8. The root-cause graph records evidence/context loading, rejects the first bounded contract-change hypothesis deterministically, tests an alternate, proves the systemic gateway-rate deviation, and attaches the case.
 9. At least eight mutation types execute on derived data while canonical data remains unchanged.
 10. The seeded mutation result is 50 injected, 47 detected, 3 missed, and 0 false positives.
 11. The unsupported-fee blind spot yields a clause-linked `DRAFT` candidate.
@@ -1160,12 +1169,14 @@ requires:
 15. Time-versioned control selection changes from v1 to v2 at the 1 September boundary without rewriting completed runs.
 16. The exception case enforces `OPEN → VERIFIED → ESCALATED/RESOLVED` with an audit trail.
 17. Five ambiguous cases remain unresolved and no AI creates a financial edge or verdict.
-18. Direct Razorpay ingestion is GET-only and maps into the canonical event graph.
+18. Direct Razorpay ingestion is GET-only, queued idempotently in production, and maps immutable source snapshots into canonical events, evaluations, and violations.
 19. Optional Razorpay MCP data is supplementary evidence, never financial truth.
 20. FastAPI/SQLAlchemy repositories run against local PostgreSQL or Supabase Postgres by configuration alone.
 21. Agreements/uploads/evidence use private Supabase Storage objects with Postgres metadata.
 22. The browser receives no Supabase privileged credential, Groq key, or Razorpay secret.
-23. The deterministic acceptance path works fully with no LLM configuration.
+23. All three LangGraph workflows use durable production checkpoints, bounded retries, structured output and traces, and explicit human approval where required.
+24. Agent execution results and Razorpay sync status remain available across API/worker process restarts.
+25. The deterministic acceptance path works fully with no LLM configuration.
 
 ---
 

@@ -137,8 +137,7 @@ def verify_hypothesis(state: InvestigationState) -> DeterministicVerification:
                 "The claimed rate matches the approved effective control."
                 if matched
                 else (
-                    "The claimed contract change is contradicted by the approved "
-                    "effective control."
+                    "The claimed contract change is contradicted by the approved effective control."
                 )
             ),
         )
@@ -189,9 +188,7 @@ def verify_hypothesis(state: InvestigationState) -> DeterministicVerification:
 
 
 def _fallback_hypothesis(state: InvestigationState, *, alternative: bool) -> StructuredHypothesis:
-    evidence_ids = [
-        item["id"] for item in state.get("evidence", []) if bool(item.get("verified"))
-    ]
+    evidence_ids = [item["id"] for item in state.get("evidence", []) if bool(item.get("verified"))]
     if alternative:
         return StructuredHypothesis(
             hypothesis_id=f"HYP_{state['root_cause_id']}_02",
@@ -230,9 +227,7 @@ class InvestigationController:
     ) -> None:
         self.provider = provider
         self.max_attempts = max_attempts
-        self.graph = self._build_graph().compile(
-            checkpointer=checkpointer or InMemorySaver()
-        )
+        self.graph = self._build_graph().compile(checkpointer=checkpointer or InMemorySaver())
 
     def _build_graph(self) -> StateGraph[InvestigationState]:
         builder = StateGraph(InvestigationState)
@@ -480,9 +475,7 @@ class InvestigationController:
             attempt_count=result["attempt_count"],
             ai_configured=result["ai_configured"],
             hypotheses=[StructuredHypothesis.model_validate(item) for item in result["hypotheses"]],
-            verification=DeterministicVerification.model_validate(
-                result["verification_result"]
-            ),
+            verification=DeterministicVerification.model_validate(result["verification_result"]),
             case_id=result.get("case_id"),
             trace=[AgentTraceStep.model_validate(item) for item in result["trace"]],
             started_at=started_at,

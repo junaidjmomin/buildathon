@@ -5,7 +5,9 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.domain.models import ControlType
 
 
 class AgentModel(BaseModel):
@@ -100,18 +102,22 @@ class InvestigationExecution(AgentModel):
 
 
 class TypedControlCandidate(AgentModel):
-    candidate_id: str
-    logical_control_key: str
-    control_type: str
-    name: str
-    clause_id: str
+    candidate_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9._:-]+$")
+    logical_control_key: str = Field(
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Z0-9_]+$",
+    )
+    control_type: ControlType
+    name: str = Field(min_length=1, max_length=200)
+    clause_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9._:-]+$")
     version: int = Field(ge=1)
     effective_from: date
     effective_to: date | None = None
     supersedes_candidate_id: str | None = None
     parameters: dict[str, Any]
-    conditions: list[str]
-    rationale: str
+    conditions: list[str] = Field(max_length=50)
+    rationale: str = Field(min_length=1, max_length=4000)
     confidence: Decimal = Field(ge=Decimal("0"), le=Decimal("1"))
 
     @field_validator("parameters")
@@ -132,6 +138,12 @@ class TypedControlCandidate(AgentModel):
             if key in value and not isinstance(value[key], str):
                 raise ValueError(f"{key} must be a decimal string")
         return value
+
+    @model_validator(mode="after")
+    def validate_effective_period(self) -> TypedControlCandidate:
+        if self.effective_to is not None and self.effective_to < self.effective_from:
+            raise ValueError("effective_to must not precede effective_from")
+        return self
 
 
 class ControlCandidateBatch(AgentModel):
