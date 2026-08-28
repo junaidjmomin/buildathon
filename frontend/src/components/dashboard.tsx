@@ -174,7 +174,7 @@ export function Dashboard() {
               <div className="bg-[var(--paper-faint)]" style={{ width: `${(data.breakdown.unresolved / outcomeTotal) * 100}%` }} />
             </div>
             <div className="mt-5 flex flex-wrap gap-x-7 gap-y-2 text-xs text-[var(--paper-dim)]">
-              <span className="flex items-center gap-2"><Clock3 size={13} /> {data.processing_ms} ms processing</span>
+              <span className="flex items-center gap-2"><Clock3 size={13} /> {formatDuration(data.processing_ms)} processing</span>
               <span className="number-tabular font-mono">{data.evaluations_per_second.toLocaleString("en-IN")} evaluations/sec</span>
               <span>{data.ground_truth_available ? `${formatPercent(data.false_positive_rate)} false-positive rate` : "Ground-truth metrics unavailable for live data"}</span>
             </div>
@@ -244,6 +244,11 @@ export function Dashboard() {
       </section>
     </main>
   );
+}
+
+function formatDuration(milliseconds: number): string {
+  if (milliseconds >= 1000) return `${(milliseconds / 1000).toFixed(milliseconds >= 10_000 ? 1 : 2)} s`;
+  return `${milliseconds} ms`;
 }
 
 function Metric({ icon: Icon, label, value, tone = "default", href }: { icon: typeof DatabaseZap; label: string; value: string; tone?: "default" | "green" | "crimson"; href?: string }) {

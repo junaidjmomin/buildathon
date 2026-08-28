@@ -80,12 +80,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!active) return;
         setUser(stored && !stored.expired ? stored : null);
         if (stored?.expired) await manager.removeUser();
-      } catch {
+      } catch (caught) {
+        // A rejected callback leaves the oidc-client transaction in
+        // sessionStorage. Clear it so the next attempt starts a fresh state
+        // transaction instead of looping back through the same error.
+        await manager.clearStaleState().catch(() => undefined);
         if (active) {
           if (windowPathIsCallback()) {
             window.history.replaceState({}, "", "/");
           }
-          setError("Sign-in could not be completed. Retry through organization SSO.");
+          const detail = caught instanceof Error ? caught.message : "Unknown callback error";
+          setError(
+            process.env.NEXT_PUBLIC_APP_MODE === "production"
+              ? "Sign-in could not be completed. Retry through organization SSO."
+              : `Sign-in callback failed: ${detail}. Start again from this same browser origin (localhost or 127.0.0.1).`,
+          );
         }
       } finally {
         if (active) setLoading(false);

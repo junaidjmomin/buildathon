@@ -142,11 +142,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     persist: run?.source_type !== "DEMO",
                   });
                 }}
-                className="max-w-56 cursor-pointer bg-transparent font-medium text-[var(--paper)] outline-none"
+                className="max-w-56 cursor-pointer bg-[var(--ink-700)] font-medium text-[var(--paper)] outline-none"
+                style={{ colorScheme: "dark" }}
               >
-                <option value="">Select a run</option>
+                <option value="" className="bg-[var(--ink-700)] text-[var(--paper)]">Select a run</option>
                 {runs.data.map((run) => (
-                  <option key={run.id} value={run.id}>
+                  <option key={run.id} value={run.id} className="bg-[var(--ink-700)] text-[var(--paper)]">
                     {run.name} · {run.source_type.replaceAll("_", " ")}
                   </option>
                 ))}

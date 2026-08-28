@@ -14,6 +14,8 @@ NEXT_PUBLIC_OIDC_AUTHORITY=
 NEXT_PUBLIC_OIDC_CLIENT_ID=
 NEXT_PUBLIC_OIDC_AUDIENCE=
 NEXT_PUBLIC_OIDC_SCOPE=openid profile email
+# Optional: pin the exact Auth0 callback host (recommended for local setup).
+# NEXT_PUBLIC_OIDC_REDIRECT_URI=http://localhost:3000/auth/callback
 ```
 
 For Auth0, set auth mode to `oidc`, authority to the tenant HTTPS URL, client ID

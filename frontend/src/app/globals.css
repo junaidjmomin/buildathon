@@ -33,6 +33,12 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Native select menus otherwise inherit a light OS menu with near-white text. */
+select option {
+  background: #102522;
+  color: #edf5ef;
+}
+
 @theme inline {
   --color-background: var(--ink-900);
   --color-foreground: var(--paper);

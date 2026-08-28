@@ -10,6 +10,7 @@ const OIDC_AUTHORITY = process.env.NEXT_PUBLIC_OIDC_AUTHORITY ?? "";
 const OIDC_CLIENT_ID = process.env.NEXT_PUBLIC_OIDC_CLIENT_ID ?? "";
 const OIDC_AUDIENCE = process.env.NEXT_PUBLIC_OIDC_AUDIENCE ?? "";
 const OIDC_SCOPE = process.env.NEXT_PUBLIC_OIDC_SCOPE ?? "openid profile email";
+const OIDC_REDIRECT_URI = process.env.NEXT_PUBLIC_OIDC_REDIRECT_URI ?? "";
 const PRODUCTION = process.env.NEXT_PUBLIC_APP_MODE === "production";
 
 let manager: UserManager | null = null;
@@ -34,11 +35,16 @@ export function getUserManager(): UserManager {
   if (PRODUCTION && authority.protocol !== "https:") {
     throw new Error("Production OIDC authority must use HTTPS");
   }
-  const origin = window.location.origin;
+  // Keep the callback host stable when local development alternates between
+  // localhost and 127.0.0.1. Auth0 requires an exact redirect URI, and the
+  // transaction state is stored per browser origin.
+  const configuredRedirect = OIDC_REDIRECT_URI ? new URL(OIDC_REDIRECT_URI) : null;
+  const origin = configuredRedirect?.origin ?? window.location.origin;
+  const redirectUri = configuredRedirect?.toString().replace(/\/$/, "") ?? `${origin}/auth/callback`;
   const settings: UserManagerSettings = {
     authority: authority.toString().replace(/\/$/, ""),
     client_id: OIDC_CLIENT_ID,
-    redirect_uri: `${origin}/auth/callback`,
+    redirect_uri: redirectUri,
     silent_redirect_uri: `${origin}/auth/silent-callback`,
     post_logout_redirect_uri: origin,
     response_type: "code",
