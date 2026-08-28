@@ -1,6 +1,6 @@
 # sl3dge Implementation Checklist
 
-Status date: 2026-08-28
+Status date: 2026-08-29
 
 This is the authoritative completion ledger for implementation requests made in the project conversation. It does not redefine product behavior. Specification authority remains `features.md`, `backend.md`, `frontend.md`, then `techstack.md`.
 
@@ -33,6 +33,9 @@ Legend: `[x]` implemented and verified, `[~]` being completed in the current imp
 - [x] LangGraph bounded workflows for AI proposals/investigations; deterministic calculations remain outside the LLM.
 - [x] Export the authoritative generator to all six `data/demo/*.csv` files plus agreement and ground truth.
 - [x] Add one manifest regression for counts, IDs, leakage, mutations, and coverage.
+- [x] Run mutation testing against persisted uploaded runs (`POST
+  /runs/{run_id}/mutation-tests`) without mutating canonical events; the same
+  deterministic suite now works for CSV runs and seeded NovaCart.
 
 ## Agreements and controls
 
@@ -95,6 +98,10 @@ Legend: `[x]` implemented and verified, `[~]` being completed in the current imp
   `backend/app/services/live_payment_views.py`; `/control-coverage` intentionally
   remains seeded-only because honest coverage needs ground-truth labels uploaded
   runs do not have).
+- [x] Expose the mutation-test entry point from the selected run dashboard and
+  pass the selected run to candidate-control backtests; the UI explains when a
+  candidate is not registered for that run instead of showing a dead seeded-only
+  action.
 - [x] Add route-level empty, partial-error, retry, keyboard, focus, and responsive states
   (retry actions on error panels across controls, agreements, exceptions, root-causes,
   run coverage, and data sources; fixed the exceptions page rendering "No exception
@@ -126,14 +133,16 @@ Legend: `[x]` implemented and verified, `[~]` being completed in the current imp
 - [x] Normalize errors to `{error: {code, message, details, request_id}}` and test them.
 - [x] Persist and expose run stages from upload through finalize.
 - [ ] Add structured stage logs and operational metrics/alerts.
-- [~] Start built containers in CI and smoke-test readiness and connectivity
-  (added to `.github/workflows/ci.yml` `containers` job: Postgres service, backend
-  container on host network, in-container `alembic upgrade head`, live/ready/Docker
-  healthcheck polling, `/api/v1/health` + `/capabilities/infrastructure` smoke
-  requests, frontend container poll on `:3000`, log dump on failure; first
-  verification run happens on the next push to `main`).
+- [x] Start built containers in CI and smoke-test readiness and connectivity
+  (`.github/workflows/ci.yml` `containers` job: Postgres service, backend
+  container on host network, in-container `alembic upgrade head`, live/ready/
+  Docker healthcheck polling, `/api/v1/health` + `/capabilities/infrastructure`
+  smoke requests, frontend container poll on `:3000`, log dump on failure;
+  verified green on push `61336f9`, run 33200190472).
 - [x] Complete dependency/security scanning and remediate findings.
-- [ ] Push the final verified implementation to the configured remote.
+- [x] Push the final verified implementation to the configured remote
+  (`main` at `61336f9`; CI backend, frontend, and containers jobs all green,
+  including in-container migrations, readiness polling, and API smoke requests).
 
 ## Optional/P2 expansion
 
@@ -156,9 +165,22 @@ Legend: `[x]` implemented and verified, `[~]` being completed in the current imp
 
 - Backend: 117 passed, 1 skipped.
 - Frontend TypeScript, lint, and production build passed.
-- Supabase revision: `0010_manual_agreement_clauses`.
+- Supabase revision: `0012_durable_lineage_metrics` (migration is verified in a
+  fresh database; applying it to an existing external database remains an
+  operator-authorized deployment action).
 - Seeded NovaCart proof path: functional.
 - Fully functional deterministic prototype estimate after this pass: 90%.
+
+## 2026-08-29 sequential implementation pass
+
+- Mutation testing is no longer seeded-only: uploaded CSV runs reconstruct their
+  canonical payment lifecycles from persisted events/edges and execute the same
+  isolated mutation engine. Results are persisted idempotently and audited.
+- Candidate backtest accepts an optional `run_id` and evaluates the persisted
+  run when the candidate control exists; unsupported control types fail closed
+  with an explicit 422 rather than returning fabricated metrics.
+- Backend verification: 117 passed, 1 skipped; Ruff clean. Frontend verification:
+  17 tests passed, TypeScript, lint, and production build passed.
 
 ## 2026-08-28 dependency audit (verified)
 

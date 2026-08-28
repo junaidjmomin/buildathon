@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Beaker,
@@ -117,8 +117,13 @@ function MutationResults({ data, runId }: { data: Awaited<ReturnType<typeof api.
 
 function CandidateBacktest({ runId }: { runId: string }) {
   const controlId = "CTRL_UNSUPPORTED_FEE_CANDIDATE";
+  const controls = useQuery({ queryKey: ["controls"], queryFn: api.controls });
   const backtest = useMutation({ mutationFn: () => api.backtestControl(controlId, runId) });
   const approve = useMutation({ mutationFn: () => api.approveControl(controlId) });
+  const candidateAvailable = controls.data?.some((control) => control.id === controlId) ?? false;
+  if (controls.isError || (!controls.isPending && !candidateAvailable)) {
+    return <div className="mt-4 rounded-xl border border-[#e2e5df] bg-[#f8faf8] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#718079]">Candidate control</p><p className="mt-2 text-xs leading-5 text-[#617168]">No unsupported-fee candidate is registered for this run. Add and approve a control from an agreement before backtesting it.</p></div>;
+  }
   return <div className="mt-4 rounded-xl border border-[#cbded3] bg-[#f5fbf7] p-4">
     <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#1e6b51]">Draft candidate · Agreement clause 4.6</p><h3 className="mt-1 text-sm font-semibold">Flag every unlisted settlement fee</h3></div><span className="rounded-full bg-[#e5eee8] px-2 py-1 text-[9px] font-bold text-[#52645a]">{approve.isSuccess ? "APPROVED" : "DRAFT"}</span></div>
     {!backtest.data && <><p className="mt-2 text-xs leading-5 text-[#617168]">Test this candidate against historical clean data and the full mutation suite before activation.</p><button onClick={() => backtest.mutate()} disabled={backtest.isPending} className="mt-3 flex items-center gap-2 rounded-lg bg-[#1e6b51] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60">{backtest.isPending ? <LoaderCircle size={13} className="animate-spin" /> : <TrendingUp size={13} />} Backtest candidate</button></>}

@@ -591,6 +591,24 @@ class ControlBacktest(ApiModel):
     canonical_data_unchanged: bool
 
 
+class TemporalReplayRequest(ApiModel):
+    control_id: str = Field(min_length=1, max_length=160)
+
+
+class TemporalReplayResponse(ApiModel):
+    run_id: str
+    control_id: str
+    control_version: int
+    logical_control_key: str
+    transaction_count: int
+    baseline_expected_amount: Decimal
+    replay_expected_amount: Decimal
+    difference_amount: Decimal
+    baseline_violation_count: int
+    replay_violation_count: int
+    evidence: list[dict[str, Any]]
+
+
 class ViolationLineageNode(ApiModel):
     id: str
     category: str
