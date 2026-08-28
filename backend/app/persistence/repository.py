@@ -490,6 +490,19 @@ class RunRepository:
         outcomes = {status: 0 for status in ("PASS", "VIOLATION", "WARNING", "UNRESOLVED")}
         for evaluation in evaluations:
             outcomes[evaluation.outcome] = outcomes.get(evaluation.outcome, 0) + 1
+        unresolved_events = int(
+            self.session.scalar(
+                select(func.count())
+                .select_from(EventRecord)
+                .where(
+                    EventRecord.tenant_id == tenant_id,
+                    EventRecord.run_id == run_id,
+                    EventRecord.event_type == "UNRESOLVED_MATCH",
+                )
+            )
+            or 0
+        )
+        outcomes["UNRESOLVED"] += unresolved_events
         leakage = sum(
             (
                 item.financial_impact or Decimal("0")

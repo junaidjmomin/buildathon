@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -66,7 +67,8 @@ def readiness() -> dict[str, str]:
 
 
 @app.exception_handler(ValueError)
-async def value_error_handler(_: Request, exc: ValueError) -> JSONResponse:
+async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", "unknown")
     return JSONResponse(
         status_code=422,
         content={
@@ -74,6 +76,66 @@ async def value_error_handler(_: Request, exc: ValueError) -> JSONResponse:
                 "code": "INVALID_INPUT",
                 "message": str(exc),
                 "details": {},
+                "request_id": request_id,
+            }
+        },
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_error_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", "unknown")
+    code = {
+        400: "BAD_REQUEST",
+        401: "AUTHENTICATION_REQUIRED",
+        403: "FORBIDDEN",
+        404: "NOT_FOUND",
+        409: "CONFLICT",
+        413: "PAYLOAD_TOO_LARGE",
+        422: "INVALID_INPUT",
+        428: "PRECONDITION_REQUIRED",
+        429: "RATE_LIMITED",
+        503: "DEPENDENCY_UNAVAILABLE",
+    }.get(exc.status_code, "REQUEST_FAILED")
+    details = exc.detail if isinstance(exc.detail, dict) else {}
+    message = (
+        str(exc.detail.get("message", code))
+        if isinstance(exc.detail, dict)
+        else str(exc.detail or code)
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        headers=exc.headers,
+        content={
+            "error": {
+                "code": code,
+                "message": message,
+                "details": details,
+                "request_id": request_id,
+            }
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", "unknown")
+    details = [
+        {
+            "location": [str(part) for part in item["loc"]],
+            "message": item["msg"],
+            "type": item["type"],
+        }
+        for item in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "The request payload is invalid",
+                "details": details,
+                "request_id": request_id,
             }
         },
     )
@@ -91,6 +153,7 @@ async def unexpected_error_handler(request: Request, _: Exception) -> JSONRespon
             "error": {
                 "code": "INTERNAL_ERROR",
                 "message": "The request could not be completed",
+                "details": {},
                 "request_id": request_id,
             }
         },

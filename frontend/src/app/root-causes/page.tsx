@@ -22,7 +22,7 @@ export default function RootCausesPage() {
     enabled: Boolean(activeRun),
   });
 
-  if (runs.isPending || roots.isPending) {
+  if (runs.isPending || (Boolean(activeRun) && roots.isPending)) {
     return (
       <AppShell>
         <div className="grid min-h-[calc(100vh-64px)] place-items-center">
@@ -67,7 +67,11 @@ export default function RootCausesPage() {
           ))}
         </section>
 
-        {!activeRun ? (
+        {runs.isError ? (
+          <div className="panel mt-7 rounded-2xl p-8 text-sm text-[#a43d32]" role="alert">
+            Runs could not be loaded. Retry after checking the API connection.
+          </div>
+        ) : !activeRun ? (
           <div className="panel mt-7 rounded-2xl p-8 text-sm text-[#66716b]">
             Upload source files or connect Razorpay to create a run.
           </div>

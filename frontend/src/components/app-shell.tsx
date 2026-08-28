@@ -29,8 +29,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const runs = useQuery({ queryKey: ["runs"], queryFn: api.runs });
   const activeRun =
     runs.data?.find((run) => run.id === selectedRunId) ??
-    runs.data?.find((run) => run.source !== "SEEDED" && run.status === "COMPLETE") ??
-    runs.data?.find((run) => run.status === "COMPLETE");
+    runs.data?.find((run) => run.source !== "SEEDED" && run.status === "COMPLETE");
   const items = [
     { label: "Overview", icon: LayoutDashboard, href: "/" },
     {
@@ -97,6 +96,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 onChange={(event) => setActiveRunId(event.currentTarget.value)}
                 className="max-w-56 bg-transparent font-medium text-[#52615a] outline-none"
               >
+                <option value="">Select a run</option>
                 {runs.data.map((run) => (
                   <option key={run.id} value={run.id}>
                     {run.name} · {run.source.replaceAll("_", " ")}

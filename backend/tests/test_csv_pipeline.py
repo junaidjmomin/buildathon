@@ -55,9 +55,18 @@ def test_fuzzy_score_is_explicit_and_deterministic() -> None:
 
 
 def test_ambiguous_equal_candidates_remain_unresolved() -> None:
-    payments = b"payment_id,amount,captured_at,payment_method,card_scope,fee,tax,status\nPAY_1,100.00,2026-08-01T10:00:00,card,domestic,1.55,0.28,captured\n"
-    settlements = b"settlement_id,payment_id,net_amount,settled_at\nSET_1,PAY_1,98.17,2026-08-03T10:00:00\n"
-    bank = b"bank_txn_id,credit,debit,posted_at,reference,description\nBANK_1,98.17,0.00,2026-08-04T10:00:00,SET_1,payout\nBANK_2,98.17,0.00,2026-08-04T10:00:00,SET_1,payout\n"
+    payments = (
+        b"payment_id,amount,captured_at,payment_method,card_scope,fee,tax,status\n"
+        b"PAY_1,100.00,2026-08-01T10:00:00,card,domestic,1.55,0.28,captured\n"
+    )
+    settlements = (
+        b"settlement_id,payment_id,net_amount,settled_at\nSET_1,PAY_1,98.17,2026-08-03T10:00:00\n"
+    )
+    bank = (
+        b"bank_txn_id,credit,debit,posted_at,reference,description\n"
+        b"BANK_1,98.17,0.00,2026-08-04T10:00:00,SET_1,payout\n"
+        b"BANK_2,98.17,0.00,2026-08-04T10:00:00,SET_1,payout\n"
+    )
 
     events, edges, unresolved = _canonicalize(
         [

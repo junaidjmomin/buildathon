@@ -12,7 +12,6 @@ import {
   ShieldCheck,
   WalletCards,
 } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -36,6 +35,13 @@ export default function DataSourcesPage() {
       api.submitRazorpaySyncJob(`ui-${Date.now()}-${globalThis.crypto.randomUUID()}`),
   });
   const upload = useMutation({ mutationFn: api.uploadSources });
+  const demo = useMutation({
+    mutationFn: api.loadDemo,
+    onSuccess: (run) => {
+      setActiveRunId(run.run_id);
+      router.push("/");
+    },
+  });
   const execute = useMutation({
     mutationFn: () => {
       const uploadIds = upload.data?.files.map((file) => file.upload_id).filter(Boolean) ?? [];
@@ -91,12 +97,17 @@ export default function DataSourcesPage() {
             description="Seeded 500-payment run with hidden ground truth and stable proof cases."
             badge={PRODUCTION_MODE ? "DEMO DISABLED" : "ACTIVE"}
           >
-            <Link
-              href="/"
-              className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#1e6b51]"
-            >
-              Open demo run <ArrowRight size={13} />
-            </Link>
+            {!PRODUCTION_MODE ? (
+              <button
+                type="button"
+                onClick={() => demo.mutate()}
+                disabled={demo.isPending}
+                className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#1e6b51] disabled:opacity-60"
+              >
+                {demo.isPending ? <LoaderCircle size={13} className="animate-spin" /> : <ArrowRight size={13} />}
+                {demo.isPending ? "Preparing demo…" : "Open demo run"}
+              </button>
+            ) : null}
           </SourceCard>
 
           <SourceCard

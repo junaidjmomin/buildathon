@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.controls.engine import evaluate_payment
 from app.main import app
 from app.services.demo import DEMO_RUN_ID, store
+from app.synthetic.generate import export_dataset
 
 client = TestClient(app)
 
@@ -53,6 +54,31 @@ def test_seeded_generator_matches_authoritative_manifest_and_ids() -> None:
     assert any(payment.refund_id == "REF_91" for payment in store.dataset.payments)
     assert any(payment.settlement_id == "SET_1042" for payment in store.dataset.payments)
     assert any(payment.unresolved_case_id == "UNR_003" for payment in store.dataset.payments)
+
+
+def test_authoritative_fixture_export_matches_manifest(tmp_path: Path) -> None:
+    manifest_path = Path(__file__).parents[2] / "data" / "demo" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    counts = export_dataset(tmp_path)
+
+    assert counts == {
+        key: manifest["records"][key]
+        for key in ["orders", "payments", "settlements", "bank_entries", "refunds", "chargebacks"]
+    }
+    expected_rows = {
+        "orders.csv": 500,
+        "payments.csv": 500,
+        "refunds.csv": 5,
+        "settlements.csv": 500,
+        "chargebacks.csv": 6,
+        "bank.csv": 84,
+    }
+    for filename, row_count in expected_rows.items():
+        assert len((tmp_path / filename).read_text(encoding="utf-8").splitlines()) - 1 == row_count
+    ground_truth = json.loads((tmp_path / "ground_truth.json").read_text(encoding="utf-8"))
+    assert ground_truth["PAY_82HD9"] == "MDR_RATE_DEVIATION"
+    assert (tmp_path / "agreement.json").is_file()
 
 
 def test_demo_metrics_are_measured_from_separate_ground_truth() -> None:
@@ -167,7 +193,7 @@ def test_control_coverage_updates_only_after_backtest_and_explicit_approval() ->
 
     premature = client.post("/api/v1/controls/CTRL_UNSUPPORTED_FEE_CANDIDATE/approve")
     assert premature.status_code == 409
-    assert "backtest" in premature.json()["detail"].lower()
+    assert "backtest" in premature.json()["error"]["message"].lower()
 
     client.post("/api/v1/controls/CTRL_UNSUPPORTED_FEE_CANDIDATE/backtest")
     approved = client.post("/api/v1/controls/CTRL_UNSUPPORTED_FEE_CANDIDATE/approve")

@@ -254,6 +254,23 @@ def test_source_batch_upload_classifies_each_file_independently() -> None:
     assert payload["files"][2]["status"] == "REJECTED"
 
 
+def test_http_errors_use_stable_machine_readable_envelope() -> None:
+    response = TestClient(app).get(
+        "/api/v1/runs/DOES_NOT_EXIST/summary",
+        headers={"X-Request-ID": "contract-test-request"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "NOT_FOUND",
+            "message": "Run not found",
+            "details": {},
+            "request_id": "contract-test-request",
+        }
+    }
+
+
 def test_ai_runtime_gracefully_degrades_without_key() -> None:
     runtime = build_ai_runtime(
         Settings(

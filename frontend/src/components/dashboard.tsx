@@ -12,8 +12,6 @@ import { api } from "@/lib/api";
 import { compareDecimals, formatMoney, formatPercent } from "@/lib/format";
 
 const DEMO_RUN = "RUN_NOVACART_AUG_2026";
-const DEMO_MODE = process.env.NEXT_PUBLIC_APP_MODE !== "production";
-
 export function Dashboard() {
   const queryClient = useQueryClient();
   const selectedRunId = useActiveRunId();
@@ -27,13 +25,12 @@ export function Dashboard() {
   const load = useQuery({
     queryKey: ["demo-load"],
     queryFn: api.loadDemo,
-    enabled: DEMO_MODE && runs.isSuccess && !selectedRun && !latestRealRun,
+    enabled: false,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: Number.POSITIVE_INFINITY,
   });
-  const demoRunId = load.data?.run_id;
   const activeRunRecord = selectedRun ?? latestRealRun;
-  const activeRun = activeRunRecord?.id ?? demoRunId;
+  const activeRun = activeRunRecord?.id;
   const activeIsSeeded = activeRunRecord?.source === "SEEDED" || activeRun === DEMO_RUN;
   const summary = useQuery({
     queryKey: ["run-summary", activeRun], queryFn: () => api.summary(activeRun ?? ""), enabled: Boolean(activeRun),
@@ -62,12 +59,12 @@ export function Dashboard() {
     );
   }
 
-  if (!activeRun && (!DEMO_MODE || load.isSuccess)) {
+  if (!activeRun) {
     return (
       <main className="mx-auto max-w-4xl px-5 py-16 md:px-8">
         <div className="panel rounded-2xl p-8 md:p-12">
           <ShieldCheck className="mb-5 text-[#1e6b51]" size={30} />
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1e6b51]">Production workspace</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1e6b51]">Financial control workspace</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em]">No completed control run</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-[#66716b]">Upload an accepted source bundle or connect Razorpay to start an explicit, auditable run.</p>
           <Link href="/data" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white">Open data sources <ArrowRight size={15} /></Link>
@@ -76,25 +73,25 @@ export function Dashboard() {
     );
   }
 
-  if ((DEMO_MODE && !activeRunRecord && load.isPending) || summary.isPending) {
+  if (summary.isPending) {
     return (
       <main className="grid min-h-[calc(100vh-64px)] place-items-center p-8 text-center">
         <div><LoaderCircle className="mx-auto mb-4 animate-spin text-[#1e6b51]" size={28} />
-          <p className="text-sm font-medium">{activeRunRecord ? "Loading the selected control run" : "Running NovaCart controls"}</p>
-          <p className="mt-1 text-xs text-[#66716b]">{activeRunRecord ? "Reading tenant-scoped deterministic results…" : "Rebuilding expected state from the agreement…"}</p>
+          <p className="text-sm font-medium">Loading the selected control run</p>
+          <p className="mt-1 text-xs text-[#66716b]">Reading tenant-scoped deterministic results…</p>
         </div>
       </main>
     );
   }
 
-  if ((!activeRunRecord && load.isError) || summary.isError) {
+  if (summary.isError) {
     return (
       <main className="mx-auto max-w-6xl p-9">
         <div className="panel mt-12 rounded-2xl p-8 text-center">
           <FileWarning className="mx-auto mb-4 text-[#e86f3a]" />
           <h1 className="text-xl font-semibold">The control API is unavailable</h1>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#66716b]">The authenticated run summary could not be loaded. No unavailable financial value has been replaced with demo data.</p>
-          <button onClick={() => activeRunRecord ? void summary.refetch() : void load.refetch()} className="mt-5 rounded-lg bg-[#112a2b] px-4 py-2 text-sm font-medium text-white">Retry connection</button>
+          <button onClick={() => void summary.refetch()} className="mt-5 rounded-lg bg-[#112a2b] px-4 py-2 text-sm font-medium text-white">Retry connection</button>
         </div>
       </main>
     );
@@ -228,7 +225,7 @@ export function Dashboard() {
       <Link href={`/runs/${activeRun}/mutation-test`} className="group mt-4 flex flex-col justify-between gap-5 rounded-2xl border border-[#cbded3] bg-[#f4fbf7] p-5 transition hover:border-[#2d7a5d]/60 md:flex-row md:items-center">
         <div className="flex items-start gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#dff2e8] text-[#1e6b51]"><Beaker size={19} /></span><div><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#1e6b51]">Control quality</p><h3 className="mt-1 text-base font-semibold">Would your controls catch the money being wrong?</h3><p className="mt-1 text-xs leading-5 text-[#5e7168]">Inject 50 isolated financial failures and measure real detection coverage.</p></div></div>
         <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-[#1e6b51]">Test my controls <ArrowRight size={16} className="transition group-hover:translate-x-1" /></span>
-      </Link></> : <section className="rounded-2xl border border-[#cbded3] bg-[#f4fbf7] p-5"><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#1e6b51]">Live Razorpay verification</p><h3 className="mt-1 text-base font-semibold">Actual gateway evidence has been tested against approved controls.</h3><p className="mt-1 text-xs leading-5 text-[#5e7168]">Open a root cause to run the bounded investigation trace, or sync another immutable run.</p><div className="mt-4 flex flex-wrap gap-3">{roots.data?.[0] ? <Link href={`/root-causes/${roots.data[0].id}`} className="inline-flex items-center gap-2 rounded-lg bg-[#112a2b] px-3 py-2 text-xs font-semibold text-white">Investigate root cause <ArrowRight size={13} /></Link> : null}<Link href="/data" className="inline-flex items-center gap-2 rounded-lg border border-[#cbded3] bg-white px-3 py-2 text-xs font-semibold">Open data sources</Link></div></section>}
+      </Link></> : <section className="rounded-2xl border border-[#cbded3] bg-[#f4fbf7] p-5"><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#1e6b51]">Live source verification</p><h3 className="mt-1 text-base font-semibold">Uploaded or connected-source evidence has been tested against approved controls.</h3><p className="mt-1 text-xs leading-5 text-[#5e7168]">Open a root cause to run the bounded investigation trace, or create another immutable run.</p><div className="mt-4 flex flex-wrap gap-3">{roots.data?.[0] ? <Link href={`/root-causes/${roots.data[0].id}`} className="inline-flex items-center gap-2 rounded-lg bg-[#112a2b] px-3 py-2 text-xs font-semibold text-white">Investigate root cause <ArrowRight size={13} /></Link> : null}<Link href="/data" className="inline-flex items-center gap-2 rounded-lg border border-[#cbded3] bg-white px-3 py-2 text-xs font-semibold">Open data sources</Link></div></section>}
       <section className="mt-4 grid gap-3 md:grid-cols-3">
         <QuickLink href="/agreements" label="Agreement provenance" detail="Clause → typed control → immutable version" />
         {activeIsSeeded ? <QuickLink href={`/runs/${activeRun}/coverage`} label="Control coverage" detail="Measure governed and ungoverned money edges" /> : <QuickLink href="/data" label="Source provenance" detail="Immutable snapshots, checksums and sync job status" />}

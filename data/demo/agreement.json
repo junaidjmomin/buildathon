@@ -1,0 +1,89 @@
+{
+  "id": "AGR_NOVACART_2026",
+  "merchant": "NovaCart India",
+  "title": "Merchant Services Agreement · 2026",
+  "status": "APPROVED",
+  "effective_from": "2026-01-01",
+  "effective_to": null,
+  "source_type": "SEEDED_TEXT",
+  "content_hash": "90a2d95498f84d60b908446e441cce6e23dc1a6acfebd24aba60509c007ede66",
+  "clauses": [
+    {
+      "id": "CLAUSE_4_2",
+      "reference": "4.2",
+      "page": 4,
+      "heading": "Domestic card processing fee",
+      "text": "The processing fee for captured domestic card payments is 1.55% of the gross captured amount through 31 August 2026.",
+      "effective_from": "2026-01-01",
+      "effective_to": "2026-08-31",
+      "source_type": "PDF_TEXT_EXTRACTION",
+      "created_by": null
+    },
+    {
+      "id": "CLAUSE_4_3",
+      "reference": "4.3",
+      "page": 4,
+      "heading": "GST on valid fee",
+      "text": "GST is 18% of the valid processing fee and not of an excess fee.",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_type": "PDF_TEXT_EXTRACTION",
+      "created_by": null
+    },
+    {
+      "id": "CLAUSE_4_6",
+      "reference": "4.6",
+      "page": 5,
+      "heading": "Permitted deductions",
+      "text": "Only expressly listed deductions are permitted; unlisted platform fees are prohibited.",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_type": "PDF_TEXT_EXTRACTION",
+      "created_by": null
+    },
+    {
+      "id": "CLAUSE_6_1",
+      "reference": "6.1",
+      "page": 6,
+      "heading": "Settlement timing",
+      "text": "Captured payments must be settled within two business days of capture.",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_type": "PDF_TEXT_EXTRACTION",
+      "created_by": null
+    },
+    {
+      "id": "CLAUSE_6_2",
+      "reference": "6.2",
+      "page": 6,
+      "heading": "Settlement arithmetic",
+      "text": "Settlement and bank credit equal gross less approved fee, valid GST and valid refunds.",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_type": "PDF_TEXT_EXTRACTION",
+      "created_by": null
+    },
+    {
+      "id": "CLAUSE_7_2",
+      "reference": "7.2",
+      "page": 7,
+      "heading": "Refund integrity",
+      "text": "Refunded principal may be deducted once and no additional refund fee is payable.",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_type": "PDF_TEXT_EXTRACTION",
+      "created_by": null
+    },
+    {
+      "id": "AMENDMENT_A1",
+      "reference": "A1",
+      "page": 9,
+      "heading": "Domestic card fee amendment",
+      "text": "Domestic card processing fee is 1.65% for captures on or after 1 September 2026.",
+      "effective_from": "2026-09-01",
+      "effective_to": null,
+      "source_type": "PDF_TEXT_EXTRACTION",
+      "created_by": null
+    }
+  ]
+}
