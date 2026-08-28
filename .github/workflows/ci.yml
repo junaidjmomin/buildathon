@@ -62,6 +62,9 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: frontend
+      # Generate the global PageProps/LayoutProps route helpers before type checking
+      - run: pnpm exec next typegen
+        working-directory: frontend
       - run: pnpm exec tsc --noEmit
         working-directory: frontend
       - run: pnpm lint

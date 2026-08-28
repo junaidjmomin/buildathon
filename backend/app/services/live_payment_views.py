@@ -27,6 +27,7 @@ from app.domain.models import (
     GraphNode,
     LineageType,
     PaymentGraph,
+    PaymentLifecycle,
     ViolationLineageNode,
     ViolationLineageResponse,
 )
@@ -40,6 +41,100 @@ from app.persistence.orm import (
 )
 
 _DECIMAL_ZERO = Decimal("0")
+
+
+def payment_lifecycles(session: Session, *, tenant_id: str, run_id: str) -> list[PaymentLifecycle]:
+    """Reconstruct mutation-test inputs from the persisted canonical graph."""
+
+    events = list(
+        session.scalars(
+            select(EventRecord).where(
+                EventRecord.tenant_id == tenant_id,
+                EventRecord.run_id == run_id,
+            )
+        )
+    )
+    by_id = {event.id: event for event in events}
+    payments = [event for event in events if event.event_type == "PAYMENT"]
+    edges = list(
+        session.scalars(
+            select(EventEdgeRecord).where(
+                EventEdgeRecord.tenant_id == tenant_id,
+                EventEdgeRecord.run_id == run_id,
+            )
+        )
+    )
+    result: list[PaymentLifecycle] = []
+    for payment in sorted(payments, key=lambda event: event.external_id):
+        payload = payment.normalized_payload or {}
+        related = [
+            by_id[edge.to_event_id]
+            for edge in edges
+            if edge.from_event_id == payment.id
+            and edge.to_event_id in by_id
+            and edge.relationship in {"INCLUDED_IN", "REFUNDED_BY", "CHARGEBACKED_BY"}
+        ]
+        settlements = [event for event in related if event.event_type == "SETTLEMENT"]
+        refunds = [event for event in related if event.event_type == "REFUND"]
+        chargebacks = [event for event in related if event.event_type == "CHARGEBACK"]
+        settlement = max(settlements, key=lambda event: event.occurred_at, default=None)
+        bank_credit = None
+        bank_txn_id = None
+        if settlement is not None:
+            bank_edge = next(
+                (
+                    edge
+                    for edge in edges
+                    if edge.from_event_id == settlement.id
+                    and edge.relationship == "CREDITED_AS"
+                    and edge.to_event_id in by_id
+                ),
+                None,
+            )
+            if bank_edge is not None:
+                bank = by_id[bank_edge.to_event_id]
+                bank_credit = bank.amount
+                bank_txn_id = bank.external_id
+        fee = _payload_decimal(payload.get("fee")) or _DECIMAL_ZERO
+        tax = _payload_decimal(payload.get("tax")) or _DECIMAL_ZERO
+        refund_amount = sum((event.amount for event in refunds), _DECIMAL_ZERO)
+        chargeback_fee = sum(
+            (
+                _payload_decimal((event.normalized_payload or {}).get("fee")) or _DECIMAL_ZERO
+                for event in chargebacks
+            ),
+            _DECIMAL_ZERO,
+        )
+        result.append(
+            PaymentLifecycle(
+                payment_id=payment.external_id,
+                order_id=str(payload.get("order_id") or ""),
+                settlement_id=settlement.external_id if settlement is not None else "",
+                bank_txn_id=bank_txn_id,
+                amount=payment.amount,
+                payment_method=str(payload.get("payment_method") or payload.get("method") or ""),
+                card_network=str(payload.get("card_network") or ""),
+                card_scope=str(payload.get("card_scope") or ""),
+                captured_at=payment.occurred_at,
+                actual_fee=fee,
+                actual_tax=tax,
+                refund_id=refunds[0].external_id if refunds else None,
+                refund_amount=refund_amount,
+                refund_deduction=refund_amount,
+                unsupported_fee=_DECIMAL_ZERO,
+                settled_at=settlement.occurred_at
+                if settlement is not None
+                else payment.occurred_at,
+                actual_net=settlement.amount
+                if settlement is not None
+                else money(payment.amount - fee - tax - refund_amount),
+                bank_credit=bank_credit,
+                status=payment.status or "captured",
+                chargeback_fee=chargeback_fee,
+                chargeback_fee_deductions=len(chargebacks),
+            )
+        )
+    return result
 
 
 def _payload_decimal(value: Any) -> Decimal | None:

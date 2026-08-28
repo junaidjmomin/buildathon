@@ -108,8 +108,11 @@ export const api = {
     request<PaymentGraph>(`/runs/${segment(runId)}/payments/${segment(paymentId)}/graph`),
   runMutationTest: (runId: string) =>
     request<MutationTestSummary>(`/runs/${segment(runId)}/mutation-tests`, { method: "POST" }),
-  backtestControl: (controlId: string) =>
-    request<ControlBacktest>(`/controls/${segment(controlId)}/backtest`, { method: "POST" }),
+  backtestControl: (controlId: string, runId?: string) =>
+    request<ControlBacktest>(
+      `/controls/${segment(controlId)}/backtest${runId ? `?run_id=${segment(runId)}` : ""}`,
+      { method: "POST" },
+    ),
   approveControl: (controlId: string) =>
     request<{ id: string; status: string }>(`/controls/${segment(controlId)}/approve`, { method: "POST" }),
   controls: () => request<Control[]>("/controls"),

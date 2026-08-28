@@ -222,6 +222,13 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
         assert unresolved.status_code == 200
         assert len(unresolved.json()) == 1
 
+        mutation = client.post(f"/api/v1/runs/{run_id}/mutation-tests")
+        assert mutation.status_code == 200, mutation.text
+        mutation_body = mutation.json()
+        assert mutation_body["source_run_id"] == run_id
+        assert mutation_body["mutation_count"] == 50
+        assert mutation_body["canonical_data_unchanged"] is True
+
         with session_scope(tenant_id="novacart_demo") as session:
             actions = set(
                 session.scalars(

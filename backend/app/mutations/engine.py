@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from hashlib import sha256
 
 from app.controls.engine import triggered_control_types
 from app.core.money import expected_fee, expected_gst, money
@@ -117,10 +118,12 @@ def execute_mutation_test(
     unsupported_fee_control: bool = False,
 ) -> MutationTestSummary:
     canonical_before = [payment.model_dump_json() for payment in canonical_payments]
-    known_good = canonical_payments[100:150]
+    if not canonical_payments:
+        raise ValueError("Mutation testing requires at least one canonical payment")
+    known_good = canonical_payments[100:150] or canonical_payments
     results: list[MutationResult] = []
     for index, mutation_type in enumerate(_mutation_plan()):
-        target = known_good[index]
+        target = known_good[index % len(known_good)]
         mutated = apply_mutation(target, mutation_type)
         triggered = triggered_control_types(
             mutated, unsupported_fee_control=unsupported_fee_control
@@ -162,7 +165,11 @@ def execute_mutation_test(
     detected_count = sum(result.detected for result in results)
     canonical_after = [payment.model_dump_json() for payment in canonical_payments]
     return MutationTestSummary(
-        id=MUTATION_TEST_ID,
+        id=(
+            MUTATION_TEST_ID
+            if source_run_id == "RUN_NOVACART_AUG_2026"
+            else f"MUT_{sha256(source_run_id.encode()).hexdigest()[:16].upper()}"
+        ),
         source_run_id=source_run_id,
         status="COMPLETE",
         mutation_count=len(results),

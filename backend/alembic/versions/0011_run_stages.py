@@ -40,8 +40,18 @@ def upgrade() -> None:
         "run_stages",
         ["tenant_id", "run_id", "stage_index"],
     )
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute('ALTER TABLE "run_stages" ENABLE ROW LEVEL SECURITY')
+        op.execute('ALTER TABLE "run_stages" FORCE ROW LEVEL SECURITY')
+        op.execute(
+            """CREATE POLICY tenant_isolation ON "run_stages"
+               USING (tenant_id = current_setting('app.tenant_id', true))
+               WITH CHECK (tenant_id = current_setting('app.tenant_id', true))"""
+        )
 
 
 def downgrade() -> None:
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute('DROP POLICY IF EXISTS tenant_isolation ON "run_stages"')
     op.drop_index("ix_run_stages_tenant_run_order", table_name="run_stages")
     op.drop_table("run_stages")

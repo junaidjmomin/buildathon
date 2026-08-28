@@ -65,13 +65,13 @@ export default function MutationTestPage() {
         {mutation.isError && <div className="panel rounded-2xl p-8 text-center"><CircleAlert className="mx-auto mb-3 text-[#e86f3a]" /><p className="font-medium">Mutation suite could not be executed.</p></div>}
         {!mutation.data && !mutation.isPending && !mutation.isError && <div className="panel rounded-2xl p-8 text-center"><Beaker className="mx-auto mb-3 text-[#1e6b51]" /><p className="font-medium">Mutation testing is an explicit production action.</p><p className="mt-2 text-xs text-[#66716b]">Start the isolated suite when you are ready to record a new control-quality result.</p></div>}
 
-        {mutation.data && <MutationResults data={mutation.data} />}
+        {mutation.data && <MutationResults data={mutation.data} runId={runId} />}
       </main>
     </AppShell>
   );
 }
 
-function MutationResults({ data }: { data: Awaited<ReturnType<typeof api.runMutationTest>> }) {
+function MutationResults({ data, runId }: { data: Awaited<ReturnType<typeof api.runMutationTest>>; runId: string }) {
   const missed = data.results.filter((result) => !result.detected);
   return <div className="space-y-6">
     <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -109,15 +109,15 @@ function MutationResults({ data }: { data: Awaited<ReturnType<typeof api.runMuta
             <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-[#f0d8cc] pt-3 text-[10px]"><div><dt className="text-[#8c7770]">Expected control</dt><dd className="mt-1 font-mono font-semibold">{item.expected_control_type}</dd></div><div><dt className="text-[#8c7770]">Why missed</dt><dd className="mt-1 font-mono font-semibold">{item.blind_spot_reason}</dd></div></dl>
           </div>)}
         </div>
-        <CandidateBacktest />
+        <CandidateBacktest runId={runId} />
       </div>
     </section>
   </div>;
 }
 
-function CandidateBacktest() {
+function CandidateBacktest({ runId }: { runId: string }) {
   const controlId = "CTRL_UNSUPPORTED_FEE_CANDIDATE";
-  const backtest = useMutation({ mutationFn: () => api.backtestControl(controlId) });
+  const backtest = useMutation({ mutationFn: () => api.backtestControl(controlId, runId) });
   const approve = useMutation({ mutationFn: () => api.approveControl(controlId) });
   return <div className="mt-4 rounded-xl border border-[#cbded3] bg-[#f5fbf7] p-4">
     <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#1e6b51]">Draft candidate · Agreement clause 4.6</p><h3 className="mt-1 text-sm font-semibold">Flag every unlisted settlement fee</h3></div><span className="rounded-full bg-[#e5eee8] px-2 py-1 text-[9px] font-bold text-[#52645a]">{approve.isSuccess ? "APPROVED" : "DRAFT"}</span></div>

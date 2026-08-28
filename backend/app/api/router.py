@@ -36,6 +36,7 @@ from app.domain.models import (
     ControlProposal,
     ControlProposalApprovalRequest,
     ControlProposalVerification,
+    ControlType,
     CounterfactualSettlement,
     DemoLoadResponse,
     ExceptionCase,
@@ -48,6 +49,7 @@ from app.domain.models import (
     McpEvidenceCapability,
     MutationTestSummary,
     PaymentGraph,
+    PaymentLifecycle,
     RazorpayConnectionStatus,
     RazorpaySyncRequest,
     RazorpaySyncSummary,
@@ -1724,21 +1726,60 @@ def create_mutation_test(
     request: Request,
 ) -> MutationTestSummary:
     global mutation_test
-    if run_id != DEMO_RUN_ID:
-        raise HTTPException(status_code=404, detail="Run not found")
-    _require_seeded_demo(_principal)
-    store.ensure_loaded()
-    assert store.dataset is not None
-    candidate = _control("CTRL_UNSUPPORTED_FEE_CANDIDATE")
-    mutation_test = execute_mutation_test(
-        run_id,
-        store.dataset.payments,
-        unsupported_fee_control=candidate.status == "APPROVED",
-    )
-    if get_settings().database_url:
+    if run_id == DEMO_RUN_ID:
+        _require_seeded_demo(_principal)
+        store.ensure_loaded()
+        assert store.dataset is not None
+        candidate = _control("CTRL_UNSUPPORTED_FEE_CANDIDATE")
+        mutation_test = execute_mutation_test(
+            run_id,
+            store.dataset.payments,
+            unsupported_fee_control=candidate.status == "APPROVED",
+        )
+    elif get_settings().database_url:
         with session_scope(tenant_id=_principal.tenant_id) as session:
-            RunRepository(session).save_mutation_test(mutation_test, tenant_id=_principal.tenant_id)
-            RunRepository(session).write_audit(
+            repository = RunRepository(session)
+            run = session.get(RunRecord, (_principal.tenant_id, run_id))
+            if run is None:
+                raise HTTPException(status_code=404, detail="Run not found")
+            payments = live_payment_views.payment_lifecycles(
+                session,
+                tenant_id=_principal.tenant_id,
+                run_id=run_id,
+            )
+            controls = repository.list_controls(
+                tenant_id=_principal.tenant_id,
+                approved_only=True,
+            )
+            unsupported_fee_control = any(
+                control.control_type == "UNSUPPORTED_FEE" for control in controls
+            )
+            mutation_test = execute_mutation_test(
+                run_id,
+                payments,
+                unsupported_fee_control=unsupported_fee_control,
+            )
+            repository.save_mutation_test(mutation_test, tenant_id=_principal.tenant_id)
+            repository.write_audit(
+                tenant_id=_principal.tenant_id,
+                actor_id=_principal.subject,
+                action="MUTATION_TEST_EXECUTED",
+                resource_type="mutation_test",
+                resource_id=mutation_test.id,
+                outcome="COMPLETE",
+                details={
+                    "detected": mutation_test.detected_count,
+                    "missed": mutation_test.missed_count,
+                },
+                request_id=request.state.request_id,
+            )
+    else:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if get_settings().database_url and run_id == DEMO_RUN_ID:
+        with session_scope(tenant_id=_principal.tenant_id) as session:
+            repository = RunRepository(session)
+            repository.save_mutation_test(mutation_test, tenant_id=_principal.tenant_id)
+            repository.write_audit(
                 tenant_id=_principal.tenant_id,
                 actor_id=_principal.subject,
                 action="MUTATION_TEST_EXECUTED",
@@ -1870,15 +1911,43 @@ def backtest_control(
     control_id: str,
     _principal: Annotated[Principal, Depends(require_roles("analyst"))],
     request: Request,
+    run_id: str | None = None,
 ) -> ControlBacktest:
-    _require_seeded_demo(_principal)
-    control = _control(control_id)
-    if control.id != "CTRL_UNSUPPORTED_FEE_CANDIDATE":
-        raise HTTPException(status_code=422, detail="No backtest fixture for this control")
-    store.ensure_loaded()
-    assert store.dataset is not None
-    before = execute_mutation_test(DEMO_RUN_ID, store.dataset.payments)
-    after = execute_mutation_test(DEMO_RUN_ID, store.dataset.payments, unsupported_fee_control=True)
+    effective_run_id = run_id or DEMO_RUN_ID
+    control: Control | None = None
+    payments: list[PaymentLifecycle]
+    if effective_run_id == DEMO_RUN_ID:
+        _require_seeded_demo(_principal)
+        control = _control(control_id)
+        store.ensure_loaded()
+        assert store.dataset is not None
+        payments = store.dataset.payments
+    elif get_settings().database_url:
+        with session_scope(tenant_id=_principal.tenant_id) as session:
+            repository = RunRepository(session)
+            if session.get(RunRecord, (_principal.tenant_id, effective_run_id)) is None:
+                raise HTTPException(status_code=404, detail="Run not found")
+            control = repository.get_control(
+                tenant_id=_principal.tenant_id,
+                control_id=control_id,
+            )
+            payments = live_payment_views.payment_lifecycles(
+                session,
+                tenant_id=_principal.tenant_id,
+                run_id=effective_run_id,
+            )
+    else:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if control is None:
+        raise HTTPException(status_code=404, detail="Control not found")
+    if control.control_type != ControlType.UNSUPPORTED_FEE:
+        raise HTTPException(status_code=422, detail="This control type has no mutation fixture")
+    before = execute_mutation_test(effective_run_id, payments)
+    after = execute_mutation_test(
+        effective_run_id,
+        payments,
+        unsupported_fee_control=True,
+    )
     before_missed = {result.id for result in before.results if not result.detected}
     newly_detected = [
         result.id for result in after.results if result.detected and result.id in before_missed
@@ -1907,7 +1976,8 @@ def backtest_control(
             before.canonical_data_unchanged and after.canonical_data_unchanged
         ),
     )
-    governance.record_backtest(control.id, actor=_principal.subject)
+    if effective_run_id == DEMO_RUN_ID:
+        governance.record_backtest(control.id, actor=_principal.subject)
     if get_settings().database_url:
         with session_scope(tenant_id=_principal.tenant_id) as session:
             RunRepository(session).write_audit(

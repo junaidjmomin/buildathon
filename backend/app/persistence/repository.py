@@ -478,6 +478,17 @@ class RunRepository:
             return
         self.session.merge(MutationTestRecord(**values))
 
+    def get_mutation_test(
+        self, *, tenant_id: str, run_id: str, mutation_test_id: str
+    ) -> MutationTestSummary | None:
+        record = self.session.get(
+            MutationTestRecord,
+            (tenant_id, run_id, mutation_test_id),
+        )
+        if record is None:
+            return None
+        return MutationTestSummary.model_validate(record.results)
+
     def list_runs(self, *, tenant_id: str, limit: int = 50) -> list[RunListItem]:
         records = self.session.scalars(
             select(RunRecord)
@@ -905,6 +916,10 @@ class RunRepository:
             )
         ).all()
         return [Control.model_validate(record.definition) for record in records]
+
+    def get_control(self, *, tenant_id: str, control_id: str) -> Control | None:
+        record = self.session.get(ControlRecord, (tenant_id, control_id))
+        return Control.model_validate(record.definition) if record is not None else None
 
     def control_versions(self, *, tenant_id: str, logical_control_key: str) -> list[Control]:
         records = self.session.scalars(
