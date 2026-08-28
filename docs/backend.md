@@ -402,9 +402,11 @@ UNRESOLVED                         5
 
 The payment-level ground truth is 439 `PASS`, 56 labeled violations, and 5
 unresolved records. The authoritative control-evaluation summary is 1,655
-`PASS`, 358 `VIOLATION`, 0 `WARNING`, and 5 `UNRESOLVED` (2,018 total); the
-unresolved relationship count is tracked separately. These are exact demo
-expectations, not illustrative targets.
+`PASS`, 358 `VIOLATION`, 0 `WARNING`, and 5 `UNRESOLVED` (2,018 total) —
+`pass + violation + warning + unresolved_control == control_evaluation_count`;
+the unresolved relationship count is tracked separately
+(`unresolved_relationship_count`). These are exact demo expectations, not
+illustrative targets.
 
 Ensure the generator can also produce a 50-record lightweight test set.
 
@@ -1650,7 +1652,14 @@ total_material_edges
 governed_edges
 ungoverned_edges
 coverage_percentage
+mutation_derived_blind_spots: list[MutationBlindSpot]
 ```
+
+Runtime coverage counts only relationship types with at least one actual
+material event edge in the run. Mutation-derived blind spots
+(`UNSUPPORTED_FEE`, `PAYMENT_METHOD_RECLASSIFICATION`) describe failure modes
+the approved control suite cannot detect; they are capability statements and
+are excluded from runtime edge totals.
 
 Endpoint:
 
@@ -1826,7 +1835,7 @@ seeded API evidence:
 19. The draft candidate backtests from 47/50 to 49/50 with false-positive delta 0.
 20. The candidate remains inactive in `AWAITING_HUMAN_APPROVAL` until an authorized user explicitly approves it.
 21. Agreement compilation produces strictly typed, versioned `DRAFT` controls, detects effective-date conflicts, and also stops at a human gate.
-22. Control coverage reports 2,009 material edges, 2,000 governed, and 9 ungoverned before approval.
+22. Control coverage reports 2,008 material edges, 2,000 governed, and 8 ungoverned before approval; failure modes with no control but no actual runtime edge (method reclassification) appear as mutation-derived blind spots, never as ungoverned runtime edges.
 23. The correct immutable MDR version is selected on both sides of the 1 September boundary.
 24. `UNR_003` and the other four ambiguous cases remain `UNRESOLVED` without forced matching.
 25. The evidence-backed case enforces `OPEN → VERIFIED → ESCALATED/RESOLVED` and retains its tenant-scoped audit trail.

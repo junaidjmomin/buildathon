@@ -90,6 +90,9 @@ def _dominant(candidates: list[Violation]) -> Violation:
 class LineageOutcome:
     violation: Violation
     parent: Violation | None
+    #: Impact override for independent residuals: the portion of the deviation
+    #: that no upstream violation explains. ``None`` keeps the evaluator impact.
+    impact: Decimal | None = None
 
 
 def _classify(
@@ -150,7 +153,11 @@ def _classify(
         explained = money(sum((item.financial_impact for item in parents), Decimal("0")))
         if parents and abs(difference) <= explained + tolerance:
             return LineageOutcome(violation=violation, parent=_dominant(parents))
-        return LineageOutcome(violation=violation, parent=None)
+        # Residual leakage no dependency violation explains: the settlement
+        # deviation exists independently and carries only its residual, so the
+        # upstream impacts are never double counted.
+        residual = max(abs(difference) - explained, Decimal("0"))
+        return LineageOutcome(violation=violation, parent=None, impact=money(residual))
 
     return LineageOutcome(violation=violation, parent=None)
 
@@ -184,9 +191,14 @@ def resolve_violation_lineage(
             violation,
             violations_by_key=violations_by_key,
             evaluation_by_key=evaluation_by_key,
-            contributions=contributions,
+            settlement_contributions=contributions,
         )
         parent = outcome.parent
+        impact_override = (
+            outcome.impact
+            if outcome.impact is not None and outcome.impact != violation.financial_impact
+            else None
+        )
         if parent is not None:
             root_violation_id = parent.root_violation_id or parent.id
             enriched.append(
@@ -214,16 +226,21 @@ def resolve_violation_lineage(
                 f"DOWNSTREAM of {parent.id} ({parent.control_type.value})",
             ]
         else:
+            primary_evidence: dict[str, Any] = {
+                "authority": "DETERMINISTIC",
+                "relationship": "DIRECT_CONTROL_DEVIATION",
+                "control_type": violation.control_type.value,
+            }
+            if impact_override is not None:
+                primary_evidence["relationship"] = "INDEPENDENT_RESIDUAL"
+                primary_evidence["residual_impact"] = str(impact_override)
             enriched.append(
                 violation.model_copy(
                     update={
                         "lineage_type": LineageType.PRIMARY,
                         "root_violation_id": violation.id,
-                        "causal_evidence": {
-                            "authority": "DETERMINISTIC",
-                            "relationship": "DIRECT_CONTROL_DEVIATION",
-                            "control_type": violation.control_type.value,
-                        },
+                        "financial_impact": impact_override or violation.financial_impact,
+                        "causal_evidence": primary_evidence,
                     }
                 )
             )

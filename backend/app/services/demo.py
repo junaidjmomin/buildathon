@@ -396,13 +396,19 @@ class DemoStore:
             pass_count=control_outcomes[EvaluationStatus.PASS.value],
             violation_count=control_outcomes[EvaluationStatus.VIOLATION.value],
             warning_count=control_outcomes[EvaluationStatus.WARNING.value],
+            # Seeded run: control outcomes are complete (breakdown.unresolved
+            # counts unresolved *control evaluations* only — the seeded bank
+            # credit gap); the UNRESOLVED_MATCH relationships are counted
+            # separately via unresolved_match_count.
+            unresolved_control_count=control_outcomes[EvaluationStatus.UNRESOLVED.value],
             unresolved_relationship_count=0,
             precision=precision,
             recall=recall,
             false_positive_rate=fpr,
             verified_leakage=money(sum(v.financial_impact for v in self.violations)),
             cash_delayed=delayed,
-            unresolved_count=unresolved,
+            # Legacy alias of unresolved_control_count (control evaluations).
+            unresolved_count=control_outcomes[EvaluationStatus.UNRESOLVED.value],
             unresolved_match_count=unresolved,
             processing_ms=processing_ms,
             deterministic_processing_ms=processing_ms,
@@ -424,6 +430,10 @@ class DemoStore:
                 recall=True,
                 false_positive_rate=True,
                 control_coverage=True,
+            ),
+            metrics_note=(
+                "Precision and recall are scored against the labeled ground truth "
+                "seeded with this run."
             ),
         )
 

@@ -200,7 +200,21 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
         assert _d(summary_body["verified_leakage"]) > 0
         breakdown = summary_body["breakdown"]
         assert sum(breakdown.values()) == summary_body["control_evaluation_count"]
+        # Unresolved control evaluations and unresolved event relationships
+        # are separate quantities; the invariant across the breakdown holds.
+        assert (
+            breakdown["passed"]
+            + breakdown["violation"]
+            + breakdown["warning"]
+            + breakdown["unresolved"]
+            == summary_body["control_evaluation_count"]
+        )
+        assert summary_body["unresolved_control_count"] == breakdown["unresolved"]
         assert summary_body["unresolved_relationship_count"] == 1
+        assert summary_body["metrics_note"] == (
+            "Precision and recall require labeled ground truth and are not scored "
+            "for this run."
+        )
 
         coverage = client.get(f"/api/v1/runs/{run_id}/control-coverage")
         assert coverage.status_code == 200, coverage.text
@@ -228,8 +242,15 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
         )
         assert all(isinstance(item["total_attributable_impact"], str) for item in root_items)
         assert all(
-            item["verification_evidence"]["cluster_membership"]["violation_ids"]
+            item["verification_evidence"]["violation_ids"]
             for item in root_items
+        )
+        assert all(
+            item["verification_evidence"]["grouping_basis"] == "PRIMARY_VIOLATION_CONTROL_TYPE"
+            for item in root_items
+        )
+        assert all(
+            item["primary_violation_count"] >= 1 for item in root_items
         )
         assert all(
             "unaffected_evaluations" in item["verification_evidence"]["unaffected_comparison"]

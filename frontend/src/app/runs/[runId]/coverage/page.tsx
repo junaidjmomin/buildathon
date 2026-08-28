@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, CircleAlert, GitBranch, LoaderCircle, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, CircleAlert, FlaskConical, GitBranch, LoaderCircle, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -31,6 +31,7 @@ export default function ControlCoveragePage() {
     );
   }
   const data = coverage.data;
+  const blindSpots = data.mutation_derived_blind_spots ?? [];
 
   return (
     <main className="mx-auto max-w-[1240px] px-5 py-8 md:px-8 md:py-10">
@@ -41,7 +42,7 @@ export default function ControlCoveragePage() {
           </>
         }
         title="Which money relationships are governed?"
-        subtitle="Every material event edge is mapped to an approved control—or exposed as a measurable blind spot."
+        subtitle="Runtime coverage counts actual material event edges in this run. Mutation-derived blind spots describe failure modes the control suite cannot detect — they are capability gaps, not ungoverned runtime edges."
         back={{ href: "/", label: "Back to control run" }}
       />
 
@@ -55,7 +56,7 @@ export default function ControlCoveragePage() {
       <section className="panel mb-6 overflow-hidden rounded-2xl">
         <div className="border-b border-[var(--line)] px-5 py-4">
           <h2 className="text-sm font-semibold text-[var(--paper)]">Material relationship coverage</h2>
-          <p className="mt-1 text-xs text-[var(--paper-faint)]">Aggregate edge counts calculated from the canonical event lifecycle</p>
+          <p className="mt-1 text-xs text-[var(--paper-faint)]">Only relationship types with at least one actual edge in this run appear here</p>
         </div>
         <div className="divide-y divide-[var(--line)]">
           {data.items.map((item) => {
@@ -109,6 +110,41 @@ export default function ControlCoveragePage() {
         </div>
       </section>
 
+      {blindSpots.length > 0 ? (
+        <section className="panel mb-6 overflow-hidden rounded-2xl">
+          <div className="border-b border-[var(--line)] px-5 py-4">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--paper)]">
+              <FlaskConical size={14} className="text-[var(--amber)]" /> Mutation-derived blind spots
+            </h2>
+            <p className="mt-1 text-xs text-[var(--paper-faint)]">
+              Failure modes the control suite cannot detect, established by mutation testing. These are excluded from
+              runtime edge counts above.
+            </p>
+          </div>
+          <div className="divide-y divide-[var(--line)]">
+            {blindSpots.map((spot) => (
+              <div key={spot.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-[rgba(245,158,11,0.14)] text-[var(--amber)]">
+                      <FlaskConical size={13} />
+                    </span>
+                    <h3 className="font-mono text-xs font-semibold text-[var(--paper)]">{spot.relationship}</h3>
+                  </div>
+                  <p className="ml-9 mt-1 text-xs text-[var(--paper-dim)]">{spot.description}</p>
+                </div>
+                <div className="text-left sm:text-right">
+                  <span className="rounded-full border border-[rgba(245,158,11,0.4)] bg-[rgba(245,158,11,0.1)] px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--amber)]">
+                    {spot.failure_mode}
+                  </span>
+                  <p className="mt-2 font-mono text-[10px] text-[var(--paper-faint)]">{spot.reason}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <Link
         href={`/runs/${runId}/mutation-test`}
         className="flex flex-col justify-between gap-4 rounded-2xl border border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.08)] p-5 transition duration-150 sm:flex-row sm:items-center"
@@ -117,7 +153,8 @@ export default function ControlCoveragePage() {
           <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[var(--evergreen)]">Close a measured blind spot</p>
           <h2 className="mt-1 text-sm font-semibold text-[var(--paper)]">Backtest the Clause 4.6 candidate before approval</h2>
           <p className="mt-1 text-xs text-[var(--paper-dim)]">
-            Approval increases coverage for unlisted settlement deductions; method classification remains honestly ungoverned.
+            Approval raises runtime coverage for unlisted settlement deductions; mutation-derived blind spots shrink only
+            when the control suite can actually detect the failure mode.
           </p>
         </div>
         <span className="flex items-center gap-2 text-xs font-semibold text-[var(--evergreen)]">

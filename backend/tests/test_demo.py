@@ -96,7 +96,16 @@ def test_demo_metrics_are_measured_from_separate_ground_truth() -> None:
     body = response.json()
     assert Decimal(body["precision"]) >= Decimal("0.98")
     assert Decimal(body["recall"]) >= Decimal("0.95")
-    assert body["unresolved_count"] == 5
+    # Unresolved control evaluations and unresolved event relationships are
+    # reported as separate quantities; the legacy alias matches the former.
+    assert body["unresolved_count"] == body["unresolved_control_count"]
+    assert body["unresolved_control_count"] == 5
+    assert body["unresolved_relationship_count"] == 0
+    assert body["unresolved_match_count"] == 5
+    assert body["metrics_note"] == (
+        "Precision and recall are scored against the labeled ground truth "
+        "seeded with this run."
+    )
 
 
 def test_hypothesis_is_independently_rejected() -> None:
@@ -212,8 +221,21 @@ def test_agreement_provenance_and_time_versioned_control_selection() -> None:
 def test_control_coverage_updates_only_after_backtest_and_explicit_approval() -> None:
     client.post("/api/v1/demo/load")
     before = client.get(f"/api/v1/runs/{DEMO_RUN_ID}/control-coverage").json()
-    assert before["ungoverned_edges"] == 9
+    assert before["ungoverned_edges"] == 8
     assert any(item["id"] == "COV_OTHER_DEDUCTION" for item in before["items"])
+    # Runtime items only cover relationship types with actual material edges
+    # in the run: method classification contributes no runtime edge.
+    assert all(
+        item["relationship"] != "PAYMENT → METHOD CLASSIFICATION" for item in before["items"]
+    )
+    # Mutation-derived blind spots are capability statements, not edges.
+    blind_spot_modes = {item["failure_mode"] for item in before["mutation_derived_blind_spots"]}
+    assert "UNSUPPORTED_FEE" in blind_spot_modes
+    assert "PAYMENT_METHOD_RECLASSIFICATION" in blind_spot_modes
+    assert all(
+        item["reason"] in {"NO_APPLICABLE_CONTROL", "UNGOVERNED_LIFECYCLE_EDGE"}
+        for item in before["mutation_derived_blind_spots"]
+    )
 
     premature = client.post("/api/v1/controls/CTRL_UNSUPPORTED_FEE_CANDIDATE/approve")
     assert premature.status_code == 409
@@ -224,8 +246,12 @@ def test_control_coverage_updates_only_after_backtest_and_explicit_approval() ->
     assert approved.status_code == 200
     assert approved.json()["status"] == "APPROVED"
     after = client.get(f"/api/v1/runs/{DEMO_RUN_ID}/control-coverage").json()
-    assert after["ungoverned_edges"] == 1
+    assert after["ungoverned_edges"] == 0
     assert Decimal(after["coverage_percentage"]) > Decimal(before["coverage_percentage"])
+    # Approving the Clause 4.6 control removes the unsupported-fee blind spot.
+    assert "UNSUPPORTED_FEE" not in {
+        item["failure_mode"] for item in after["mutation_derived_blind_spots"]
+    }
 
 
 def test_exception_case_requires_verified_evidence_and_preserves_audit_trail() -> None:

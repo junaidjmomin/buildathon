@@ -649,6 +649,7 @@ class RunRepository:
             pass_count=outcomes["PASS"],
             violation_count=outcomes["VIOLATION"],
             warning_count=outcomes["WARNING"],
+            unresolved_control_count=outcomes["UNRESOLVED"],
             unresolved_relationship_count=unresolved_events,
             precision=Decimal("0"),
             recall=Decimal("0"),
@@ -677,6 +678,10 @@ class RunRepository:
             completed_at=run.completed_at or run.created_at,
             ground_truth_available=False,
             metrics_scope="LIVE_CONTROL_OUTCOMES_NO_GROUND_TRUTH",
+            metrics_note=(
+                "Precision and recall require labeled ground truth and are not "
+                "scored for this run."
+            ),
         )
 
     def save_canonical_sync(

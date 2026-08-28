@@ -52,6 +52,12 @@ export function Dashboard() {
   const roots = useQuery({
     queryKey: ["root-causes", activeRun], queryFn: () => api.rootCauses(activeRun ?? ""), enabled: Boolean(activeRun),
   });
+  const coverage = useQuery({
+    queryKey: ["control-coverage", activeRun],
+    queryFn: () => api.controlCoverage(activeRun ?? ""),
+    enabled: Boolean(activeRun),
+    retry: 1,
+  });
   if (runs.isPending) {
     return (
       <main className="grid min-h-[calc(100vh-64px)] place-items-center p-8 text-center">
@@ -119,6 +125,21 @@ export function Dashboard() {
 
   if (!summary.data) return null;
   const data = summary.data;
+  // Older persisted/live responses may omit the split control counter. Keep
+  // the Overview honest while those runs are rehydrated by using the legacy
+  // alias, never allowing an undefined value into the UI.
+  const unresolvedEvaluations = data.unresolved_control_count
+    ?? data.unresolved_count
+    ?? 0;
+  const coveragePercent = activeIsSeeded
+    ? data.control_coverage
+    : coverage.data?.coverage_percentage ?? null;
+  const coverageLabel = activeIsSeeded ? "Control coverage" : "Structural coverage";
+  const coverageValue = coveragePercent != null
+    ? formatPercent(coveragePercent)
+    : coverage.isError
+      ? "Unavailable"
+      : "Loading…";
   const featuredViolation = violations.data?.find((item) => item.category === "MDR rate deviation");
   const rootMax = (roots.data ?? []).reduce(
     (maximum, root) => (compareDecimals(root.verified_impact, maximum) > 0 ? root.verified_impact : maximum),
@@ -147,8 +168,8 @@ export function Dashboard() {
         <Metric icon={DatabaseZap} label="Transactions" value={data.transaction_count.toLocaleString("en-IN")} href="/data" />
         <Metric icon={Fingerprint} label="Controls evaluated" value={data.control_evaluation_count.toLocaleString("en-IN")} />
         <Metric icon={CircleDollarSign} label="Verified leakage" value={formatMoney(data.verified_leakage, true)} tone="crimson" href="/exceptions" />
-        <Metric icon={ShieldAlert} label="Unresolved" value={String(data.unresolved_count)} href="/exceptions" />
-        <Metric icon={ShieldCheck} label="Control coverage" value={data.control_coverage != null ? formatPercent(data.control_coverage) : "Not measured"} tone="green" href={`/runs/${activeRun}/coverage`} />
+        <Metric icon={ShieldAlert} label="Unresolved evaluations" value={String(unresolvedEvaluations)} href="/exceptions" />
+        <Metric icon={ShieldCheck} label={coverageLabel} value={coverageValue} tone="green" href={`/runs/${activeRun}/coverage`} />
         <Metric icon={ScanSearch} label={data.ground_truth_available ? "Precision" : "Run status"} value={data.ground_truth_available ? formatPercent(data.precision) : "Live"} tone="green" />
       </section>
 
@@ -162,7 +183,7 @@ export function Dashboard() {
             <Outcome label="Pass" value={data.breakdown.passed} color="var(--evergreen)" />
             <Outcome label="Violation" value={data.breakdown.violation} color="var(--crimson)" />
             <Outcome label="Warning" value={data.breakdown.warning} color="var(--amber)" />
-            <Outcome label="Unresolved" value={data.breakdown.unresolved} color="var(--paper-faint)" />
+            <Outcome label="Unresolved evaluations" value={data.breakdown.unresolved} color="var(--paper-faint)" />
           </div>
           <div className="px-5 py-5">
             <div className="flex h-2.5 overflow-hidden rounded-full bg-[var(--ink-600)]">
@@ -174,7 +195,8 @@ export function Dashboard() {
             <div className="mt-5 flex flex-wrap gap-x-7 gap-y-2 text-xs text-[var(--paper-dim)]">
               <span className="flex items-center gap-2"><Clock3 size={13} /> {formatDuration(data.processing_ms)} processing</span>
               <span className="number-tabular font-mono">{data.evaluations_per_second.toLocaleString("en-IN")} evaluations/sec</span>
-              <span>{data.ground_truth_available ? `${formatPercent(data.false_positive_rate)} false-positive rate` : "Ground-truth metrics unavailable for live data"}</span>
+              <span className="number-tabular font-mono">{data.unresolved_relationship_count.toLocaleString("en-IN")} unresolved event relationships</span>
+              <span>{data.ground_truth_available ? `${formatPercent(data.false_positive_rate)} false-positive rate` : data.metrics_note || "Precision and recall require labeled ground truth and are not scored for this run."}</span>
             </div>
           </div>
         </div>

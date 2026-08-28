@@ -30,6 +30,7 @@ from app.domain.models import (
     GraphEdge,
     GraphNode,
     LineageType,
+    MutationBlindSpot,
     PaymentGraph,
     PaymentLifecycle,
     ViolationLineageNode,
@@ -78,7 +79,6 @@ def control_coverage(session: Session, *, tenant_id: str, run_id: str) -> Contro
             select(ControlRecord).where(ControlRecord.tenant_id == tenant_id)
         )
     }
-    payment_ids = {event.external_id for event in events if event.event_type == "PAYMENT"}
     card_payment_ids = {
         event.external_id
         for event in events
@@ -93,6 +93,10 @@ def control_coverage(session: Session, *, tenant_id: str, run_id: str) -> Contro
             eval_by_type[control.control_type].add(evaluation.target_id)
             eval_control_ids[control.control_type].add(control.id)
     edge_counts = Counter(edge.relationship for edge in edges)
+    # Runtime coverage is computed over *actual* material event edges in this
+    # run. Relationship types with zero actual edges contribute no runtime
+    # edge — their detectability gaps are reported separately as
+    # mutation-derived blind spots, never as ungoverned runtime edges.
     governed_edges = {
         "PAYMENT → FEE": (
             len(card_payment_ids),
@@ -119,26 +123,64 @@ def control_coverage(session: Session, *, tenant_id: str, run_id: str) -> Contro
             len(eval_by_type.get("REFUND_INTEGRITY", set())),
             "REFUND_INTEGRITY",
         ),
-        "OTHER DEDUCTION → SETTLEMENT": (0, 0, "UNSUPPORTED_FEE"),
-        "PAYMENT → METHOD CLASSIFICATION": (len(payment_ids), 0, ""),
     }
+    # Relationship types with no approved control and no runtime edge count.
+    # Their gaps are failure modes the control suite cannot detect — reported
+    # as mutation-derived blind spots, excluded from runtime edge totals.
+    blind_spot_candidates = [
+        (
+            "OTHER DEDUCTION → SETTLEMENT",
+            "UNSUPPORTED_FEE",
+            (
+                "Unlisted settlement deductions have no approved control; the "
+                "failure mode is proven by mutation testing, not by runtime edges."
+            ),
+        ),
+        (
+            "PAYMENT → METHOD CLASSIFICATION",
+            "PAYMENT_METHOD_RECLASSIFICATION",
+            (
+                "No approved control attests the original payment-method "
+                "classification; reclassification would go undetected."
+            ),
+        ),
+    ]
+    unsupported_evaluations = eval_by_type.get("UNSUPPORTED_FEE", set())
+    blind_spots: list[MutationBlindSpot] = []
+    for index, (relationship, control_type, description) in enumerate(blind_spot_candidates):
+        if control_type == "UNSUPPORTED_FEE" and unsupported_evaluations:
+            # An approved unsupported-fee control now governs this failure
+            # mode; it is not a blind spot.
+            continue
+        blind_spots.append(
+            MutationBlindSpot(
+                id=f"MBS_{index + 1:02d}",
+                relationship=relationship,
+                failure_mode=control_type,
+                description=description,
+                reason=(
+                    "MUTATION_DERIVED"
+                ),
+            )
+        )
     descriptions = {
         "PAYMENT → FEE": "Contractual processing-fee deduction",
         "FEE → TAX": "GST computed on the approved processing fee",
         "CAPTURE → SETTLEMENT": "Settlement timing and inclusion",
         "SETTLEMENT → BANK": "Expected settlement and observed bank credit arithmetic",
         "REFUND → SETTLEMENT": "Refund principal deducted no more than once",
-        "OTHER DEDUCTION → SETTLEMENT": "Unlisted deductions require an approved control",
-        "PAYMENT → METHOD CLASSIFICATION": "Protection against silent method reclassification",
     }
     items: list[ControlCoverageItem] = []
     for index, (relationship, (material, governed, control_type)) in enumerate(
         governed_edges.items()
     ):
-        ids = sorted(eval_control_ids.get(control_type, set())) if control_type else []
         if material == 0:
-            status = CoverageStatus.UNGOVERNED
-        elif governed >= material:
+            # No actual material edges of this relationship type exist in the
+            # run; it is not an ungoverned runtime edge and is omitted from
+            # runtime coverage entirely.
+            continue
+        ids = sorted(eval_control_ids.get(control_type, set())) if control_type else []
+        if governed >= material:
             status = CoverageStatus.GOVERNED
         elif governed:
             status = CoverageStatus.PARTIALLY_GOVERNED
@@ -178,6 +220,7 @@ def control_coverage(session: Session, *, tenant_id: str, run_id: str) -> Contro
             Decimal(governed) / Decimal(total) if total else Decimal("1")
         ).quantize(Decimal("0.0001")),
         items=items,
+        mutation_derived_blind_spots=blind_spots,
     )
 
 

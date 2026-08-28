@@ -444,7 +444,20 @@ def _mdr_root_cause(
         observed_value=", ".join(observed_rates),
         first_seen=min(item.occurred_at for item in violations),
         last_seen=max(item.occurred_at for item in violations),
-        verification_status="DETERMINISTICALLY_CLUSTERED",
+        verification_status="DETERMINISTICALLY_VERIFIED",
+        verification_evidence={
+            "engine": "sl3dge-deterministic-v1",
+            "grouping_basis": "PRIMARY_VIOLATION_CONTROL_TYPE",
+            "violation_ids": sorted(item.id for item in violations),
+            "primary_violation_ids": sorted(item.id for item in violations),
+            "downstream_violation_ids": [],
+            "unaffected_comparison": {
+                "evaluations_in_control_family": len(evaluations),
+                "violating_evaluations": len(violating),
+                "unaffected_evaluations": len(evaluations) - len(violating),
+                "comparison_basis": "same_control_type_and_run",
+            },
+        },
         primary_violation_count=len(violations),
         downstream_effect_count=0,
     )

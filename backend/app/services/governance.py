@@ -13,6 +13,7 @@ from app.domain.models import (
     ControlProposal,
     ControlType,
     CoverageStatus,
+    MutationBlindSpot,
     PaymentLifecycle,
 )
 
@@ -352,81 +353,118 @@ class GovernanceStore:
         bank_count = sum(1 for payment in payments if payment.bank_credit is not None)
         unsupported_count = sum(1 for payment in payments if payment.unsupported_fee > 0)
         unsupported_approved = self.control("CTRL_UNSUPPORTED_FEE_CANDIDATE").status == "APPROVED"
+        # Runtime coverage counts only actual material event edges in this
+        # run. Relationship types with zero actual edges (no refunds, no
+        # bank credits, no unlisted deductions) contribute no runtime edge
+        # and are omitted entirely.
         items = [
-            ControlCoverageItem(
-                id="COV_PAYMENT_FEE",
-                relationship="PAYMENT → FEE",
-                description="Contractual processing-fee deduction",
-                material_edge_count=payment_count,
-                governed_edge_count=payment_count,
-                status=CoverageStatus.GOVERNED,
-                control_ids=["CTRL_MDR_DOMESTIC"],
-            ),
-            ControlCoverageItem(
-                id="COV_FEE_TAX",
-                relationship="FEE → TAX",
-                description="GST computed on the approved processing fee",
-                material_edge_count=payment_count,
-                governed_edge_count=payment_count,
-                status=CoverageStatus.GOVERNED,
-                control_ids=["CTRL_GST_FEE"],
-            ),
-            ControlCoverageItem(
-                id="COV_CAPTURE_SETTLEMENT",
-                relationship="CAPTURE → SETTLEMENT",
-                description="Settlement timing and inclusion",
-                material_edge_count=payment_count,
-                governed_edge_count=payment_count,
-                status=CoverageStatus.GOVERNED,
-                control_ids=["CTRL_SETTLEMENT_SLA"],
-            ),
-            ControlCoverageItem(
-                id="COV_SETTLEMENT_BANK",
-                relationship="SETTLEMENT → BANK",
-                description="Expected settlement and observed bank credit arithmetic",
-                material_edge_count=bank_count,
-                governed_edge_count=bank_count,
-                status=CoverageStatus.GOVERNED,
-                control_ids=["CTRL_SETTLEMENT_ARITHMETIC"],
-            ),
-            ControlCoverageItem(
-                id="COV_REFUND_SETTLEMENT",
-                relationship="REFUND → SETTLEMENT",
-                description="Refund principal deducted no more than once",
-                material_edge_count=refund_count,
-                governed_edge_count=refund_count,
-                status=CoverageStatus.GOVERNED,
-                control_ids=["CTRL_REFUND"],
-            ),
-            ControlCoverageItem(
-                id="COV_OTHER_DEDUCTION",
-                relationship="OTHER DEDUCTION → SETTLEMENT",
-                description="Unlisted fee deductions discovered by mutation testing",
-                material_edge_count=unsupported_count,
-                governed_edge_count=unsupported_count if unsupported_approved else 0,
-                status=(
-                    CoverageStatus.GOVERNED if unsupported_approved else CoverageStatus.UNGOVERNED
+            item
+            for item in [
+                ControlCoverageItem(
+                    id="COV_PAYMENT_FEE",
+                    relationship="PAYMENT → FEE",
+                    description="Contractual processing-fee deduction",
+                    material_edge_count=payment_count,
+                    governed_edge_count=payment_count,
+                    status=CoverageStatus.GOVERNED,
+                    control_ids=["CTRL_MDR_DOMESTIC"],
                 ),
-                control_ids=(["CTRL_UNSUPPORTED_FEE_CANDIDATE"] if unsupported_approved else []),
-                blind_spot=(
-                    None
-                    if unsupported_approved
-                    else "Clause 4.6 exists, but its extracted control remains DRAFT."
+                ControlCoverageItem(
+                    id="COV_FEE_TAX",
+                    relationship="FEE → TAX",
+                    description="GST computed on the approved processing fee",
+                    material_edge_count=payment_count,
+                    governed_edge_count=payment_count,
+                    status=CoverageStatus.GOVERNED,
+                    control_ids=["CTRL_GST_FEE"],
                 ),
-            ),
-            ControlCoverageItem(
-                id="COV_METHOD_CLASSIFICATION",
-                relationship="PAYMENT → METHOD CLASSIFICATION",
-                description="Protection against silent method reclassification",
-                material_edge_count=1,
-                governed_edge_count=0,
-                status=CoverageStatus.UNGOVERNED,
-                control_ids=[],
-                blind_spot=(
-                    "No approved control attests the original payment-method classification."
+                ControlCoverageItem(
+                    id="COV_CAPTURE_SETTLEMENT",
+                    relationship="CAPTURE → SETTLEMENT",
+                    description="Settlement timing and inclusion",
+                    material_edge_count=payment_count,
+                    governed_edge_count=payment_count,
+                    status=CoverageStatus.GOVERNED,
+                    control_ids=["CTRL_SETTLEMENT_SLA"],
                 ),
-            ),
+                ControlCoverageItem(
+                    id="COV_SETTLEMENT_BANK",
+                    relationship="SETTLEMENT → BANK",
+                    description="Expected settlement and observed bank credit arithmetic",
+                    material_edge_count=bank_count,
+                    governed_edge_count=bank_count,
+                    status=CoverageStatus.GOVERNED,
+                    control_ids=["CTRL_SETTLEMENT_ARITHMETIC"],
+                ),
+                ControlCoverageItem(
+                    id="COV_REFUND_SETTLEMENT",
+                    relationship="REFUND → SETTLEMENT",
+                    description="Refund principal deducted no more than once",
+                    material_edge_count=refund_count,
+                    governed_edge_count=refund_count,
+                    status=CoverageStatus.GOVERNED,
+                    control_ids=["CTRL_REFUND"],
+                ),
+            ]
+            if item.material_edge_count > 0
         ]
+        if unsupported_count > 0:
+            # Actual unlisted-deduction edges exist in this run: a genuine
+            # runtime coverage gap when the candidate control is still draft.
+            items.append(
+                ControlCoverageItem(
+                    id="COV_OTHER_DEDUCTION",
+                    relationship="OTHER DEDUCTION → SETTLEMENT",
+                    description="Unlisted fee deductions in this run",
+                    material_edge_count=unsupported_count,
+                    governed_edge_count=unsupported_count if unsupported_approved else 0,
+                    status=(
+                        CoverageStatus.GOVERNED
+                        if unsupported_approved
+                        else CoverageStatus.UNGOVERNED
+                    ),
+                    control_ids=(
+                        ["CTRL_UNSUPPORTED_FEE_CANDIDATE"] if unsupported_approved else []
+                    ),
+                    blind_spot=(
+                        None
+                        if unsupported_approved
+                        else (
+                            f"{unsupported_count} actual unlisted deductions exist in this "
+                            "run without an approved control."
+                        )
+                    ),
+                )
+            )
+        # Mutation-derived blind spots describe failure modes the approved
+        # control suite cannot detect. They are statements about control-suite
+        # capability, never counts of runtime edges.
+        mutation_blind_spots: list[MutationBlindSpot] = []
+        if not unsupported_approved:
+            mutation_blind_spots.append(
+                MutationBlindSpot(
+                    id="MBS_UNSUPPORTED_FEE",
+                    relationship="OTHER DEDUCTION → SETTLEMENT",
+                    failure_mode="UNSUPPORTED_FEE",
+                    description=(
+                        "Injecting an unlisted settlement fee is not detected: the "
+                        "Clause 4.6 control remains a draft."
+                    ),
+                    reason="NO_APPLICABLE_CONTROL",
+                )
+            )
+        mutation_blind_spots.append(
+            MutationBlindSpot(
+                id="MBS_METHOD_CLASSIFICATION",
+                relationship="PAYMENT → METHOD CLASSIFICATION",
+                failure_mode="PAYMENT_METHOD_RECLASSIFICATION",
+                description=(
+                    "Silently reclassifying a payment method is not detected by "
+                    "any approved control."
+                ),
+                reason="UNGOVERNED_LIFECYCLE_EDGE",
+            )
+        )
         total = sum(item.material_edge_count for item in items)
         governed = sum(item.governed_edge_count for item in items)
         partial = sum(
@@ -444,6 +482,7 @@ class GovernanceStore:
             ungoverned_edges=ungoverned,
             coverage_percentage=percentage.quantize(Decimal("0.0001")),
             items=items,
+            mutation_derived_blind_spots=mutation_blind_spots,
         )
 
 

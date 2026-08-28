@@ -62,6 +62,8 @@ export interface RunSummary {
   violation_count: number;
   warning_count: number;
   unresolved_relationship_count: number;
+  /** Unresolved control evaluations (breakdown.unresolved); distinct from unresolved relationships. */
+  unresolved_control_count: number;
   precision: string;
   recall: string;
   false_positive_rate: string;
@@ -79,6 +81,8 @@ export interface RunSummary {
   control_coverage: string | null;
   metrics_available: { ground_truth: boolean; precision: boolean; recall: boolean; false_positive_rate: boolean; control_coverage: boolean };
   ground_truth_available: boolean;
+  /** Source-neutral explanation of which metrics are not scored and why. */
+  metrics_note: string;
   metrics_scope: string;
 }
 
@@ -435,6 +439,14 @@ export interface ControlCoverageSummary {
     status: "GOVERNED" | "PARTIALLY_GOVERNED" | "UNGOVERNED";
     control_ids: string[];
     blind_spot: string | null;
+  }>;
+  /** Failure modes the control suite cannot detect, derived from mutation testing. Capability statements, not runtime edge counts. */
+  mutation_derived_blind_spots: Array<{
+    id: string;
+    relationship: string;
+    failure_mode: string;
+    description: string;
+    reason: string;
   }>;
 }
 

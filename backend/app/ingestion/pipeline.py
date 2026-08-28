@@ -10,7 +10,7 @@ from time import perf_counter
 from typing import Any
 
 from app.controls.lineage import attribute_root_causes, resolve_violation_lineage
-from app.controls.live import build_live_control_evaluations
+from app.controls.live import LiveControlEvaluation, build_live_control_evaluations
 from app.core.money import money
 from app.domain.models import (
     CanonicalEventEdge,
@@ -219,30 +219,40 @@ def execute_source_run(
             for evaluation in evaluations
             if evaluation.violation is not None
         }
+        synced: dict[str, LiveControlEvaluation] = {}
         for violation in violations:
             evaluation = evaluation_by_violation_id.get(violation.id)
             if evaluation is None or evaluation.financial_impact == violation.financial_impact:
                 continue
-            evaluation.financial_impact = violation.financial_impact
-            evaluation.evidence = {
-                **evaluation.evidence,
-                "counts_toward_verified_leakage": violation.financial_impact > Decimal("0"),
-                "financial_impact_policy": (
-                    "INDEPENDENT_RESIDUAL"
-                    if violation.financial_impact > Decimal("0")
-                    else "EXCLUDE_DOWNSTREAM_DUPLICATE"
-                ),
-            }
+            synced[violation.id] = replace(
+                evaluation,
+                financial_impact=violation.financial_impact,
+                evidence={
+                    **evaluation.evidence,
+                    "counts_toward_verified_leakage": violation.financial_impact
+                    > Decimal("0"),
+                    "financial_impact_policy": (
+                        "INDEPENDENT_RESIDUAL"
+                        if violation.financial_impact > Decimal("0")
+                        else "EXCLUDE_DOWNSTREAM_DUPLICATE"
+                    ),
+                },
+            )
+        if synced:
+            evaluations = [
+                synced.get(evaluation.violation.id, evaluation)
+                if evaluation.violation is not None
+                else evaluation
+                for evaluation in evaluations
+            ]
         roots, violations = attribute_root_causes(run_id, violations, evaluations)
         violations_by_root: dict[str, list[Violation]] = defaultdict(list)
         for violation in violations:
             if violation.root_cause_id is not None:
                 violations_by_root[violation.root_cause_id].append(violation)
-        investigation_violation_ids: set[str] = set()
         investigations: list[tuple[str, RootCause, list[Any], list[CaseEvidence]]] = []
         for root in roots:
             related_violations = violations_by_root.get(root.id, [])
-            investigation_violation_ids.update(item.id for item in related_violations)
             evidence = [
                 CaseEvidence(
                     id=f"EVID_{violation.id}",
@@ -262,20 +272,6 @@ def execute_source_run(
             investigations.append(
                 (f"CASE_{root.id.removeprefix('RC_')}", root, related_violations, evidence)
             )
-        for violation in violations:
-            # A violation whose category produced no primary root cause is not
-            # dropped; it belongs to no systemic cluster and is attached to the
-            # investigation of its primary ancestor's root cause if any.
-            if violation.id in investigation_violation_ids:
-                continue
-            ancestor_root_id = violation.root_cause_id
-            if ancestor_root_id is None:
-                continue
-            for index, (case_id, root, related, evidence) in enumerate(investigations):
-                if root.id == ancestor_root_id:
-                    related.append(violation)
-                    investigation_violation_ids.add(violation.id)
-                    break
         engine_seconds += perf_counter() - evaluation_started
         timeline.record(
             "EVALUATE_CONTROLS",
