@@ -93,11 +93,12 @@ Legend: `[x]` implemented and verified, `[~]` being completed in the current imp
   `backend/app/services/live_payment_views.py` builds them deterministically from
   persisted events/edges/evaluations/violations, and the existing frontend payment
   page has no seeded-only gating).
-- [x] Generalize expected-vs-actual, lineage, graph, and counterfactual endpoints
+- [x] Generalize expected-vs-actual, lineage, graph, counterfactual, and control
+  coverage endpoints
   (live Postgres branch in `backend/app/api/router.py` backed by
   `backend/app/services/live_payment_views.py`; `/control-coverage` intentionally
-  remains seeded-only because honest coverage needs ground-truth labels uploaded
-  runs do not have).
+  reports structural edge coverage for uploaded runs without claiming seeded
+  ground-truth precision/recall).
 - [x] Expose the mutation-test entry point from the selected run dashboard and
   pass the selected run to candidate-control backtests; the UI explains when a
   candidate is not registered for that run instead of showing a dead seeded-only
@@ -114,12 +115,21 @@ Legend: `[x]` implemented and verified, `[~]` being completed in the current imp
 
 ## Root causes, cases, and evidence
 
-- [~] Generalize root grouping beyond MDR to GST, SLA, refund, and settlement arithmetic.
-- [ ] Persist cluster membership and unaffected comparison evidence.
-- [ ] Add the MDR-over-time comparison chart.
-- [ ] Generalize live case creation/transitions for uploaded and Razorpay runs.
-- [ ] Link every displayed financial value to snapshot, control version, and evaluation.
-- [ ] Add evidence-pack export to private Storage.
+- [x] Generalize root grouping beyond MDR to GST, SLA, refund, and settlement arithmetic.
+- [x] Persist cluster membership and unaffected comparison evidence in each
+  root-cause verification record.
+- [x] Add the MDR-over-time comparison chart (run-scoped temporal replay groups
+  all card transactions by capture month and renders Decimal-backed deltas).
+- [x] Generalize live case creation/transitions for uploaded and Razorpay runs
+  (persisted investigation cases use optimistic version checks and verified-evidence
+  gates for every transition).
+- [~] Link every displayed financial value to snapshot, control version, and
+  evaluation (live payment evidence now exposes all three provenance references;
+  dashboard aggregate metrics now link to evidence/coverage routes, while
+  transaction-level provenance for every aggregate remains a future drill-down).
+- [x] Add evidence-pack export to private Storage (`POST
+  /runs/{run_id}/evidence-export`); the endpoint fails closed when PostgreSQL or
+  private Supabase Storage is not configured.
 
 ## API, jobs, security, and operations
 
@@ -132,7 +142,10 @@ Legend: `[x]` implemented and verified, `[~]` being completed in the current imp
   formatted, ORM-aligned lineage migration `0012_durable_lineage_metrics`.
 - [x] Normalize errors to `{error: {code, message, details, request_id}}` and test them.
 - [x] Persist and expose run stages from upload through finalize.
-- [ ] Add structured stage logs and operational metrics/alerts.
+- [x] Add structured stage logs and operational metrics (`GET
+  /runs/{run_id}/operational-metrics`; alert delivery remains an external
+  observability-platform concern). The run-scoped Operations UI now exposes
+  persisted stage timings, throughput counters, and failed-stage state.
 - [x] Start built containers in CI and smoke-test readiness and connectivity
   (`.github/workflows/ci.yml` `containers` job: Postgres service, backend
   container on host network, in-container `alembic upgrade head`, live/ready/
@@ -146,8 +159,11 @@ Legend: `[x]` implemented and verified, `[~]` being completed in the current imp
 
 ## Optional/P2 expansion
 
-- [ ] Schema-drift detection and mapping review.
-- [ ] Temporal replay using historical controls.
+- [x] Schema-drift detection and mapping review (deterministic source-specific
+  column allowlists, explicit unmapped-column evidence, and frontend review
+  warning without rejecting otherwise valid uploads).
+- [x] Temporal replay using approved historical MDR control versions (`POST
+  /runs/{run_id}/temporal-replay` and the run-scoped replay UI).
 - [ ] Natural-language analyst queries with deterministic citations.
 - [ ] Drift-monitoring UI.
 - [ ] Optional Supabase Realtime progress.
@@ -163,13 +179,13 @@ Legend: `[x]` implemented and verified, `[~]` being completed in the current imp
 
 ## Verified baseline before this pass
 
-- Backend: 117 passed, 1 skipped.
+- Backend: 118 passed, 1 skipped.
 - Frontend TypeScript, lint, and production build passed.
 - Supabase revision: `0012_durable_lineage_metrics` (migration is verified in a
   fresh database; applying it to an existing external database remains an
   operator-authorized deployment action).
 - Seeded NovaCart proof path: functional.
-- Fully functional deterministic prototype estimate after this pass: 90%.
+- Fully functional deterministic prototype estimate after this pass: 94%.
 
 ## 2026-08-29 sequential implementation pass
 
@@ -179,8 +195,42 @@ Legend: `[x]` implemented and verified, `[~]` being completed in the current imp
 - Candidate backtest accepts an optional `run_id` and evaluates the persisted
   run when the candidate control exists; unsupported control types fail closed
   with an explicit 422 rather than returning fabricated metrics.
-- Backend verification: 117 passed, 1 skipped; Ruff clean. Frontend verification:
+- Temporal replay now compares an approved MDR version against the run's
+  effective baseline with Decimal arithmetic, violation deltas, and per-payment
+  evidence. It is deterministic and does not rewrite canonical data.
+- Backend verification: 118 passed, 1 skipped; Ruff clean. Frontend verification:
   17 tests passed, TypeScript, lint, and production build passed.
+
+## 2026-08-29 remaining-task implementation pass
+
+- Added deterministic evidence-pack export for persisted runs. The JSON bundle
+  includes the run summary, stage timeline, violations, root causes, and cases;
+  it is content-addressed, stored under the tenant's private Storage prefix, and
+  recorded in PostgreSQL with an audit event. No public URL or browser-side
+  privileged credential is exposed.
+- Added an Overview action for live runs to export the private evidence pack and
+  report the artifact identifier or configuration failure without blocking other
+  run actions.
+- Generalized the control-coverage graph to uploaded runs. Coverage is calculated
+  from persisted canonical edge counts and persisted control evaluations, with
+  ungoverned method-classification and unsupported-deduction edges reported
+  honestly rather than borrowing seeded ground-truth values.
+- Overview now links to the same run-scoped coverage view for both seeded and
+  uploaded runs.
+- Live payment evidence now carries evaluation ID, control version, and source
+  snapshot IDs into the API/UI so an analyst can trace each displayed
+  expected/actual amount to its deterministic inputs.
+- Uploaded-run control coverage now uses persisted edge/evaluation evidence and
+  is available from the same run-scoped UI as seeded coverage.
+- Root-cause records now persist explicit cluster membership and an unaffected
+  comparison basis for the same control family and run.
+- Temporal replay includes a monthly MDR delta series used by the UI's
+  MDR-over-time chart.
+- CSV classification now reports deterministic schema drift and unmapped columns;
+  operational metrics expose stage durations, completion/failure counts, and
+  persisted event/evaluation totals for each run.
+- Added the run-scoped Operations UI (`/runs/[runId]/operations`) and linked
+  dashboard aggregate metrics to evidence-oriented drill-down destinations.
 
 ## 2026-08-28 dependency audit (verified)
 

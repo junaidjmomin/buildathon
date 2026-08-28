@@ -876,6 +876,23 @@ def _build_root_causes(run_id: str, evaluations: list[LiveControlEvaluation]) ->
                 verification_evidence={
                     "engine": "sl3dge-deterministic-v1",
                     "evaluation_ids": [item.evaluation_id for item in items],
+                    "cluster_membership": {
+                        "violation_ids": [item.violation.id for item in items if item.violation],
+                        "control_type": category,
+                    },
+                    "unaffected_comparison": {
+                        "evaluations_in_control_family": sum(
+                            evaluation.control.control_type.value == category
+                            for evaluation in evaluations
+                        ),
+                        "violating_evaluations": len(violations),
+                        "unaffected_evaluations": sum(
+                            evaluation.control.control_type.value == category
+                            and evaluation.violation is None
+                            for evaluation in evaluations
+                        ),
+                        "comparison_basis": "same_control_type_and_run",
+                    },
                 },
                 primary_violation_count=0 if downstream else len(violations),
                 downstream_effect_count=len(violations) if downstream else 0,

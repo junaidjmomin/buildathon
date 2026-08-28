@@ -1365,6 +1365,12 @@ Route:
 /runs/[runId]/replay
 ```
 
+Run operations are available at `/runs/[runId]/operations`. This view reads
+`GET /api/v1/runs/{run_id}/operational-metrics` and shows persisted stage
+timings, completion/failure state, and event/evaluation throughput. If a
+seeded in-memory run has no stage log, the UI states that explicitly instead of
+inventing stage durations.
+
 Example UI:
 
 ```text
@@ -1440,6 +1446,10 @@ This is the only frontend acceptance checklist in this document:
 - candidate backtest shows 47/50 → 49/50 and false-positive delta 0
 - candidate activation requires a completed backtest and explicit approval
 - control coverage exposes governed and ungoverned edges
+- dashboard aggregate metrics link to their evidence, exception, data-source,
+  or run-scoped coverage views; payment-level amounts retain snapshot/control
+  version/evaluation provenance on the detail page
+- run operations exposes persisted stage timings and failure state
 - exception UI enforces `OPEN → VERIFIED → ESCALATED/RESOLVED`
 - `UNR_003` visibly remains unresolved instead of being guessed
 - Razorpay sync shows imported counts/status without exposing credentials

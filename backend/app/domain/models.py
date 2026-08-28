@@ -267,6 +267,9 @@ class Evidence(ApiModel):
     difference: Decimal | None = None
     source: str
     source_clause: str
+    evaluation_id: str | None = None
+    control_version: int | None = None
+    source_snapshot_ids: list[str] = Field(default_factory=list)
 
 
 class ExpectedActualResponse(ApiModel):
@@ -409,6 +412,17 @@ class RunStage(ApiModel):
     detail: dict[str, Any] = Field(default_factory=dict)
 
 
+class RunOperationalMetrics(ApiModel):
+    run_id: str
+    stage_count: int
+    completed_stage_count: int
+    failed_stage_count: int
+    stage_durations_ms: dict[str, int]
+    total_processing_ms: int
+    events_created: int
+    evaluations_created: int
+
+
 class GraphNode(ApiModel):
     id: str
     kind: str
@@ -470,6 +484,8 @@ class SourceUploadResponse(ApiModel):
     decimal_values_checked: int = 0
     row_errors: list[SourceRowError] = Field(default_factory=list)
     row_error_count: int = 0
+    schema_drift: bool = False
+    drift_columns: list[str] = Field(default_factory=list)
     storage_status: str = "NOT_STORED"
     object_path: str | None = None
 
@@ -607,6 +623,18 @@ class TemporalReplayResponse(ApiModel):
     baseline_violation_count: int
     replay_violation_count: int
     evidence: list[dict[str, Any]]
+    monthly_series: list[dict[str, Any]]
+
+
+class EvidenceExportResponse(ApiModel):
+    artifact_id: str
+    run_id: str
+    bucket: str
+    object_path: str
+    content_type: str
+    byte_size: int
+    sha256: str
+    created_at: datetime
 
 
 class ViolationLineageNode(ApiModel):

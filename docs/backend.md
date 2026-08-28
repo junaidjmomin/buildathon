@@ -1658,6 +1658,17 @@ Endpoint:
 GET /api/v1/runs/{run_id}/control-coverage
 ```
 
+Run operations are exposed separately and never substitute fabricated timing
+values when a stage log is unavailable:
+
+```http
+GET /api/v1/runs/{run_id}/operational-metrics
+```
+
+The response contains completed/failed stage counts, persisted stage durations,
+total processing time, and event/evaluation counters. The frontend renders this
+at `/runs/{runId}/operations`.
+
 ## Time-Versioned Controls — P1
 
 Approved controls are immutable once used by completed runs.
@@ -1688,7 +1699,7 @@ Boundary test example:
 Allow historical events to be evaluated using an alternate control suite.
 
 ```http
-POST /api/v1/runs/{run_id}/replay
+POST /api/v1/runs/{run_id}/temporal-replay
 ```
 
 Return:

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from pathlib import PurePath
@@ -41,6 +42,7 @@ from app.domain.models import (
     ControlType,
     CounterfactualSettlement,
     DemoLoadResponse,
+    EvidenceExportResponse,
     ExceptionCase,
     ExceptionCaseStatus,
     ExpectedActualResponse,
@@ -57,6 +59,7 @@ from app.domain.models import (
     RazorpaySyncSummary,
     RootCause,
     RunListItem,
+    RunOperationalMetrics,
     RunSourceType,
     RunStage,
     RunSummary,
@@ -265,6 +268,8 @@ async def _persist_source_upload(
             for error in parsed.row_errors
         ],
         row_error_count=parsed.row_error_count,
+        schema_drift=parsed.schema_drift,
+        drift_columns=parsed.drift_columns,
         storage_status=storage_status,
         object_path=persisted_path,
     )
@@ -1111,6 +1116,46 @@ def run_stages(
     return stages
 
 
+@router.get("/runs/{run_id}/operational-metrics", response_model=RunOperationalMetrics)
+def run_operational_metrics(
+    run_id: str,
+    principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
+) -> RunOperationalMetrics:
+    if run_id == DEMO_RUN_ID:
+        _require_seeded_demo(principal)
+        store.ensure_loaded()
+        assert store.summary is not None
+        stages = []
+        return RunOperationalMetrics(
+            run_id=run_id,
+            stage_count=len(stages),
+            completed_stage_count=sum(item.status == "COMPLETE" for item in stages),
+            failed_stage_count=sum(item.status == "FAILED" for item in stages),
+            stage_durations_ms={item.stage: item.duration_ms or 0 for item in stages},
+            total_processing_ms=store.summary.total_processing_ms,
+            events_created=store.summary.event_count,
+            evaluations_created=store.summary.control_evaluation_count,
+        )
+    if not get_settings().database_url:
+        raise HTTPException(status_code=404, detail="Run not found")
+    with session_scope(tenant_id=principal.tenant_id) as session:
+        repository = RunRepository(session)
+        summary = repository.live_run_summary(tenant_id=principal.tenant_id, run_id=run_id)
+        if summary is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        stages = repository.list_run_stages(tenant_id=principal.tenant_id, run_id=run_id)
+        return RunOperationalMetrics(
+            run_id=run_id,
+            stage_count=len(stages),
+            completed_stage_count=sum(item.status == "COMPLETE" for item in stages),
+            failed_stage_count=sum(item.status == "FAILED" for item in stages),
+            stage_durations_ms={item.stage: item.duration_ms or 0 for item in stages},
+            total_processing_ms=summary.total_processing_ms,
+            events_created=summary.event_count,
+            evaluations_created=summary.control_evaluation_count,
+        )
+
+
 @router.get("/runs", response_model=list[RunListItem])
 def list_runs(
     principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
@@ -1180,7 +1225,17 @@ def control_coverage(
     principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
 ) -> ControlCoverageSummary:
     if run_id != DEMO_RUN_ID:
-        raise HTTPException(status_code=404, detail="Run not found")
+        if not get_settings().database_url:
+            raise HTTPException(status_code=404, detail="Run not found")
+        with session_scope(tenant_id=principal.tenant_id) as session:
+            result = live_payment_views.control_coverage(
+                session,
+                tenant_id=principal.tenant_id,
+                run_id=run_id,
+            )
+            if session.get(RunRecord, (principal.tenant_id, run_id)) is None:
+                raise HTTPException(status_code=404, detail="Run not found")
+            return result
     _require_seeded_demo(principal)
     store.ensure_loaded()
     assert store.dataset is not None
@@ -1510,6 +1565,7 @@ def temporal_replay(
     baseline_violations = 0
     replay_violations = 0
     evidence: list[dict[str, Any]] = []
+    monthly: dict[str, dict[str, Any]] = {}
     for payment in payments:
         if payment.payment_method.lower() != "card":
             continue
@@ -1540,6 +1596,19 @@ def temporal_replay(
         replay_bad = abs(actual_fee - expected_after) > replay_tolerance
         baseline_violations += int(baseline_bad)
         replay_violations += int(replay_bad)
+        period = payment.captured_at.date().strftime("%Y-%m")
+        bucket = monthly.setdefault(
+            period,
+            {
+                "period": period,
+                "transaction_count": 0,
+                "baseline_expected_amount": Decimal("0"),
+                "replay_expected_amount": Decimal("0"),
+            },
+        )
+        bucket["transaction_count"] += 1
+        bucket["baseline_expected_amount"] += expected_before
+        bucket["replay_expected_amount"] += expected_after
         if len(evidence) < 100 and expected_before != expected_after:
             evidence.append(
                 {
@@ -1567,6 +1636,124 @@ def temporal_replay(
         baseline_violation_count=baseline_violations,
         replay_violation_count=replay_violations,
         evidence=evidence,
+        monthly_series=[
+            {
+                **bucket,
+                "baseline_expected_amount": money(bucket["baseline_expected_amount"]),
+                "replay_expected_amount": money(bucket["replay_expected_amount"]),
+                "difference_amount": money(
+                    bucket["replay_expected_amount"] - bucket["baseline_expected_amount"]
+                ),
+            }
+            for bucket in (monthly[key] for key in sorted(monthly))
+        ],
+    )
+
+
+@router.post(
+    "/runs/{run_id}/evidence-export",
+    response_model=EvidenceExportResponse,
+    status_code=201,
+)
+async def export_run_evidence(
+    run_id: str,
+    principal: Annotated[Principal, Depends(require_roles("analyst", "approver"))],
+    request: Request,
+) -> EvidenceExportResponse:
+    """Write a deterministic, private JSON evidence pack to Supabase Storage."""
+
+    settings = get_settings()
+    storage = SupabaseStorage()
+    if not settings.database_url or not storage.configured:
+        raise HTTPException(
+            status_code=503,
+            detail="Evidence export requires PostgreSQL and private Supabase Storage",
+        )
+    created_at = datetime.now(timezone.utc)
+    with session_scope(tenant_id=principal.tenant_id) as session:
+        repository = RunRepository(session)
+        summary = repository.live_run_summary(tenant_id=principal.tenant_id, run_id=run_id)
+        if summary is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        payload = {
+            "schema": "sl3dge.evidence-pack.v1",
+            "generated_at": created_at.isoformat(),
+            "run": summary.model_dump(mode="json"),
+            "stages": [
+                item.model_dump(mode="json")
+                for item in repository.list_run_stages(
+                    tenant_id=principal.tenant_id,
+                    run_id=run_id,
+                )
+            ],
+            "violations": [
+                item.model_dump(mode="json")
+                for item in repository.list_violations(
+                    tenant_id=principal.tenant_id,
+                    run_id=run_id,
+                )
+            ],
+            "root_causes": [
+                item.model_dump(mode="json")
+                for item in repository.list_root_causes(
+                    tenant_id=principal.tenant_id,
+                    run_id=run_id,
+                )
+            ],
+            "cases": [
+                item.model_dump(mode="json")
+                for item in CaseRepository(session).list_for_run(
+                    tenant_id=principal.tenant_id,
+                    run_id=run_id,
+                )
+            ],
+        }
+        content = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        digest = sha256(content).hexdigest()
+        artifact_id = f"ART_EVIDENCE_{digest[:20].upper()}"
+        object_path = f"tenants/{principal.tenant_id}/evidence/{run_id}/{artifact_id}.json"
+        try:
+            stored = await storage.upload(
+                object_path,
+                content,
+                content_type="application/json",
+                overwrite=True,
+            )
+        except Exception as exc:
+            logger.exception("Evidence export storage failed run_id=%s", run_id)
+            raise HTTPException(
+                status_code=502, detail="Evidence pack could not be stored"
+            ) from exc
+        ArtifactService(storage, session).record(
+            stored=stored,
+            artifact_id=artifact_id,
+            kind="EVIDENCE_PACK_JSON",
+            tenant_id=principal.tenant_id,
+            run_id=run_id,
+        )
+        repository.write_audit(
+            tenant_id=principal.tenant_id,
+            actor_id=principal.subject,
+            action="EVIDENCE_PACK_EXPORTED",
+            resource_type="run",
+            resource_id=run_id,
+            outcome="COMPLETE",
+            details={
+                "artifact_id": artifact_id,
+                "sha256": stored.sha256,
+                "byte_size": stored.byte_size,
+            },
+            request_id=request.state.request_id,
+        )
+    return EvidenceExportResponse(
+        artifact_id=artifact_id,
+        run_id=run_id,
+        bucket=stored.bucket,
+        object_path=stored.object_path,
+        content_type=stored.content_type,
+        byte_size=stored.byte_size,
+        sha256=stored.sha256,
+        created_at=created_at,
     )
 
 

@@ -200,6 +200,17 @@ def test_polars_csv_ingestion_keeps_money_in_decimal_text_semantics() -> None:
     assert parsed.decimal_values_checked == 3
 
 
+def test_csv_schema_drift_is_reported_without_rejecting_valid_source() -> None:
+    parsed = parse_source_csv(
+        b"payment_id,amount,currency,vendor_extension\nPAY_1,100.00,INR,alpha\n",
+        filename="payments.csv",
+    )
+    assert parsed.source_type == "PAYMENTS"
+    assert parsed.schema_drift is True
+    assert parsed.drift_columns == ["vendor_extension"]
+    assert any("Schema drift detected" in item for item in parsed.classification_evidence)
+
+
 def test_bulk_upsert_bypasses_orm_session_insert_grouping() -> None:
     """Bulk writes must execute on the connection, not the ORM session.
 

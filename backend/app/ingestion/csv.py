@@ -46,6 +46,51 @@ SOURCE_SIGNATURES: dict[str, set[str]] = {
     },
 }
 
+SCHEMA_COLUMNS: dict[str, set[str]] = {
+    "ORDERS": {"order_id", "customer_id", "payment_id", "amount", "currency", "created_at"},
+    "PAYMENTS": {
+        "payment_id",
+        "order_id",
+        "amount",
+        "currency",
+        "payment_method",
+        "card_network",
+        "card_scope",
+        "captured_at",
+        "fee",
+        "tax",
+        "status",
+    },
+    "REFUNDS": {"refund_id", "payment_id", "amount", "currency", "created_at", "status"},
+    "SETTLEMENTS": {
+        "settlement_id",
+        "payment_id",
+        "net_amount",
+        "currency",
+        "settled_at",
+        "status",
+    },
+    "CHARGEBACKS": {
+        "chargeback_id",
+        "payment_id",
+        "amount",
+        "currency",
+        "created_at",
+        "fee",
+        "status",
+    },
+    "BANK_RECONCILIATION": {
+        "bank_txn_id",
+        "settlement_id",
+        "credit",
+        "debit",
+        "currency",
+        "posted_at",
+        "reference",
+        "description",
+    },
+}
+
 FILENAME_HINTS = {
     "orders": "ORDERS",
     "payments": "PAYMENTS",
@@ -98,6 +143,8 @@ class ParsedCsv:
     classification_evidence: list[str]
     row_errors: list[CsvRowError] = field(default_factory=list)
     row_error_count: int = 0
+    schema_drift: bool = False
+    drift_columns: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -137,6 +184,17 @@ def parse_source_csv(content: bytes, *, filename: str | None = None) -> ParsedCs
             raise ValueError(f"Column {column} contains a value exceeding 10,000 bytes")
     decimal_values_checked = 0
     source_type, confidence, evidence = classify_source_csv(frame, filename=filename)
+    observed_columns = {column.strip().lower() for column in frame.columns}
+    drift_columns = (
+        sorted(observed_columns - SCHEMA_COLUMNS.get(source_type, set()))
+        if source_type != "UNRESOLVED"
+        else []
+    )
+    if drift_columns:
+        evidence = [
+            *evidence,
+            f"Schema drift detected in unmapped columns: {', '.join(drift_columns)}.",
+        ]
     row_errors, row_error_count = _collect_row_errors(frame, source_type)
     for column in MONEY_COLUMNS.intersection(frame.columns):
         for raw in frame.get_column(column).drop_nulls().to_list():
@@ -162,6 +220,8 @@ def parse_source_csv(content: bytes, *, filename: str | None = None) -> ParsedCs
         classification_evidence=evidence,
         row_errors=row_errors,
         row_error_count=row_error_count,
+        schema_drift=bool(drift_columns),
+        drift_columns=drift_columns,
     )
 
 

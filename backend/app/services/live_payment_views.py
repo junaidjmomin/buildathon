@@ -8,6 +8,7 @@ views deterministically from Postgres. No LLM participates in any step.
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -17,8 +18,11 @@ from sqlalchemy.orm import Session
 from app.core.money import money
 from app.domain.models import (
     CashFlow,
+    ControlCoverageItem,
+    ControlCoverageSummary,
     CounterfactualDriver,
     CounterfactualSettlement,
+    CoverageStatus,
     EvaluationStatus,
     Evidence,
     ExpectedActualResponse,
@@ -41,6 +45,140 @@ from app.persistence.orm import (
 )
 
 _DECIMAL_ZERO = Decimal("0")
+
+
+def control_coverage(session: Session, *, tenant_id: str, run_id: str) -> ControlCoverageSummary:
+    """Compute honest coverage from persisted lifecycle edges and evaluations."""
+
+    events = list(
+        session.scalars(
+            select(EventRecord).where(
+                EventRecord.tenant_id == tenant_id, EventRecord.run_id == run_id
+            )
+        )
+    )
+    edges = list(
+        session.scalars(
+            select(EventEdgeRecord).where(
+                EventEdgeRecord.tenant_id == tenant_id, EventEdgeRecord.run_id == run_id
+            )
+        )
+    )
+    evaluations = list(
+        session.scalars(
+            select(ControlEvaluationRecord).where(
+                ControlEvaluationRecord.tenant_id == tenant_id,
+                ControlEvaluationRecord.run_id == run_id,
+            )
+        )
+    )
+    controls = {
+        record.id: record
+        for record in session.scalars(
+            select(ControlRecord).where(ControlRecord.tenant_id == tenant_id)
+        )
+    }
+    payment_ids = {event.external_id for event in events if event.event_type == "PAYMENT"}
+    card_payment_ids = {
+        event.external_id
+        for event in events
+        if event.event_type == "PAYMENT"
+        and str((event.normalized_payload or {}).get("payment_method") or "").lower() == "card"
+    }
+    eval_by_type: dict[str, set[str]] = defaultdict(set)
+    eval_control_ids: dict[str, set[str]] = defaultdict(set)
+    for evaluation in evaluations:
+        control = controls.get(evaluation.control_id)
+        if control is not None:
+            eval_by_type[control.control_type].add(evaluation.target_id)
+            eval_control_ids[control.control_type].add(control.id)
+    edge_counts = Counter(edge.relationship for edge in edges)
+    governed_edges = {
+        "PAYMENT → FEE": (
+            len(card_payment_ids),
+            len(eval_by_type.get("MDR_RATE", set()) & card_payment_ids),
+            "MDR_RATE",
+        ),
+        "FEE → TAX": (
+            len(card_payment_ids),
+            len(eval_by_type.get("GST_ON_FEE", set()) & card_payment_ids),
+            "GST_ON_FEE",
+        ),
+        "CAPTURE → SETTLEMENT": (
+            edge_counts["INCLUDED_IN"],
+            len(eval_by_type.get("SETTLEMENT_SLA", set())),
+            "SETTLEMENT_SLA",
+        ),
+        "SETTLEMENT → BANK": (
+            edge_counts["CREDITED_AS"],
+            len(eval_by_type.get("SETTLEMENT_ARITHMETIC", set())),
+            "SETTLEMENT_ARITHMETIC",
+        ),
+        "REFUND → SETTLEMENT": (
+            edge_counts["REFUNDED_BY"],
+            len(eval_by_type.get("REFUND_INTEGRITY", set())),
+            "REFUND_INTEGRITY",
+        ),
+        "OTHER DEDUCTION → SETTLEMENT": (0, 0, "UNSUPPORTED_FEE"),
+        "PAYMENT → METHOD CLASSIFICATION": (len(payment_ids), 0, ""),
+    }
+    descriptions = {
+        "PAYMENT → FEE": "Contractual processing-fee deduction",
+        "FEE → TAX": "GST computed on the approved processing fee",
+        "CAPTURE → SETTLEMENT": "Settlement timing and inclusion",
+        "SETTLEMENT → BANK": "Expected settlement and observed bank credit arithmetic",
+        "REFUND → SETTLEMENT": "Refund principal deducted no more than once",
+        "OTHER DEDUCTION → SETTLEMENT": "Unlisted deductions require an approved control",
+        "PAYMENT → METHOD CLASSIFICATION": "Protection against silent method reclassification",
+    }
+    items: list[ControlCoverageItem] = []
+    for index, (relationship, (material, governed, control_type)) in enumerate(
+        governed_edges.items()
+    ):
+        ids = sorted(eval_control_ids.get(control_type, set())) if control_type else []
+        if material == 0:
+            status = CoverageStatus.UNGOVERNED
+        elif governed >= material:
+            status = CoverageStatus.GOVERNED
+        elif governed:
+            status = CoverageStatus.PARTIALLY_GOVERNED
+        else:
+            status = CoverageStatus.UNGOVERNED
+        items.append(
+            ControlCoverageItem(
+                id=f"COV_LIVE_{index + 1:02d}",
+                relationship=relationship,
+                description=descriptions[relationship],
+                material_edge_count=material,
+                governed_edge_count=min(governed, material),
+                status=status,
+                control_ids=ids,
+                blind_spot=(
+                    "No applicable persisted evaluation covers this relationship."
+                    if status != CoverageStatus.GOVERNED
+                    else None
+                ),
+            )
+        )
+    total = sum(item.material_edge_count for item in items)
+    governed = sum(item.governed_edge_count for item in items)
+    partial = sum(
+        item.material_edge_count - item.governed_edge_count
+        for item in items
+        if item.status == CoverageStatus.PARTIALLY_GOVERNED
+    )
+    ungoverned = total - governed - partial
+    return ControlCoverageSummary(
+        run_id=run_id,
+        total_material_edges=total,
+        governed_edges=governed,
+        partially_governed_edges=partial,
+        ungoverned_edges=ungoverned,
+        coverage_percentage=(
+            Decimal(governed) / Decimal(total) if total else Decimal("1")
+        ).quantize(Decimal("0.0001")),
+        items=items,
+    )
 
 
 def payment_lifecycles(session: Session, *, tenant_id: str, run_id: str) -> list[PaymentLifecycle]:
@@ -319,6 +457,9 @@ def _control_evidence(evaluation: ControlEvaluationRecord, control: ControlRecor
         difference=evaluation.difference_amount,
         source=str(definition.get("source", "")),
         source_clause=str(definition.get("source_clause", "")),
+        evaluation_id=evaluation.id,
+        control_version=evaluation.control_version,
+        source_snapshot_ids=list(evaluation.source_snapshot_ids or []),
     )
 
 

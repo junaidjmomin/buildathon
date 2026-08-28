@@ -181,6 +181,13 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
         assert (
             finalize["detail"]["total_processing_ms"] >= finalize["detail"]["engine_processing_ms"]
         )
+        metrics = client.get(f"/api/v1/runs/{run_id}/operational-metrics")
+        assert metrics.status_code == 200
+        metrics_body = metrics.json()
+        assert metrics_body["stage_count"] == 7
+        assert metrics_body["completed_stage_count"] == 7
+        assert metrics_body["failed_stage_count"] == 0
+        assert metrics_body["events_created"] == 145
         missing = client.get("/api/v1/runs/RUN_CSV_UNKNOWN/stages")
         assert missing.status_code == 404
         summary = client.get(f"/api/v1/runs/{run_id}/summary")
@@ -194,6 +201,13 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
         breakdown = summary_body["breakdown"]
         assert sum(breakdown.values()) == summary_body["control_evaluation_count"]
         assert summary_body["unresolved_relationship_count"] == 1
+
+        coverage = client.get(f"/api/v1/runs/{run_id}/control-coverage")
+        assert coverage.status_code == 200, coverage.text
+        coverage_body = coverage.json()
+        assert coverage_body["run_id"] == run_id
+        assert coverage_body["total_material_edges"] > 0
+        assert any(item["relationship"] == "PAYMENT → FEE" for item in coverage_body["items"])
 
         violations = client.get(f"/api/v1/runs/{run_id}/violations")
         assert violations.status_code == 200
@@ -213,6 +227,14 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
             for item in root_items
         )
         assert all(isinstance(item["total_attributable_impact"], str) for item in root_items)
+        assert all(
+            item["verification_evidence"]["cluster_membership"]["violation_ids"]
+            for item in root_items
+        )
+        assert all(
+            "unaffected_evaluations" in item["verification_evidence"]["unaffected_comparison"]
+            for item in root_items
+        )
 
         cases = client.get(f"/api/v1/runs/{run_id}/cases")
         assert cases.status_code == 200
