@@ -9,14 +9,13 @@ from hashlib import sha256
 from time import perf_counter
 from typing import Any
 
-from app.controls.live import LiveControlEvaluation, build_live_control_evaluations
+from app.controls.lineage import attribute_root_causes, resolve_violation_lineage
+from app.controls.live import build_live_control_evaluations
 from app.core.money import money
 from app.domain.models import (
     CanonicalEventEdge,
     CaseEvidence,
-    ControlType,
     FinancialEvent,
-    LineageType,
     RootCause,
     RunStage,
     SourceRunResponse,
@@ -197,155 +196,86 @@ def execute_source_run(
         evaluation_started = perf_counter()
         evaluate_started = datetime.now(timezone.utc)
         evaluations = build_live_control_evaluations(persisted_events, edges, controls)
-        roots = _build_root_causes(run_id, evaluations)
-        root_by_type = {root.category: root for root in roots}
-        violations = [
-            evaluation.violation.model_copy(
-                update={
-                    "root_cause_id": (
-                        root_by_type[evaluation.control.control_type.value].id
-                        if evaluation.control.control_type.value in root_by_type
-                        else None
-                    )
-                }
-            )
+        base_violations = [
+            evaluation.violation
             for evaluation in evaluations
             if evaluation.violation is not None
         ]
         event_by_id = {event.id: event for event in persisted_events}
-        violation_by_payment: dict[str, Violation] = {}
+        # Root/parent relationships come from control dependency semantics and
+        # persisted causal evidence — never from transaction IDs or clustering.
+        violations, _lineage_notes = resolve_violation_lineage(
+            base_violations,
+            evaluations,
+            edges,
+            event_by_id,
+        )
+        # A settlement-arithmetic deviation that no upstream dependency
+        # violation explains is independent leakage and carries its residual
+        # impact; downstream mirrors stay excluded to avoid double counting.
+        # Keep the persisted evaluation impact in sync with the violation.
+        evaluation_by_violation_id = {
+            evaluation.violation.id: evaluation
+            for evaluation in evaluations
+            if evaluation.violation is not None
+        }
         for violation in violations:
-            if violation.control_type != ControlType.SETTLEMENT_ARITHMETIC:
-                violation_by_payment.setdefault(violation.payment_id, violation)
-        enriched_violations = []
+            evaluation = evaluation_by_violation_id.get(violation.id)
+            if evaluation is None or evaluation.financial_impact == violation.financial_impact:
+                continue
+            evaluation.financial_impact = violation.financial_impact
+            evaluation.evidence = {
+                **evaluation.evidence,
+                "counts_toward_verified_leakage": violation.financial_impact > Decimal("0"),
+                "financial_impact_policy": (
+                    "INDEPENDENT_RESIDUAL"
+                    if violation.financial_impact > Decimal("0")
+                    else "EXCLUDE_DOWNSTREAM_DUPLICATE"
+                ),
+            }
+        roots, violations = attribute_root_causes(run_id, violations, evaluations)
+        violations_by_root: dict[str, list[Violation]] = defaultdict(list)
         for violation in violations:
-            parent = None
-            if violation.control_type == ControlType.SETTLEMENT_ARITHMETIC:
-                evaluation = next(
-                    item
-                    for item in evaluations
-                    if item.violation is not None and item.violation.id == violation.id
-                )
-                payment_ids = [
-                    event_by_id[edge.from_event_id].external_id
-                    for edge in edges
-                    if edge.to_event_id == evaluation.event.id
-                    and edge.relationship == "INCLUDED_IN"
-                    and edge.from_event_id in event_by_id
-                ]
-                parent = next(
-                    (violation_by_payment.get(payment_id) for payment_id in payment_ids), None
-                )
-            if parent is not None:
-                enriched_violations.append(
-                    violation.model_copy(
-                        update={
-                            "lineage_type": LineageType.DOWNSTREAM,
-                            "root_violation_id": parent.root_violation_id or parent.id,
-                            "parent_violation_id": parent.id,
-                            "causal_evidence": {
-                                "relationship": "SETTLEMENT_ARITHMETIC_FOLLOWS_PAYMENT_DEDUCTIONS",
-                                "parent_violation_id": parent.id,
-                                "parent_control_type": parent.control_type.value,
-                                "authority": "DETERMINISTIC",
-                            },
-                        }
-                    )
-                )
-            else:
-                enriched_violations.append(
-                    violation.model_copy(
-                        update={
-                            "lineage_type": LineageType.PRIMARY,
-                            "root_violation_id": violation.id,
-                            "causal_evidence": {
-                                "relationship": "DIRECT_CONTROL_DEVIATION",
-                                "control_type": violation.control_type.value,
-                                "authority": "DETERMINISTIC",
-                            },
-                        }
-                    )
-                )
-        violations = enriched_violations
-        roots = [
-            root.model_copy(
-                update={
-                    "primary_violation_count": sum(
-                        item.root_cause_id == root.id and item.lineage_type == LineageType.PRIMARY
-                        for item in violations
-                    ),
-                    "downstream_effect_count": sum(
-                        item.root_cause_id == root.id
-                        and item.lineage_type == LineageType.DOWNSTREAM
-                        for item in violations
-                    ),
-                    "direct_impact": money(
-                        sum(
-                            (
-                                item.financial_impact
-                                for item in violations
-                                if item.root_cause_id == root.id
-                                and item.lineage_type == LineageType.PRIMARY
-                            ),
-                            Decimal("0"),
-                        )
-                    ),
-                    "downstream_impact": money(
-                        sum(
-                            (
-                                item.financial_impact
-                                for item in violations
-                                if item.root_cause_id == root.id
-                                and item.lineage_type == LineageType.DOWNSTREAM
-                            ),
-                            Decimal("0"),
-                        )
-                    ),
-                    "total_attributable_impact": money(
-                        sum(
-                            (
-                                item.financial_impact
-                                for item in violations
-                                if item.root_cause_id == root.id
-                            ),
-                            Decimal("0"),
-                        )
-                    ),
-                }
-            )
-            for root in roots
-        ]
+            if violation.root_cause_id is not None:
+                violations_by_root[violation.root_cause_id].append(violation)
+        investigation_violation_ids: set[str] = set()
         investigations: list[tuple[str, RootCause, list[Any], list[CaseEvidence]]] = []
         for root in roots:
-            related_evaluations = [
-                item
-                for item in evaluations
-                if item.control.control_type.value == root.category and item.violation is not None
-            ]
-            related_violations = [
-                item.violation.model_copy(update={"root_cause_id": root.id})
-                for item in related_evaluations
-                if item.violation is not None
-            ]
+            related_violations = violations_by_root.get(root.id, [])
+            investigation_violation_ids.update(item.id for item in related_violations)
             evidence = [
                 CaseEvidence(
-                    id=f"EVID_{item.evaluation_id}",
+                    id=f"EVID_{violation.id}",
                     kind="CONTROL_EVALUATION",
-                    title=item.control.name,
+                    title=root.title,
                     summary=(
-                        f"Expected {item.expected_amount}; observed {item.actual_amount}; "
-                        f"difference {item.difference_amount}."
+                        f"{violation.category}: expected {violation.expected}; "
+                        f"observed {violation.actual}; "
+                        f"lineage {violation.lineage_type.value}; "
+                        f"impact {violation.financial_impact}."
                     ),
-                    source_id=(
-                        item.source_snapshot_ids[0] if item.source_snapshot_ids else item.event.id
-                    ),
+                    source_id=violation.id,
                     verified=True,
                 )
-                for item in related_evaluations
+                for violation in related_violations
             ]
             investigations.append(
                 (f"CASE_{root.id.removeprefix('RC_')}", root, related_violations, evidence)
             )
+        for violation in violations:
+            # A violation whose category produced no primary root cause is not
+            # dropped; it belongs to no systemic cluster and is attached to the
+            # investigation of its primary ancestor's root cause if any.
+            if violation.id in investigation_violation_ids:
+                continue
+            ancestor_root_id = violation.root_cause_id
+            if ancestor_root_id is None:
+                continue
+            for index, (case_id, root, related, evidence) in enumerate(investigations):
+                if root.id == ancestor_root_id:
+                    related.append(violation)
+                    investigation_violation_ids.add(violation.id)
+                    break
         engine_seconds += perf_counter() - evaluation_started
         timeline.record(
             "EVALUATE_CONTROLS",
@@ -840,65 +770,6 @@ def _match_score(
     }
 
 
-def _build_root_causes(run_id: str, evaluations: list[LiveControlEvaluation]) -> list[RootCause]:
-    groups: dict[str, list[LiveControlEvaluation]] = defaultdict(list)
-    for evaluation in evaluations:
-        if evaluation.violation is not None:
-            groups[evaluation.control.control_type.value].append(evaluation)
-    titles = {
-        ControlType.MDR_RATE.value: "Systemic MDR rate deviation",
-        ControlType.GST_ON_FEE.value: "Systemic GST fee deviation",
-        ControlType.SETTLEMENT_SLA.value: "Settlement SLA breach pattern",
-        ControlType.REFUND_INTEGRITY.value: "Refund integrity deviation",
-        ControlType.SETTLEMENT_ARITHMETIC.value: "Settlement arithmetic mismatch",
-    }
-    roots = []
-    for category, items in sorted(groups.items()):
-        violations = [item.violation for item in items if item.violation is not None]
-        first = min(item.occurred_at for item in violations)
-        last = max(item.occurred_at for item in violations)
-        digest = sha256(f"{run_id}:{category}".encode()).hexdigest()[:16].upper()
-        downstream = category == ControlType.SETTLEMENT_ARITHMETIC.value
-        roots.append(
-            RootCause(
-                id=f"RC_{digest}",
-                title=titles.get(category, category.replace("_", " ").title()),
-                category=category,
-                affected_count=len(violations),
-                verified_impact=money(
-                    sum((item.financial_impact for item in violations), Decimal("0"))
-                ),
-                expected_value=violations[0].expected,
-                observed_value=violations[0].actual,
-                first_seen=first,
-                last_seen=last,
-                verification_status="DETERMINISTICALLY_VERIFIED",
-                verification_evidence={
-                    "engine": "sl3dge-deterministic-v1",
-                    "evaluation_ids": [item.evaluation_id for item in items],
-                    "cluster_membership": {
-                        "violation_ids": [item.violation.id for item in items if item.violation],
-                        "control_type": category,
-                    },
-                    "unaffected_comparison": {
-                        "evaluations_in_control_family": sum(
-                            evaluation.control.control_type.value == category
-                            for evaluation in evaluations
-                        ),
-                        "violating_evaluations": len(violations),
-                        "unaffected_evaluations": sum(
-                            evaluation.control.control_type.value == category
-                            and evaluation.violation is None
-                            for evaluation in evaluations
-                        ),
-                        "comparison_basis": "same_control_type_and_run",
-                    },
-                },
-                primary_violation_count=0 if downstream else len(violations),
-                downstream_effect_count=len(violations) if downstream else 0,
-            )
-        )
-    return roots
 
 
 def _id_column(source_type: str) -> str:

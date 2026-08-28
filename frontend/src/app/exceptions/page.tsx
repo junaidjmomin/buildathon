@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, CircleAlert, Clock3, FileCheck2, LoaderCircle, Send, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Badge, EmptyState, ErrorState, MoneyText, PageHeader } from "@/components/ui/primitives";
 import { resolveActiveRun, useActiveRunId, useActiveRunOverride } from "@/lib/active-run";
@@ -21,11 +21,6 @@ export default function ExceptionsPage() {
   const cases = useQuery({ queryKey: ["exception-cases", activeRunId], queryFn: () => api.exceptionCases(activeRunId ?? ""), enabled: Boolean(activeRunId) });
   const unresolved = useQuery({ queryKey: ["unresolved", activeRunId], queryFn: () => api.unresolvedMatches(activeRunId ?? ""), enabled: Boolean(activeRunId) });
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
-  useEffect(() => {
-    if (cases.data?.length && !cases.data.some((item) => item.id === selectedCaseId)) {
-      setSelectedCaseId(cases.data[0].id);
-    }
-  }, [cases.data, selectedCaseId]);
   const transition = useMutation({
     mutationFn: ({ caseId, action, note, version }: { caseId: string; action: "verify" | "escalate" | "resolve"; note: string; version: number }) => api.transitionCase(caseId, action, note, version),
     onSuccess: (updated) => queryClient.setQueryData<ExceptionCase[]>(["exception-cases", activeRunId], (current) => current?.map((item) => item.id === updated.id ? updated : item) ?? [updated]),

@@ -387,12 +387,18 @@ class RunSummary(ApiModel):
     pass_count: int = 0
     violation_count: int = 0
     warning_count: int = 0
+    # Control-evaluation outcomes and event-relationship outcomes are distinct
+    # quantities and are never folded into one number:
+    #   pass + violation + warning + unresolved_control == control_evaluation_count
+    #   unresolved_relationship counts UNRESOLVED_MATCH event relationships.
+    unresolved_control_count: int = 0
     unresolved_relationship_count: int = 0
     precision: Decimal
     recall: Decimal
     false_positive_rate: Decimal
     verified_leakage: Decimal
     cash_delayed: Decimal
+    # Legacy alias of unresolved_control_count, kept for existing consumers.
     unresolved_count: int
     unresolved_match_count: int = 0
     processing_ms: int
@@ -411,6 +417,9 @@ class RunSummary(ApiModel):
     completed_at: datetime
     ground_truth_available: bool = True
     metrics_scope: str = "SEEDED_GROUND_TRUTH"
+    # Source-neutral, user-facing explanation of why precision and recall are
+    # or are not scored for this run.
+    metrics_note: str = ""
     metrics_available: MetricsAvailability = Field(default_factory=MetricsAvailability)
 
 
