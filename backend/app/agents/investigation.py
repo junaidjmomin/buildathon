@@ -27,6 +27,7 @@ class InvestigationState(TypedDict, total=False):
     execution_id: str
     tenant_id: str
     run_id: str
+    source_type: str
     violation_ids: list[str]
     root_cause_id: str
     evidence: list[dict[str, Any]]
@@ -41,6 +42,7 @@ class InvestigationState(TypedDict, total=False):
     case_id: str | None
     trace: Annotated[list[dict[str, Any]], add]
     ai_configured: bool
+    llm_used: bool
     started_at: str
 
 
@@ -232,7 +234,7 @@ class InvestigationController:
     def _build_graph(self) -> StateGraph[InvestigationState]:
         builder = StateGraph(InvestigationState)
         builder.add_node("collect_evidence", self._collect_evidence)
-        builder.add_node("fetch_razorpay_context", self._fetch_razorpay_context)
+        builder.add_node("load_source_context", self._load_source_context)
         builder.add_node("load_contract_context", self._load_contract_context)
         builder.add_node("generate_hypothesis", self._generate_hypothesis)
         builder.add_node("verify_hypothesis", self._verify_hypothesis)
@@ -240,8 +242,8 @@ class InvestigationController:
         builder.add_node("create_case", self._create_case)
         builder.add_node("escalate_unresolved", self._escalate_unresolved)
         builder.add_edge(START, "collect_evidence")
-        builder.add_edge("collect_evidence", "fetch_razorpay_context")
-        builder.add_edge("fetch_razorpay_context", "load_contract_context")
+        builder.add_edge("collect_evidence", "load_source_context")
+        builder.add_edge("load_source_context", "load_contract_context")
         builder.add_edge("load_contract_context", "generate_hypothesis")
         builder.add_edge("generate_hypothesis", "verify_hypothesis")
         builder.add_conditional_edges(
@@ -271,19 +273,20 @@ class InvestigationController:
             ]
         }
 
-    async def _fetch_razorpay_context(self, state: InvestigationState) -> InvestigationState:
+    async def _load_source_context(self, state: InvestigationState) -> InvestigationState:
         available = bool(state.get("razorpay_context"))
+        source_type = state.get("source_type", "CSV_UPLOAD")
         return {
             "trace": [
                 _trace(
                     state,
-                    "fetch_razorpay_context",
+                    "load_source_context",
                     (
-                        "Loaded read-only Razorpay context from canonical source evidence."
+                        f"Loaded {source_type} context from canonical source evidence."
                         if available
                         else (
-                            "No Razorpay context was available; no write-capable tool was "
-                            "attempted."
+                            f"No supplementary {source_type} context was available; no external "
+                            "tool was attempted."
                         )
                     ),
                     status="COMPLETE" if available else "DEGRADED",
@@ -306,9 +309,9 @@ class InvestigationController:
 
     async def _model_hypothesis(
         self, state: InvestigationState, *, alternative: bool
-    ) -> tuple[StructuredHypothesis, list[dict[str, Any]]]:
+    ) -> tuple[StructuredHypothesis, list[dict[str, Any]], bool]:
         if self.provider is None:
-            return _fallback_hypothesis(state, alternative=alternative), []
+            return _fallback_hypothesis(state, alternative=alternative), [], False
         safe_context = {
             "root_cause_id": state["root_cause_id"],
             "verified_evidence": state.get("evidence", []),
@@ -328,7 +331,7 @@ class InvestigationController:
                 ),
                 prompt=json.dumps(safe_context, separators=(",", ":"), ensure_ascii=True),
             )
-            return hypothesis, []
+            return hypothesis, [], True
         except Exception as exc:
             degraded = _trace(
                 state,
@@ -337,10 +340,10 @@ class InvestigationController:
                 status="DEGRADED",
                 details={"error_type": type(exc).__name__},
             )
-            return _fallback_hypothesis(state, alternative=alternative), [degraded]
+            return _fallback_hypothesis(state, alternative=alternative), [degraded], False
 
     async def _generate_hypothesis(self, state: InvestigationState) -> InvestigationState:
-        hypothesis, degraded = await self._model_hypothesis(state, alternative=False)
+        hypothesis, degraded, llm_used = await self._model_hypothesis(state, alternative=False)
         return {
             "attempt_count": 1,
             "current_hypothesis": hypothesis.model_dump(mode="json"),
@@ -354,10 +357,11 @@ class InvestigationController:
                     details={"hypothesis_id": hypothesis.hypothesis_id},
                 )
             ],
+            "llm_used": llm_used,
         }
 
     async def _generate_alternative(self, state: InvestigationState) -> InvestigationState:
-        hypothesis, degraded = await self._model_hypothesis(state, alternative=True)
+        hypothesis, degraded, llm_used = await self._model_hypothesis(state, alternative=True)
         return {
             "attempt_count": state.get("attempt_count", 1) + 1,
             "current_hypothesis": hypothesis.model_dump(mode="json"),
@@ -371,6 +375,7 @@ class InvestigationController:
                     details={"hypothesis_id": hypothesis.hypothesis_id},
                 )
             ],
+            "llm_used": llm_used,
         }
 
     async def _verify_hypothesis(self, state: InvestigationState) -> InvestigationState:
@@ -433,6 +438,7 @@ class InvestigationController:
         *,
         tenant_id: str,
         run_id: str,
+        source_type: str = "CSV_UPLOAD",
         root_cause_id: str,
         violation_ids: list[str],
         evidence: list[AgentEvidence],
@@ -447,6 +453,7 @@ class InvestigationController:
                 "execution_id": execution_id,
                 "tenant_id": tenant_id,
                 "run_id": run_id,
+                "source_type": source_type,
                 "root_cause_id": root_cause_id,
                 "violation_ids": violation_ids,
                 "evidence": [item.model_dump(mode="json") for item in evidence],
@@ -469,11 +476,24 @@ class InvestigationController:
             execution_id=execution_id,
             tenant_id=tenant_id,
             run_id=run_id,
+            source_type=result.get("source_type", "CSV_UPLOAD"),
             root_cause_id=root_cause_id,
             violation_ids=violation_ids,
             status=result["final_status"],
             attempt_count=result["attempt_count"],
             ai_configured=result["ai_configured"],
+            orchestration_used=True,
+            orchestration_provider="langgraph",
+            llm_used=bool(result.get("llm_used", False)),
+            llm_provider=(
+                getattr(self.provider, "provider_name", None) if result.get("llm_used") else None
+            ),
+            llm_model=getattr(self.provider, "model_name", None)
+            if result.get("llm_used")
+            else None,
+            mcp_used=False,
+            razorpay_context_used=(source_type.upper() == "RAZORPAY" and bool(razorpay_context)),
+            evidence_sources=sorted({item.source for item in evidence}),
             hypotheses=[StructuredHypothesis.model_validate(item) for item in result["hypotheses"]],
             verification=DeterministicVerification.model_validate(result["verification_result"]),
             case_id=result.get("case_id"),

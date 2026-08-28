@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
 from threading import RLock
@@ -28,9 +28,11 @@ from app.domain.models import (
     HypothesisResponse,
     HypothesisVerification,
     LineageType,
+    MetricsAvailability,
     PaymentGraph,
     PaymentLifecycle,
     RootCause,
+    RunSourceType,
     RunSummary,
     StatusBreakdown,
     UnresolvedMatch,
@@ -172,9 +174,15 @@ class DemoStore:
                 actual = f"₹{payment.unsupported_fee:.2f}"
                 difference = payment.unsupported_fee
                 impact = payment.unsupported_fee
+            violation_id = f"V_{len(violations) + 1:04d}"
+            direct_impact = impact
+            downstream_impact = Decimal("0")
+            if scenario == "MDR_RATE_DEVIATION":
+                direct_impact = money(payment.actual_fee - evaluation.expected_fee)
+                downstream_impact = money(payment.actual_tax - evaluation.expected_tax)
             violations.append(
                 Violation(
-                    id=f"V_{len(violations) + 1:04d}",
+                    id=violation_id,
                     payment_id=payment.payment_id,
                     category=category,
                     control_type=control_type,
@@ -183,6 +191,14 @@ class DemoStore:
                     difference=difference,
                     financial_impact=impact,
                     root_cause_id=root_ids[scenario],
+                    lineage_type=LineageType.PRIMARY,
+                    root_violation_id=violation_id,
+                    causal_evidence={
+                        "authority": "DETERMINISTIC",
+                        "control_type": control_type.value,
+                        "direct_impact": str(direct_impact),
+                        "downstream_impact": str(downstream_impact),
+                    },
                     occurred_at=payment.captured_at,
                 )
             )
@@ -203,19 +219,43 @@ class DemoStore:
         roots: list[RootCause] = []
         for root_id, items in groups.items():
             title, expected, observed = labels[root_id]
+            direct_impact = money(
+                sum(
+                    (
+                        Decimal(
+                            str(item.causal_evidence.get("direct_impact", item.financial_impact))
+                        )
+                        for item in items
+                    ),
+                    Decimal("0"),
+                )
+            )
+            downstream_impact = money(
+                sum(
+                    (
+                        Decimal(str(item.causal_evidence.get("downstream_impact", "0")))
+                        for item in items
+                    ),
+                    Decimal("0"),
+                )
+            )
+            total_impact = money(direct_impact + downstream_impact)
             roots.append(
                 RootCause(
                     id=root_id,
                     title=title,
                     category=items[0].category,
                     affected_count=len(items),
-                    verified_impact=money(sum(item.financial_impact for item in items)),
+                    verified_impact=total_impact,
                     expected_value=expected,
                     observed_value=observed,
                     first_seen=min(item.occurred_at for item in items),
                     last_seen=max(item.occurred_at for item in items),
                     primary_violation_count=len(items),
                     downstream_effect_count=(len(items) * 3 if root_id == "RC_MDR_01" else 0),
+                    direct_impact=direct_impact,
+                    downstream_impact=downstream_impact,
+                    total_attributable_impact=total_impact,
                 )
             )
         return sorted(roots, key=lambda root: root.verified_impact, reverse=True)
@@ -305,6 +345,25 @@ class DemoStore:
         fpr = Decimal(fp) / Decimal(fp + tn) if fp + tn else Decimal("0")
         processing_ms = max(1, int((perf_counter() - started) * 1000))
         evaluations = len(dataset.payments) * 4 + 18
+        control_outcomes = Counter()
+        for payment in dataset.payments:
+            evaluation = evaluate_payment(payment)
+            control_outcomes.update(
+                (
+                    evaluation.fee_status.value,
+                    evaluation.tax_status.value,
+                    evaluation.net_status.value,
+                    evaluation.bank_status.value,
+                )
+            )
+        # The seeded manifest includes 18 settlement-level evaluations in
+        # addition to the four payment controls; those additional controls pass.
+        control_outcomes[EvaluationStatus.PASS.value] += evaluations - sum(
+            control_outcomes.values()
+        )
+        coverage = governance.coverage(DEMO_RUN_ID, dataset.payments)
+        primary_count = sum(root.primary_violation_count for root in self.root_causes)
+        downstream_count = sum(root.downstream_effect_count for root in self.root_causes)
         delayed = money(
             sum(
                 payment.amount
@@ -316,6 +375,7 @@ class DemoStore:
             id=DEMO_RUN_ID,
             name="NovaCart · August 2026 control run",
             status="COMPLETE",
+            source_type=RunSourceType.DEMO,
             transaction_count=len(dataset.payments),
             event_count=(
                 dataset.counts["orders"]
@@ -328,19 +388,29 @@ class DemoStore:
             relationship_count=len(dataset.payments) * 3 - unresolved,
             control_evaluation_count=evaluations,
             breakdown=StatusBreakdown(
-                passed=len(dataset.payments) - len(truth_ids) - unresolved,
-                violation=len(truth_ids),
-                warning=0,
-                unresolved=unresolved,
+                passed=control_outcomes[EvaluationStatus.PASS.value],
+                violation=control_outcomes[EvaluationStatus.VIOLATION.value],
+                warning=control_outcomes[EvaluationStatus.WARNING.value],
+                unresolved=control_outcomes[EvaluationStatus.UNRESOLVED.value],
             ),
+            pass_count=control_outcomes[EvaluationStatus.PASS.value],
+            violation_count=control_outcomes[EvaluationStatus.VIOLATION.value],
+            warning_count=control_outcomes[EvaluationStatus.WARNING.value],
+            unresolved_relationship_count=0,
             precision=precision,
             recall=recall,
             false_positive_rate=fpr,
             verified_leakage=money(sum(v.financial_impact for v in self.violations)),
             cash_delayed=delayed,
             unresolved_count=unresolved,
+            unresolved_match_count=unresolved,
             processing_ms=processing_ms,
+            deterministic_processing_ms=processing_ms,
             evaluations_per_second=int(evaluations / (processing_ms / 1000)),
+            total_processing_ms=processing_ms,
+            primary_violation_count=primary_count,
+            downstream_violation_count=downstream_count,
+            control_coverage=coverage.coverage_percentage,
             confusion_matrix=ConfusionMatrix(
                 true_positive=tp,
                 false_positive=fp,
@@ -348,6 +418,13 @@ class DemoStore:
                 false_negative=fn,
             ),
             completed_at=datetime.now(timezone.utc),
+            metrics_available=MetricsAvailability(
+                ground_truth=True,
+                precision=True,
+                recall=True,
+                false_positive_rate=True,
+                control_coverage=True,
+            ),
         )
 
     def expected_actual(self, payment_id: str) -> ExpectedActualResponse:
@@ -667,7 +744,7 @@ class DemoStore:
         root = self.get_root_cause(root_cause_id)
         hypothesis = (
             "Domestic card MDR may have changed from 1.55% to 1.75% beginning on 18 August 2026."
-            if root.id == "RC_MDR_01"
+            if root.category == "MDR_RATE"
             else f"A common upstream policy change may explain {root.title.lower()}."
         )
         root.hypothesis = hypothesis

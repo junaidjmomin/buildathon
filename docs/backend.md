@@ -400,8 +400,11 @@ unsupported fees                   8
 UNRESOLVED                         5
 ```
 
-The run outcome is 439 `PASS`, 56 `VIOLATION`, 0 `WARNING`, and 5
-`UNRESOLVED`. These are exact demo expectations, not illustrative targets.
+The payment-level ground truth is 439 `PASS`, 56 labeled violations, and 5
+unresolved records. The authoritative control-evaluation summary is 1,655
+`PASS`, 358 `VIOLATION`, 0 `WARNING`, and 5 `UNRESOLVED` (2,018 total); the
+unresolved relationship count is tracked separately. These are exact demo
+expectations, not illustrative targets.
 
 Ensure the generator can also produce a 50-record lightweight test set.
 
@@ -894,7 +897,7 @@ edges, and an attempt limit:
 
 ```text
 collect_evidence
-→ fetch_razorpay_context
+→ load_source_context
 → load_contract_context
 → generate_hypothesis
 → verify_hypothesis
@@ -1802,7 +1805,7 @@ seeded API evidence:
 9. Counterfactual settlement reconstructs `9817.10` with `20.00` MDR and `3.60` GST drivers.
 10. Violation lineage identifies one primary MDR failure and three downstream effects.
 11. Similar MDR violations cluster under `RC_MDR_01`.
-12. Root-cause investigation records `collect_evidence → fetch_razorpay_context → load_contract_context → generate_hypothesis → verify_hypothesis` in its trace.
+12. Root-cause investigation records `collect_evidence → load_source_context → load_contract_context → generate_hypothesis → verify_hypothesis` in its trace; source context is loaded only for the actual run source.
 13. The verifier rejects the unsupported contract-change hypothesis, the bounded alternate is proven as a systemic gateway deviation, and the graph creates or attaches the evidence case.
 14. Unverified evidence, verifier disagreement, or exhausted attempts end `UNRESOLVED`; model text cannot force a verdict.
 15. At least eight deterministic mutation types execute against a derived copy.

@@ -44,6 +44,27 @@ class RunRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class RunStageRecord(Base):
+    __tablename__ = "run_stages"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            ["runs.tenant_id", "runs.id"],
+            ondelete="CASCADE",
+        ),
+        Index("ix_run_stages_tenant_run_order", "tenant_id", "run_id", "stage_index"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    stage_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    stage: Mapped[str] = mapped_column(String(48))
+    status: Mapped[str] = mapped_column(String(32))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT)
+
+
 class EventRecord(Base):
     __tablename__ = "events"
     __table_args__ = (
@@ -301,6 +322,13 @@ class ViolationRecord(Base):
             "root_cause_id",
             "occurred_at",
         ),
+        Index(
+            "ix_violations_tenant_run_lineage",
+            "tenant_id",
+            "run_id",
+            "root_violation_id",
+            "parent_violation_id",
+        ),
     )
 
     tenant_id: Mapped[str] = mapped_column(String(TENANT_LENGTH), primary_key=True)
@@ -314,6 +342,10 @@ class ViolationRecord(Base):
     confidence: Mapped[Decimal] = mapped_column(RATE)
     root_cause_id: Mapped[str | None] = mapped_column(String(120), index=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    parent_violation_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    root_violation_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    lineage_type: Mapped[str] = mapped_column(String(32), default="PRIMARY")
+    causal_evidence: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, default=dict)
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT)
 
 
@@ -335,6 +367,11 @@ class RootCauseRecord(Base):
     category: Mapped[str] = mapped_column(String(80))
     affected_count: Mapped[int] = mapped_column(Integer)
     verified_impact: Mapped[Decimal] = mapped_column(MONEY)
+    direct_impact: Mapped[Decimal] = mapped_column(MONEY, default=Decimal("0"))
+    downstream_impact: Mapped[Decimal] = mapped_column(MONEY, default=Decimal("0"))
+    total_impact: Mapped[Decimal] = mapped_column(MONEY, default=Decimal("0"))
+    primary_violation_count: Mapped[int] = mapped_column(Integer, default=0)
+    downstream_violation_count: Mapped[int] = mapped_column(Integer, default=0)
     verification_status: Mapped[str] = mapped_column(String(32))
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT)
 

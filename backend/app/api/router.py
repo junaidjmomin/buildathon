@@ -53,7 +53,10 @@ from app.domain.models import (
     RazorpaySyncSummary,
     RootCause,
     RunListItem,
+    RunSourceType,
+    RunStage,
     RunSummary,
+    SourceRowError,
     SourceRunResponse,
     SourceUploadBatchResponse,
     SourceUploadResponse,
@@ -69,7 +72,7 @@ from app.integrations.razorpay.mcp_evidence import capability as mcp_evidence_ca
 from app.integrations.razorpay.sync import connection_status, sync_razorpay
 from app.mutations.engine import MUTATION_TEST_ID, execute_mutation_test
 from app.persistence.database import session_scope
-from app.persistence.orm import ArtifactRecord, BackgroundJobRecord
+from app.persistence.orm import ArtifactRecord, BackgroundJobRecord, RunRecord
 from app.persistence.repository import (
     AgentExecutionRepository,
     AgreementRepository,
@@ -80,6 +83,7 @@ from app.persistence.repository import (
     RunRepository,
 )
 from app.security.auth import Principal, get_current_principal, require_roles
+from app.services import live_payment_views
 from app.services.demo import DEMO_RUN_ID, store
 from app.services.governance import AGREEMENT, CONTROLS, governance
 from app.storage.service import ArtifactService
@@ -221,6 +225,7 @@ async def _persist_source_upload(
                         "row_count": parsed.row_count,
                         "source_type": parsed.source_type,
                         "classification_confidence": str(parsed.classification_confidence),
+                        "row_error_count": parsed.row_error_count,
                     },
                     request_id=request.state.request_id,
                 )
@@ -245,6 +250,15 @@ async def _persist_source_upload(
         row_count=parsed.row_count,
         columns=parsed.columns,
         decimal_values_checked=parsed.decimal_values_checked,
+        row_errors=[
+            SourceRowError(
+                row_number=error.row_number,
+                column=error.column,
+                message=error.message,
+            )
+            for error in parsed.row_errors
+        ],
+        row_error_count=parsed.row_error_count,
         storage_status=storage_status,
         object_path=persisted_path,
     )
@@ -1073,6 +1087,24 @@ def run_summary(
     return store.summary
 
 
+@router.get("/runs/{run_id}/stages", response_model=list[RunStage])
+def run_stages(
+    run_id: str,
+    principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
+) -> list[RunStage]:
+    if not get_settings().database_url:
+        raise HTTPException(status_code=404, detail="Run not found")
+    with session_scope(tenant_id=principal.tenant_id) as session:
+        stages = RunRepository(session).list_run_stages(
+            tenant_id=principal.tenant_id,
+            run_id=run_id,
+        )
+        run = session.get(RunRecord, (principal.tenant_id, run_id))
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return stages
+
+
 @router.get("/runs", response_model=list[RunListItem])
 def list_runs(
     principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
@@ -1086,7 +1118,7 @@ def list_runs(
                 id=store.summary.id,
                 name=store.summary.name,
                 status=store.summary.status,
-                source="SEEDED",
+                source_type=RunSourceType.DEMO,
                 transaction_count=store.summary.transaction_count,
                 event_count=store.summary.event_count,
                 control_evaluation_count=store.summary.control_evaluation_count,
@@ -1311,7 +1343,18 @@ def expected_vs_actual(
     principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
 ) -> ExpectedActualResponse:
     if run_id != DEMO_RUN_ID:
-        raise HTTPException(status_code=404, detail="Run not found")
+        if not get_settings().database_url:
+            raise HTTPException(status_code=404, detail="Run not found")
+        with session_scope(tenant_id=principal.tenant_id) as session:
+            result = live_payment_views.expected_actual(
+                session,
+                tenant_id=principal.tenant_id,
+                run_id=run_id,
+                payment_id=payment_id,
+            )
+            if result is None:
+                raise HTTPException(status_code=404, detail="Payment not found")
+            return result
     _require_seeded_demo(principal)
     try:
         return store.expected_actual(payment_id)
@@ -1326,7 +1369,18 @@ def payment_graph(
     principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
 ) -> PaymentGraph:
     if run_id != DEMO_RUN_ID:
-        raise HTTPException(status_code=404, detail="Run not found")
+        if not get_settings().database_url:
+            raise HTTPException(status_code=404, detail="Run not found")
+        with session_scope(tenant_id=principal.tenant_id) as session:
+            result = live_payment_views.graph(
+                session,
+                tenant_id=principal.tenant_id,
+                run_id=run_id,
+                payment_id=payment_id,
+            )
+            if result is None:
+                raise HTTPException(status_code=404, detail="Payment not found")
+            return result
     _require_seeded_demo(principal)
     try:
         return store.graph(payment_id)
@@ -1344,7 +1398,18 @@ def payment_lineage(
     principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
 ) -> ViolationLineageResponse:
     if run_id != DEMO_RUN_ID:
-        raise HTTPException(status_code=404, detail="Run not found")
+        if not get_settings().database_url:
+            raise HTTPException(status_code=404, detail="Run not found")
+        with session_scope(tenant_id=principal.tenant_id) as session:
+            result = live_payment_views.lineage(
+                session,
+                tenant_id=principal.tenant_id,
+                run_id=run_id,
+                payment_id=payment_id,
+            )
+            if result is None:
+                raise HTTPException(status_code=404, detail="Payment not found")
+            return result
     _require_seeded_demo(principal)
     try:
         return store.lineage(payment_id)
@@ -1362,7 +1427,18 @@ def payment_counterfactual(
     principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
 ) -> CounterfactualSettlement:
     if run_id != DEMO_RUN_ID:
-        raise HTTPException(status_code=404, detail="Run not found")
+        if not get_settings().database_url:
+            raise HTTPException(status_code=404, detail="Run not found")
+        with session_scope(tenant_id=principal.tenant_id) as session:
+            result = live_payment_views.counterfactual(
+                session,
+                tenant_id=principal.tenant_id,
+                run_id=run_id,
+                payment_id=payment_id,
+            )
+            if result is None:
+                raise HTTPException(status_code=404, detail="Payment not found")
+            return result
     _require_seeded_demo(principal)
     try:
         return store.counterfactual(payment_id)
@@ -1431,6 +1507,7 @@ async def investigate_root_cause(
     evidence: list[AgentEvidence] = []
     razorpay_context: dict[str, str] = {}
     contract_controls: list[dict[str, str]] = []
+    source_type = RunSourceType.DEMO.value
     run_id = DEMO_RUN_ID
 
     if (
@@ -1442,25 +1519,13 @@ async def investigate_root_cause(
         except KeyError:
             root = None
     if root is not None:
+        source_type = RunSourceType.DEMO.value
         related = [item for item in store.violations if item.root_cause_id == root.id]
         if related:
-            sample = store.expected_actual(related[0].payment_id)
-            mdr_row = next((row for row in sample.rows if row.label == "MDR"), None)
-            observed_rate = (
-                str(mdr_row.actual / sample.amount)
-                if mdr_row is not None and mdr_row.actual is not None and sample.amount != 0
-                else ""
-            )
-            difference_amount = str(mdr_row.difference) if mdr_row is not None else ""
             effective = governance.effective_control(
                 "DOMESTIC_CARD_MDR", related[0].occurred_at.date()
             )
-            razorpay_context = {
-                "source": "canonical Razorpay evidence",
-                "observed_rate": observed_rate,
-                "difference_amount": difference_amount,
-                "observed_value": root.observed_value,
-            }
+            razorpay_context = {}
             contract_controls = [
                 {
                     "control_id": effective.id,
@@ -1505,6 +1570,19 @@ async def investigate_root_cause(
                 root_cause_id=root_cause_id,
             )
             if root is not None:
+                summary = repository.live_run_summary(
+                    tenant_id=principal.tenant_id,
+                    run_id=repository.run_id_for_root(
+                        tenant_id=principal.tenant_id,
+                        root_cause_id=root_cause_id,
+                    )
+                    or "",
+                )
+                source_type = (
+                    summary.source_type.value
+                    if summary is not None
+                    else RunSourceType.CSV_UPLOAD.value
+                )
                 run_id = (
                     repository.run_id_for_root(
                         tenant_id=principal.tenant_id,
@@ -1526,7 +1604,11 @@ async def investigate_root_cause(
                     else None
                 )
                 if context:
-                    razorpay_context = context["razorpay_context"]
+                    razorpay_context = (
+                        context["razorpay_context"]
+                        if source_type == RunSourceType.RAZORPAY.value
+                        else {}
+                    )
                     contract_controls = context["contract_controls"]
                     evidence = [AgentEvidence.model_validate(item) for item in context["evidence"]]
                 case = CaseRepository(session).get_for_root(
@@ -1549,6 +1631,7 @@ async def investigate_root_cause(
         result = await controller.run(
             tenant_id=principal.tenant_id,
             run_id=run_id,
+            source_type=source_type,
             root_cause_id=root.id,
             violation_ids=[item.id for item in related],
             evidence=evidence,

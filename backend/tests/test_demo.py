@@ -41,6 +41,15 @@ def test_seeded_generator_matches_authoritative_manifest_and_ids() -> None:
     assert store.summary.event_count == manifest["records"]["financial_events"]
     assert store.summary.relationship_count == manifest["records"]["event_edges"]
     assert store.summary.control_evaluation_count == manifest["records"]["control_evaluations"]
+    assert (
+        sum(store.summary.breakdown.model_dump().values()) == store.summary.control_evaluation_count
+    )
+    assert store.summary.breakdown.model_dump() == {
+        "passed": manifest["run_outcomes"]["pass"],
+        "violation": manifest["run_outcomes"]["violation"],
+        "warning": manifest["run_outcomes"]["warning"],
+        "unresolved": manifest["run_outcomes"]["unresolved"],
+    }
     scenarios = Counter(store.dataset.ground_truth.values())
     assert scenarios == {
         "PASS": manifest["ground_truth"]["pass"],

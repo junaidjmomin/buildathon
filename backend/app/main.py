@@ -19,7 +19,7 @@ from app.persistence.database import get_engine
 settings = get_settings()
 settings.validate_runtime()
 logging.basicConfig(level=logging.INFO, format="%(message)s")
-REQUIRED_SCHEMA_REVISION = "0010_manual_agreement_clauses"
+REQUIRED_SCHEMA_REVISION = "0012_durable_lineage_metrics"
 
 app = FastAPI(
     title="sl3dge API",

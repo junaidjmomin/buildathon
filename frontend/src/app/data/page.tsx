@@ -38,7 +38,9 @@ export default function DataSourcesPage() {
   const demo = useMutation({
     mutationFn: api.loadDemo,
     onSuccess: (run) => {
-      setActiveRunId(run.run_id);
+      // Opening the demo is a session choice; it must not replace a real
+      // uploaded run as the persisted default workspace.
+      setActiveRunId(run.run_id, { persist: false });
       router.push("/");
     },
   });
@@ -51,7 +53,7 @@ export default function DataSourcesPage() {
       return api.createRunFromUploads(selectedFiles, uploadIds as string[]);
     },
     onSuccess: (run) => {
-      setActiveRunId(run.run_id);
+      setActiveRunId(run.run_id, { persist: true });
       router.push("/");
     },
   });
@@ -220,6 +222,23 @@ export default function DataSourcesPage() {
             </span>
           </div>
           <div className="p-5">
+            {status.isError ? (
+              <div
+                className="mb-5 flex items-start justify-between gap-3 rounded-xl border border-[#efc6b3] bg-[#fff7f2] p-4"
+                role="alert"
+              >
+                <p className="text-xs text-[#a43d32]">
+                  Connector status could not be loaded.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => status.refetch()}
+                  className="text-xs font-semibold text-[#a43d32] underline"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : null}
             {!status.data?.configured && (
               <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#e1e5df] bg-[#f7f8f5] p-4">
                 <KeyRound size={18} className="mt-0.5 text-[#5d6b64]" />

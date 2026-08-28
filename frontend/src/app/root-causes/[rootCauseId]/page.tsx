@@ -113,7 +113,8 @@ export default function RootCausePage() {
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <div>
               <h2 className="flex items-center gap-2 text-sm font-semibold">
-                <BrainCircuit size={17} className="text-[#1e6b51]" /> LangGraph AI Controller
+                <BrainCircuit size={17} className="text-[#1e6b51]" />
+                {execution?.orchestration_used ? `${execution.orchestration_provider} orchestration` : "Deterministic investigation"}
               </h2>
               <p className="mt-1 max-w-2xl text-xs leading-5 text-[#5f6e65]">
                 Orchestrates evidence collection, structured hypotheses, deterministic
@@ -191,8 +192,8 @@ export default function RootCausePage() {
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-2 text-[10px]">
                     <span className="rounded-full bg-[#e8f2eb] px-2.5 py-1 font-semibold text-[#1e6b51]">
-                      {execution.ai_configured
-                        ? "Groq structured output"
+                      {execution.llm_used
+                        ? `${execution.llm_provider ?? "LLM"} · ${execution.llm_model ?? "configured model"}`
                         : "Deterministic fallback"}
                     </span>
                     <span className="text-[#78827d]">

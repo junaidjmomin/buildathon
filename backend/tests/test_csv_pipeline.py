@@ -4,7 +4,12 @@ from pathlib import Path
 
 from app.domain.models import FinancialEvent
 from app.ingestion.csv import read_source_csv
-from app.ingestion.pipeline import MATCH_THRESHOLD, _canonicalize, _match_score
+from app.ingestion.pipeline import (
+    MATCH_THRESHOLD,
+    _canonicalize,
+    _drop_invalid_rows,
+    _match_score,
+)
 
 
 def _document(name: str, content: bytes):
@@ -87,6 +92,21 @@ def test_ambiguous_equal_candidates_remain_unresolved() -> None:
         "BANK_2",
         "BANK_1",
     ]
+
+
+def test_row_filter_recomputes_errors_beyond_response_cap() -> None:
+    rows = [",100.00,2026-08-01T10:00:00,card,domestic,1.55,0.28,captured" for _ in range(60)]
+    content = (
+        "payment_id,amount,captured_at,payment_method,card_scope,fee,tax,status\n"
+        + "\n".join(rows)
+        + "\n"
+    ).encode()
+    document = read_source_csv(content, filename="payments.csv")
+    assert document.metadata.row_error_count == 60
+    assert len(document.metadata.row_errors) == 50
+    filtered, dropped = _drop_invalid_rows([("UPLOAD", "payments.csv", document)])
+    assert dropped == 60
+    assert filtered[0][2].rows == []
 
 
 def _event(

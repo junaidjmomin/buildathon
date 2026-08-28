@@ -5,17 +5,15 @@ import { ArrowRight, GitBranch, LoaderCircle } from "lucide-react";
 import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
-import { useActiveRunId } from "@/lib/active-run";
+import { resolveActiveRun, useActiveRunId, useActiveRunOverride } from "@/lib/active-run";
 import { api } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
 
 export default function RootCausesPage() {
   const selectedRunId = useActiveRunId();
+  const isOverride = useActiveRunOverride();
   const runs = useQuery({ queryKey: ["runs"], queryFn: api.runs });
-  const activeRun =
-    runs.data?.find((run) => run.id === selectedRunId) ??
-    runs.data?.find((run) => run.source !== "SEEDED" && run.status === "COMPLETE") ??
-    runs.data?.find((run) => run.status === "COMPLETE");
+  const activeRun = resolveActiveRun(runs.data, selectedRunId, { allowSeeded: isOverride });
   const roots = useQuery({
     queryKey: ["root-causes", activeRun?.id],
     queryFn: () => api.rootCauses(activeRun?.id ?? ""),
@@ -69,7 +67,10 @@ export default function RootCausesPage() {
 
         {runs.isError ? (
           <div className="panel mt-7 rounded-2xl p-8 text-sm text-[#a43d32]" role="alert">
-            Runs could not be loaded. Retry after checking the API connection.
+            Runs could not be loaded.{" "}
+            <button type="button" onClick={() => runs.refetch()} className="font-semibold underline">
+              Retry
+            </button>
           </div>
         ) : !activeRun ? (
           <div className="panel mt-7 rounded-2xl p-8 text-sm text-[#66716b]">
@@ -77,7 +78,10 @@ export default function RootCausesPage() {
           </div>
         ) : roots.isError ? (
           <div className="panel mt-7 rounded-2xl p-8 text-sm text-[#a43d32]" role="alert">
-            Root causes could not be loaded. Retry after checking the API connection.
+            Root causes could not be loaded.{" "}
+            <button type="button" onClick={() => roots.refetch()} className="font-semibold underline">
+              Retry
+            </button>
           </div>
         ) : roots.data?.length === 0 ? (
           <div className="panel mt-7 rounded-2xl p-8 text-sm text-[#66716b]">

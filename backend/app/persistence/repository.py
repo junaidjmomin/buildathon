@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -31,9 +32,12 @@ from app.domain.models import (
     ExceptionCase,
     ExceptionCaseStatus,
     FinancialEvent,
+    LineageType,
     MutationTestSummary,
     RootCause,
     RunListItem,
+    RunSourceType,
+    RunStage,
     RunSummary,
     StatusBreakdown,
     UnresolvedMatch,
@@ -54,10 +58,77 @@ from app.persistence.orm import (
     MutationTestRecord,
     RootCauseRecord,
     RunRecord,
+    RunStageRecord,
     SourceSnapshotRecord,
     ViolationRecord,
 )
 from app.synthetic.generator import DEMO_SEED, SyntheticDataset
+
+
+def _bulk_upsert(
+    session: Session,
+    model: type[Any],
+    values: list[dict[str, Any]],
+    *,
+    conflict_columns: list[str],
+    update_columns: list[str],
+) -> None:
+    """Upsert a homogeneous batch without an ORM ``merge`` N+1 query pattern.
+
+    PostgreSQL and SQLite both provide native, atomic ``ON CONFLICT`` support.
+    Keeping this helper dialect-aware makes production writes one executemany
+    operation while preserving the in-memory SQLite test suite.
+
+    The statement is deliberately executed through ``session.connection()``.
+    ``Session.execute`` routes Core INSERTs through the ORM bulk-insert path,
+    which splits rows with different NULL-column patterns into separate
+    statements; against a hosted database that becomes one network round trip
+    per group and dominated end-to-end run latency.
+    """
+
+    if not values:
+        return
+    dialect = session.get_bind().dialect.name
+    insert_factory = {
+        "postgresql": postgresql_insert,
+        "sqlite": sqlite_insert,
+    }.get(dialect)
+    if insert_factory is None:
+        for item in values:
+            session.merge(model(**item))
+        return
+    statement = insert_factory(model)
+    statement = statement.on_conflict_do_update(
+        index_elements=conflict_columns,
+        set_={column: getattr(statement.excluded, column) for column in update_columns},
+    )
+    session.connection().execute(statement, values)
+
+
+def _bulk_insert_ignore(
+    session: Session,
+    model: type[Any],
+    values: list[dict[str, Any]],
+    *,
+    conflict_columns: list[str],
+) -> None:
+    """Insert a batch idempotently while preserving existing workflow state."""
+
+    if not values:
+        return
+    dialect = session.get_bind().dialect.name
+    insert_factory = {
+        "postgresql": postgresql_insert,
+        "sqlite": sqlite_insert,
+    }.get(dialect)
+    if insert_factory is None:
+        for item in values:
+            identity = tuple(item[column] for column in conflict_columns)
+            if session.get(model, identity) is None:
+                session.add(model(**item))
+        return
+    statement = insert_factory(model).on_conflict_do_nothing(index_elements=conflict_columns)
+    session.connection().execute(statement, values)
 
 
 def _utc_start(value: Any) -> datetime:
@@ -428,10 +499,10 @@ class RunRepository:
                     id=record.id,
                     name=record.name,
                     status=record.status,
-                    source=(
-                        "SEEDED"
+                    source_type=(
+                        RunSourceType.DEMO
                         if record.seed is not None
-                        else str(manifest.get("source", "RAZORPAY"))
+                        else RunSourceType(str(manifest.get("source", "RAZORPAY")).upper())
                     ),
                     transaction_count=int(
                         manifest.get("transaction_count", counts.get("payments", 0))
@@ -502,7 +573,6 @@ class RunRepository:
             )
             or 0
         )
-        outcomes["UNRESOLVED"] += unresolved_events
         leakage = sum(
             (
                 item.financial_impact or Decimal("0")
@@ -510,6 +580,18 @@ class RunRepository:
                 if item.outcome == "VIOLATION"
             ),
             Decimal("0"),
+        )
+        persisted_violations = self.session.scalars(
+            select(ViolationRecord).where(
+                ViolationRecord.tenant_id == tenant_id,
+                ViolationRecord.run_id == run_id,
+            )
+        ).all()
+        primary_violation_count = sum(
+            (item.lineage_type or "PRIMARY") == "PRIMARY" for item in persisted_violations
+        )
+        downstream_violation_count = sum(
+            (item.lineage_type or "PRIMARY") == "DOWNSTREAM" for item in persisted_violations
         )
         evaluation_control_ids = {item.control_id for item in evaluations}
         control_types = dict(
@@ -530,10 +612,19 @@ class RunRepository:
             Decimal("0"),
         )
         manifest = run.manifest or {}
+        try:
+            source_type = (
+                RunSourceType.DEMO
+                if run.seed is not None
+                else RunSourceType(str(manifest.get("source", "RAZORPAY")).upper())
+            )
+        except ValueError:
+            source_type = RunSourceType.RAZORPAY
         return RunSummary(
             id=run.id,
             name=run.name,
             status=run.status,
+            source_type=source_type,
             transaction_count=transaction_count,
             event_count=event_count,
             relationship_count=relationship_count,
@@ -544,14 +635,28 @@ class RunRepository:
                 warning=outcomes["WARNING"],
                 unresolved=outcomes["UNRESOLVED"],
             ),
+            pass_count=outcomes["PASS"],
+            violation_count=outcomes["VIOLATION"],
+            warning_count=outcomes["WARNING"],
+            unresolved_relationship_count=unresolved_events,
             precision=Decimal("0"),
             recall=Decimal("0"),
             false_positive_rate=Decimal("0"),
             verified_leakage=leakage,
             cash_delayed=money(cash_delayed),
             unresolved_count=outcomes["UNRESOLVED"],
+            unresolved_match_count=unresolved_events,
             processing_ms=int(manifest.get("processing_ms", 0)),
+            deterministic_processing_ms=int(
+                manifest.get("engine_processing_ms", manifest.get("processing_ms", 0))
+            ),
+            persistence_ms=int(manifest.get("persistence_ms", 0)),
+            total_processing_ms=int(
+                manifest.get("total_processing_ms", manifest.get("processing_ms", 0))
+            ),
             evaluations_per_second=int(manifest.get("evaluations_per_second", 0)),
+            primary_violation_count=primary_violation_count,
+            downstream_violation_count=downstream_violation_count,
             confusion_matrix=ConfusionMatrix(
                 true_positive=0,
                 false_positive=0,
@@ -576,23 +681,7 @@ class RunRepository:
         source: str = "RAZORPAY",
         manifest_extra: dict[str, Any] | None = None,
     ) -> None:
-        run = self.session.get(RunRecord, (tenant_id, run_id))
-        if run is None:
-            run = RunRecord(
-                tenant_id=tenant_id,
-                id=run_id,
-                name=run_name,
-                status="COMPLETE",
-                seed=None,
-                manifest={},
-                completed_at=synced_at,
-                created_at=synced_at,
-            )
-            self.session.add(run)
-            self.session.flush()
-        run.status = "COMPLETE"
-        run.name = run_name
-        run.manifest = {
+        manifest = {
             "sync_id": sync_id,
             "source": source,
             "transaction_count": sum(event.event_type == "PAYMENT" for event in events),
@@ -600,39 +689,84 @@ class RunRepository:
             "relationship_count": len(edges),
             **(manifest_extra or {}),
         }
-        run.completed_at = synced_at
-        for event in events:
-            self.session.merge(
-                EventRecord(
-                    tenant_id=tenant_id,
-                    id=event.id,
-                    run_id=event.run_id,
-                    source=event.source,
-                    external_id=event.external_id,
-                    event_type=event.event_type,
-                    amount=event.amount,
-                    currency=event.currency,
-                    occurred_at=event.timestamp,
-                    status=event.status,
-                    raw_payload=event.raw_payload,
-                    normalized_payload=event.normalized_payload,
-                )
-            )
-        self.session.flush()
-        for edge in edges:
-            self.session.merge(
-                EventEdgeRecord(
-                    tenant_id=tenant_id,
-                    id=edge.id,
-                    run_id=edge.run_id,
-                    from_event_id=edge.from_event_id,
-                    to_event_id=edge.to_event_id,
-                    relationship=edge.relationship,
-                    confidence=edge.confidence,
-                    method=edge.method,
-                    evidence=edge.evidence,
-                )
-            )
+        _bulk_upsert(
+            self.session,
+            RunRecord,
+            [
+                {
+                    "tenant_id": tenant_id,
+                    "id": run_id,
+                    "name": run_name,
+                    "status": "COMPLETE",
+                    "seed": None,
+                    "manifest": manifest,
+                    "completed_at": synced_at,
+                    "created_at": synced_at,
+                }
+            ],
+            conflict_columns=["tenant_id", "id"],
+            update_columns=["name", "status", "manifest", "completed_at"],
+        )
+        _bulk_upsert(
+            self.session,
+            EventRecord,
+            [
+                {
+                    "tenant_id": tenant_id,
+                    "id": event.id,
+                    "run_id": event.run_id,
+                    "source": event.source,
+                    "external_id": event.external_id,
+                    "event_type": event.event_type,
+                    "amount": event.amount,
+                    "currency": event.currency,
+                    "occurred_at": event.timestamp,
+                    "status": event.status,
+                    "raw_payload": event.raw_payload,
+                    "normalized_payload": event.normalized_payload,
+                }
+                for event in events
+            ],
+            conflict_columns=["tenant_id", "run_id", "id"],
+            update_columns=[
+                "source",
+                "external_id",
+                "event_type",
+                "amount",
+                "currency",
+                "occurred_at",
+                "status",
+                "raw_payload",
+                "normalized_payload",
+            ],
+        )
+        _bulk_upsert(
+            self.session,
+            EventEdgeRecord,
+            [
+                {
+                    "tenant_id": tenant_id,
+                    "id": edge.id,
+                    "run_id": edge.run_id,
+                    "from_event_id": edge.from_event_id,
+                    "to_event_id": edge.to_event_id,
+                    "relationship": edge.relationship,
+                    "confidence": edge.confidence,
+                    "method": edge.method,
+                    "evidence": edge.evidence,
+                }
+                for edge in edges
+            ],
+            conflict_columns=["tenant_id", "run_id", "id"],
+            update_columns=[
+                "from_event_id",
+                "to_event_id",
+                "relationship",
+                "confidence",
+                "method",
+                "evidence",
+            ],
+        )
 
     def finalize_live_run(
         self,
@@ -641,6 +775,8 @@ class RunRepository:
         run_id: str,
         control_evaluation_count: int,
         processing_ms: int,
+        persistence_ms: int | None = None,
+        total_processing_ms: int | None = None,
     ) -> None:
         run = self.session.get(RunRecord, (tenant_id, run_id))
         if run is None:
@@ -648,31 +784,109 @@ class RunRepository:
         manifest = dict(run.manifest or {})
         manifest["control_evaluation_count"] = control_evaluation_count
         manifest["processing_ms"] = processing_ms
+        manifest["engine_processing_ms"] = processing_ms
+        if persistence_ms is not None:
+            manifest["persistence_ms"] = persistence_ms
+        if total_processing_ms is not None:
+            manifest["total_processing_ms"] = total_processing_ms
         manifest["evaluations_per_second"] = (
             int(control_evaluation_count / (processing_ms / 1000)) if processing_ms > 0 else 0
         )
         run.manifest = manifest
 
+    def save_run_stages(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        stages: list[dict[str, Any]],
+    ) -> None:
+        """Persist the stage timeline of a run, replacing any previous timeline."""
+        self.session.execute(
+            delete(RunStageRecord).where(
+                RunStageRecord.tenant_id == tenant_id,
+                RunStageRecord.run_id == run_id,
+            )
+        )
+        if not stages:
+            return
+        self.session.connection().execute(
+            RunStageRecord.__table__.insert(),
+            [
+                {
+                    "tenant_id": tenant_id,
+                    "run_id": run_id,
+                    "stage_index": index,
+                    "stage": stage["stage"],
+                    "status": stage["status"],
+                    "started_at": stage["started_at"],
+                    "finished_at": stage.get("finished_at"),
+                    "detail": stage.get("detail", {}),
+                }
+                for index, stage in enumerate(stages)
+            ],
+        )
+
+    def list_run_stages(self, *, tenant_id: str, run_id: str) -> list[RunStage]:
+        records = self.session.scalars(
+            select(RunStageRecord)
+            .where(RunStageRecord.tenant_id == tenant_id, RunStageRecord.run_id == run_id)
+            .order_by(RunStageRecord.stage_index)
+        ).all()
+        return [
+            RunStage(
+                stage=record.stage,
+                status=record.status,
+                stage_index=record.stage_index,
+                started_at=record.started_at,
+                finished_at=record.finished_at,
+                duration_ms=(
+                    int((record.finished_at - record.started_at).total_seconds() * 1000)
+                    if record.finished_at is not None
+                    else None
+                ),
+                detail=record.detail or {},
+            )
+            for record in records
+        ]
+
     def save_controls(self, controls: list[Control], *, tenant_id: str) -> None:
-        for control in controls:
-            self.session.merge(
-                ControlRecord(
-                    tenant_id=tenant_id,
-                    id=control.id,
-                    logical_control_key=control.logical_control_key,
-                    version=control.version,
-                    control_type=control.control_type.value,
-                    status=control.status,
-                    agreement_id=control.agreement_id,
-                    clause_id=control.clause_id,
-                    effective_from=_utc_start(control.effective_from),
-                    effective_to=(
+        _bulk_upsert(
+            self.session,
+            ControlRecord,
+            [
+                {
+                    "tenant_id": tenant_id,
+                    "id": control.id,
+                    "logical_control_key": control.logical_control_key,
+                    "version": control.version,
+                    "control_type": control.control_type.value,
+                    "status": control.status,
+                    "agreement_id": control.agreement_id,
+                    "clause_id": control.clause_id,
+                    "effective_from": _utc_start(control.effective_from),
+                    "effective_to": (
                         _utc_start(control.effective_to) if control.effective_to else None
                     ),
-                    parameters=control.model_dump(mode="json")["parameters"],
-                    definition=control.model_dump(mode="json"),
-                )
-            )
+                    "parameters": control.model_dump(mode="json")["parameters"],
+                    "definition": control.model_dump(mode="json"),
+                }
+                for control in controls
+            ],
+            conflict_columns=["tenant_id", "id"],
+            update_columns=[
+                "logical_control_key",
+                "version",
+                "control_type",
+                "status",
+                "agreement_id",
+                "clause_id",
+                "effective_from",
+                "effective_to",
+                "parameters",
+                "definition",
+            ],
+        )
 
     def list_controls(
         self,
@@ -726,45 +940,105 @@ class RunRepository:
         return Control.model_validate(records[0].definition) if records else None
 
     def save_violation(self, violation: Violation, *, run_id: str, tenant_id: str) -> None:
-        self.session.merge(
-            ViolationRecord(
-                tenant_id=tenant_id,
-                id=violation.id,
-                run_id=run_id,
-                payment_id=violation.payment_id,
-                category=violation.category,
-                control_type=violation.control_type.value,
-                difference=violation.difference,
-                financial_impact=violation.financial_impact,
-                confidence=violation.confidence,
-                root_cause_id=violation.root_cause_id,
-                occurred_at=violation.occurred_at,
-                evidence={"expected": violation.expected, "actual": violation.actual},
-            )
+        self.save_violations([violation], run_id=run_id, tenant_id=tenant_id)
+
+    def save_violations(self, violations: list[Violation], *, run_id: str, tenant_id: str) -> None:
+        _bulk_upsert(
+            self.session,
+            ViolationRecord,
+            [
+                {
+                    "tenant_id": tenant_id,
+                    "id": violation.id,
+                    "run_id": run_id,
+                    "payment_id": violation.payment_id,
+                    "category": violation.category,
+                    "control_type": violation.control_type.value,
+                    "difference": violation.difference,
+                    "financial_impact": violation.financial_impact,
+                    "confidence": violation.confidence,
+                    "root_cause_id": violation.root_cause_id,
+                    "occurred_at": violation.occurred_at,
+                    "parent_violation_id": violation.parent_violation_id,
+                    "root_violation_id": violation.root_violation_id,
+                    "lineage_type": violation.lineage_type.value,
+                    "causal_evidence": violation.causal_evidence,
+                    "evidence": {
+                        "expected": violation.expected,
+                        "actual": violation.actual,
+                    },
+                }
+                for violation in violations
+            ],
+            conflict_columns=["tenant_id", "run_id", "id"],
+            update_columns=[
+                "payment_id",
+                "category",
+                "control_type",
+                "difference",
+                "financial_impact",
+                "confidence",
+                "root_cause_id",
+                "occurred_at",
+                "parent_violation_id",
+                "root_violation_id",
+                "lineage_type",
+                "causal_evidence",
+                "evidence",
+            ],
         )
 
     def save_root_cause(self, root_cause: RootCause, *, run_id: str, tenant_id: str) -> None:
-        self.session.merge(
-            RootCauseRecord(
-                tenant_id=tenant_id,
-                id=root_cause.id,
-                run_id=run_id,
-                title=root_cause.title,
-                category=root_cause.category,
-                affected_count=root_cause.affected_count,
-                verified_impact=root_cause.verified_impact,
-                verification_status=root_cause.verification_status,
-                evidence={
-                    "expected": root_cause.expected_value,
-                    "observed": root_cause.observed_value,
-                    "first_seen": root_cause.first_seen.isoformat(),
-                    "last_seen": root_cause.last_seen.isoformat(),
+        self.save_root_causes([root_cause], run_id=run_id, tenant_id=tenant_id)
+
+    def save_root_causes(
+        self, root_causes: list[RootCause], *, run_id: str, tenant_id: str
+    ) -> None:
+        _bulk_upsert(
+            self.session,
+            RootCauseRecord,
+            [
+                {
+                    "tenant_id": tenant_id,
+                    "id": root_cause.id,
+                    "run_id": run_id,
+                    "title": root_cause.title,
+                    "category": root_cause.category,
+                    "affected_count": root_cause.affected_count,
+                    "verified_impact": root_cause.verified_impact,
+                    "direct_impact": root_cause.direct_impact,
+                    "downstream_impact": root_cause.downstream_impact,
+                    "total_impact": root_cause.total_attributable_impact,
                     "primary_violation_count": root_cause.primary_violation_count,
-                    "downstream_effect_count": root_cause.downstream_effect_count,
-                    "hypothesis": root_cause.hypothesis,
-                    "verification_evidence": root_cause.verification_evidence,
-                },
-            )
+                    "downstream_violation_count": root_cause.downstream_effect_count,
+                    "verification_status": root_cause.verification_status,
+                    "evidence": {
+                        "expected": root_cause.expected_value,
+                        "observed": root_cause.observed_value,
+                        "first_seen": root_cause.first_seen.isoformat(),
+                        "last_seen": root_cause.last_seen.isoformat(),
+                        "primary_violation_count": root_cause.primary_violation_count,
+                        "downstream_effect_count": root_cause.downstream_effect_count,
+                        "hypothesis": root_cause.hypothesis,
+                        "verification_evidence": root_cause.verification_evidence,
+                    },
+                }
+                for root_cause in root_causes
+            ],
+            conflict_columns=["tenant_id", "run_id", "id"],
+            update_columns=[
+                "title",
+                "category",
+                "affected_count",
+                "verified_impact",
+                "direct_impact",
+                "downstream_impact",
+                "total_impact",
+                "primary_violation_count",
+                "downstream_violation_count",
+                "verification_status",
+                "evidence",
+            ],
         )
 
     def list_violations(self, *, tenant_id: str, run_id: str) -> list[Violation]:
@@ -880,6 +1154,9 @@ class RunRepository:
         )
         if control is None:
             return None
+        run_record = self.session.get(RunRecord, (tenant_id, run_id))
+        manifest = (run_record.manifest if run_record else None) or {}
+        source = str(manifest.get("source", "RAZORPAY")).upper()
         snapshot_ids = list(evaluation.source_snapshot_ids or [])
         observed_rate = (
             evaluation.actual_amount / event.amount
@@ -889,7 +1166,7 @@ class RunRepository:
         definition = control.definition or {}
         return {
             "razorpay_context": {
-                "source": "immutable Razorpay source snapshots",
+                "source": f"{source} source snapshots",
                 "observed_rate": str(observed_rate) if observed_rate is not None else "",
                 "difference_amount": (
                     str(evaluation.difference_amount)
@@ -956,6 +1233,10 @@ class RunRepository:
             financial_impact=record.financial_impact,
             confidence=record.confidence,
             root_cause_id=record.root_cause_id,
+            lineage_type=LineageType(record.lineage_type or "PRIMARY"),
+            root_violation_id=record.root_violation_id,
+            parent_violation_id=record.parent_violation_id,
+            causal_evidence=record.causal_evidence or {},
             occurred_at=record.occurred_at,
         )
 
@@ -974,6 +1255,9 @@ class RunRepository:
             category=record.category,
             affected_count=record.affected_count,
             verified_impact=record.verified_impact,
+            direct_impact=record.direct_impact,
+            downstream_impact=record.downstream_impact,
+            total_attributable_impact=record.total_impact,
             expected_value=str(evidence.get("expected", "")),
             observed_value=str(evidence.get("observed", "")),
             first_seen=evidence.get("first_seen", first_seen),
@@ -981,10 +1265,8 @@ class RunRepository:
             hypothesis=evidence.get("hypothesis"),
             verification_status=record.verification_status,
             verification_evidence=evidence.get("verification_evidence"),
-            primary_violation_count=int(
-                evidence.get("primary_violation_count", record.affected_count)
-            ),
-            downstream_effect_count=int(evidence.get("downstream_effect_count", 0)),
+            primary_violation_count=record.primary_violation_count,
+            downstream_effect_count=record.downstream_violation_count,
         )
 
     def write_audit(
@@ -1672,6 +1954,45 @@ class ControlEvaluationRepository:
         )
         return self.session.merge(record)
 
+    def save_many(self, items: list[dict[str, Any]]) -> None:
+        """Persist deterministic decisions in one atomic upsert batch."""
+
+        now = datetime.now(timezone.utc)
+        values = [
+            {
+                **item,
+                "created_at": item.get("created_at", now),
+            }
+            for item in items
+        ]
+        _bulk_upsert(
+            self.session,
+            ControlEvaluationRecord,
+            values,
+            conflict_columns=[
+                "tenant_id",
+                "run_id",
+                "control_id",
+                "target_type",
+                "target_id",
+            ],
+            update_columns=[
+                "control_version",
+                "outcome",
+                "expected_amount",
+                "actual_amount",
+                "tolerance_amount",
+                "difference_amount",
+                "financial_impact",
+                "confidence",
+                "input_fingerprint",
+                "engine_version",
+                "source_snapshot_ids",
+                "evidence",
+                "evaluated_at",
+            ],
+        )
+
 
 class JobRepository:
     def __init__(self, session: Session) -> None:
@@ -1982,6 +2303,61 @@ class CaseRepository:
         self.session.add(record)
         self.session.flush()
         return self._case(record)
+
+    def create_many_from_investigations(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        investigations: list[tuple[str, RootCause, list[Violation], list[CaseEvidence]]],
+        actor_id: str,
+    ) -> None:
+        """Create investigation cases in one batch without resetting existing cases.
+
+        Re-running an idempotent control run must preserve reviewer transitions and
+        notes, so conflicts deliberately do nothing instead of updating workflow
+        state from the generated OPEN case.
+        """
+
+        now = datetime.now(timezone.utc)
+        values: list[dict[str, Any]] = []
+        for case_id, root_cause, violations, evidence in investigations:
+            if not violations:
+                raise ValueError("A case requires at least one deterministic violation")
+            primary = violations[0]
+            opened = CaseAuditEntry(
+                from_status=None,
+                to_status=ExceptionCaseStatus.OPEN,
+                actor=actor_id,
+                note="Case opened from a deterministically proven root-cause investigation.",
+                occurred_at=now,
+            )
+            values.append(
+                {
+                    "tenant_id": tenant_id,
+                    "id": case_id,
+                    "run_id": run_id,
+                    "root_cause_id": root_cause.id,
+                    "title": root_cause.title,
+                    "payment_id": primary.payment_id,
+                    "primary_violation_id": primary.id,
+                    "violation_ids": [item.id for item in violations],
+                    "status": ExceptionCaseStatus.OPEN.value,
+                    "verified_impact": root_cause.verified_impact,
+                    "evidence": [item.model_dump(mode="json") for item in evidence],
+                    "audit_trail": [opened.model_dump(mode="json")],
+                    "resolution_note": None,
+                    "version": 1,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+        _bulk_insert_ignore(
+            self.session,
+            ExceptionCaseRecord,
+            values,
+            conflict_columns=["tenant_id", "id"],
+        )
 
     def _run_id_for_root(self, tenant_id: str, root_cause_id: str) -> str:
         run_id = self.session.scalar(

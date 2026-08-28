@@ -88,11 +88,20 @@ class InvestigationExecution(AgentModel):
     workflow: str = "ROOT_CAUSE_INVESTIGATION"
     tenant_id: str
     run_id: str
+    source_type: str = "CSV_UPLOAD"
     root_cause_id: str
     violation_ids: list[str]
     status: str
     attempt_count: int
     ai_configured: bool
+    orchestration_used: bool = True
+    orchestration_provider: str = "langgraph"
+    llm_used: bool = False
+    llm_provider: str | None = None
+    llm_model: str | None = None
+    mcp_used: bool = False
+    razorpay_context_used: bool = False
+    evidence_sources: list[str] = Field(default_factory=list)
     hypotheses: list[StructuredHypothesis]
     verification: DeterministicVerification | None = None
     case_id: str | None = None

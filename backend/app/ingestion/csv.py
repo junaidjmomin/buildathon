@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO, StringIO
 from pathlib import PurePath
@@ -56,6 +57,36 @@ FILENAME_HINTS = {
     "recon": "BANK_RECONCILIATION",
 }
 
+# The identifier column whose emptiness makes a row unusable at execution time.
+REQUIRED_ID_COLUMNS: dict[str, str] = {
+    "ORDERS": "order_id",
+    "PAYMENTS": "payment_id",
+    "REFUNDS": "refund_id",
+    "SETTLEMENTS": "settlement_id",
+    "CHARGEBACKS": "chargeback_id",
+    "BANK_RECONCILIATION": "bank_txn_id",
+}
+
+TIMESTAMP_COLUMNS: dict[str, str] = {
+    "ORDERS": "created_at",
+    "PAYMENTS": "captured_at",
+    "REFUNDS": "created_at",
+    "SETTLEMENTS": "settled_at",
+    "CHARGEBACKS": "created_at",
+    "BANK_RECONCILIATION": "posted_at",
+}
+
+# Row errors are reported per file; only the first few are surfaced so a
+# corrupt upload cannot produce an unbounded response payload.
+MAX_ROW_ERRORS = 50
+
+
+@dataclass(frozen=True)
+class CsvRowError:
+    row_number: int
+    column: str
+    message: str
+
 
 @dataclass(frozen=True)
 class ParsedCsv:
@@ -65,6 +96,8 @@ class ParsedCsv:
     source_type: str
     classification_confidence: Decimal
     classification_evidence: list[str]
+    row_errors: list[CsvRowError] = field(default_factory=list)
+    row_error_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -103,6 +136,8 @@ def parse_source_csv(content: bytes, *, filename: str | None = None) -> ParsedCs
         if lengths.len() and lengths.max() > 10_000:
             raise ValueError(f"Column {column} contains a value exceeding 10,000 bytes")
     decimal_values_checked = 0
+    source_type, confidence, evidence = classify_source_csv(frame, filename=filename)
+    row_errors, row_error_count = _collect_row_errors(frame, source_type)
     for column in MONEY_COLUMNS.intersection(frame.columns):
         for raw in frame.get_column(column).drop_nulls().to_list():
             value = str(raw).strip()
@@ -110,12 +145,14 @@ def parse_source_csv(content: bytes, *, filename: str | None = None) -> ParsedCs
                 continue
             try:
                 parsed = Decimal(value)
-            except InvalidOperation as exc:
-                raise ValueError(f"Column {column} contains an invalid decimal amount") from exc
+            except InvalidOperation:
+                # Already reported per-row by _collect_row_errors; do not
+                # reject the whole file here because classification can
+                # still succeed for the remaining valid rows.
+                continue
             if not parsed.is_finite():
-                raise ValueError(f"Column {column} contains a non-finite decimal amount")
+                continue
             decimal_values_checked += 1
-    source_type, confidence, evidence = classify_source_csv(frame, filename=filename)
     return ParsedCsv(
         row_count=frame.height,
         columns=list(frame.columns),
@@ -123,7 +160,72 @@ def parse_source_csv(content: bytes, *, filename: str | None = None) -> ParsedCs
         source_type=source_type,
         classification_confidence=confidence,
         classification_evidence=evidence,
+        row_errors=row_errors,
+        row_error_count=row_error_count,
     )
+
+
+def _collect_row_errors(frame: pl.DataFrame, source_type: str) -> tuple[list[CsvRowError], int]:
+    """Report invalid rows without rejecting the classifiable file.
+
+    A single malformed money value or an empty required identifier used to
+    abort the whole upload with a column-level message. The rows are now
+    collected with their row numbers so execution can fail closed later with
+    precise errors, while still-unrelated valid rows keep the file acceptable
+    for classification.
+    """
+
+    errors: list[CsvRowError] = []
+    total = 0
+    id_column = REQUIRED_ID_COLUMNS.get(source_type)
+
+    def report(row_number: int, column: str, message: str) -> None:
+        nonlocal total
+        total += 1
+        if len(errors) < MAX_ROW_ERRORS:
+            errors.append(CsvRowError(row_number=row_number, column=column, message=message))
+
+    text_rows = frame.iter_rows(named=True)
+    for row_number, row in enumerate(text_rows, start=2):
+        if id_column is not None:
+            identifier = str(row.get(id_column) or "").strip()
+            if not identifier:
+                report(
+                    row_number,
+                    id_column,
+                    f"missing required identifier {id_column}",
+                )
+        timestamp_column = TIMESTAMP_COLUMNS.get(source_type)
+        if timestamp_column is not None:
+            raw_timestamp = str(row.get(timestamp_column) or "").strip()
+            if not raw_timestamp:
+                report(
+                    row_number,
+                    timestamp_column,
+                    f"missing required timestamp {timestamp_column}",
+                )
+            else:
+                try:
+                    datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
+                except ValueError:
+                    report(
+                        row_number,
+                        timestamp_column,
+                        f"invalid ISO-8601 timestamp '{raw_timestamp}'",
+                    )
+        for column in MONEY_COLUMNS.intersection(frame.columns):
+            raw = row.get(column)
+            value = str(raw).strip() if raw is not None else ""
+            if not value:
+                continue
+            try:
+                parsed = Decimal(value)
+            except InvalidOperation:
+                report(row_number, column, f"invalid decimal amount '{value}'")
+                continue
+            if not parsed.is_finite():
+                report(row_number, column, f"non-finite decimal amount '{value}'")
+    return errors, total
 
 
 def read_source_csv(content: bytes, *, filename: str | None = None) -> SourceCsvDocument:

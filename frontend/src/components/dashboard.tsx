@@ -7,21 +7,26 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-import { useActiveRunId } from "@/lib/active-run";
+import { resolveActiveRun, useActiveRunId, useActiveRunOverride } from "@/lib/active-run";
 import { api } from "@/lib/api";
 import { compareDecimals, formatMoney, formatPercent } from "@/lib/format";
 
-const DEMO_RUN = "RUN_NOVACART_AUG_2026";
+function decimalCents(value: string): bigint {
+  const [whole, fraction = ""] = value.split(".");
+  return BigInt(`${whole || "0"}${fraction.padEnd(2, "0").slice(0, 2)}`);
+}
+
+function ratioPercent(value: string, maximum: string): number {
+  const max = decimalCents(maximum);
+  if (max <= BigInt(0)) return 0;
+  return Number((decimalCents(value) * BigInt(10000)) / max) / 100;
+}
+
 export function Dashboard() {
   const queryClient = useQueryClient();
   const selectedRunId = useActiveRunId();
+  const isOverride = useActiveRunOverride();
   const runs = useQuery({ queryKey: ["runs"], queryFn: api.runs });
-  const selectedRun = runs.data?.find(
-    (run) => run.id === selectedRunId && run.status === "COMPLETE",
-  );
-  const latestRealRun = runs.data?.find(
-    (run) => run.source !== "SEEDED" && run.status === "COMPLETE",
-  );
   const load = useQuery({
     queryKey: ["demo-load"],
     queryFn: api.loadDemo,
@@ -29,9 +34,11 @@ export function Dashboard() {
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: Number.POSITIVE_INFINITY,
   });
-  const activeRunRecord = selectedRun ?? latestRealRun;
+  const activeRunRecord = resolveActiveRun(runs.data, selectedRunId, {
+    allowSeeded: isOverride,
+  });
   const activeRun = activeRunRecord?.id;
-  const activeIsSeeded = activeRunRecord?.source === "SEEDED" || activeRun === DEMO_RUN;
+  const activeIsSeeded = activeRunRecord?.source_type === "DEMO";
   const summary = useQuery({
     queryKey: ["run-summary", activeRun], queryFn: () => api.summary(activeRun ?? ""), enabled: Boolean(activeRun),
   });
@@ -41,10 +48,6 @@ export function Dashboard() {
   const roots = useQuery({
     queryKey: ["root-causes", activeRun], queryFn: () => api.rootCauses(activeRun ?? ""), enabled: Boolean(activeRun),
   });
-  const coverage = useQuery({
-    queryKey: ["control-coverage", activeRun], queryFn: () => api.controlCoverage(activeRun ?? ""), enabled: activeIsSeeded && Boolean(activeRun),
-  });
-
   if (runs.isPending) {
     return (
       <main className="grid min-h-[calc(100vh-64px)] place-items-center p-8 text-center">
@@ -97,7 +100,7 @@ export function Dashboard() {
     );
   }
 
-  if (violations.isError || roots.isError || coverage.isError) {
+  if (violations.isError || roots.isError) {
     return (
       <main className="mx-auto max-w-6xl p-9">
         <div className="panel mt-12 rounded-2xl p-8 text-center" role="alert">
@@ -112,9 +115,11 @@ export function Dashboard() {
 
   if (!summary.data) return null;
   const data = summary.data;
-  const rootMax = Math.max(...(roots.data ?? []).map((root) => Number(root.verified_impact)), 1);
-  const primaryCount = (roots.data ?? []).reduce((total, root) => total + root.primary_violation_count, 0);
-  const downstreamCount = (roots.data ?? []).reduce((total, root) => total + root.downstream_effect_count, 0);
+  const featuredViolation = violations.data?.find((item) => item.category === "MDR rate deviation");
+  const rootMax = (roots.data ?? []).reduce(
+    (maximum, root) => (compareDecimals(root.verified_impact, maximum) > 0 ? root.verified_impact : maximum),
+    "0",
+  );
   const outcomeTotal = Math.max(
     data.breakdown.passed +
       data.breakdown.violation +
@@ -131,7 +136,7 @@ export function Dashboard() {
           <h1 className="text-3xl font-semibold tracking-[-0.035em] md:text-[38px]">{data.name}</h1>
           <p className="mt-2 text-sm text-[#66716b]">Rebuilt expected cash movement across {data.event_count.toLocaleString("en-IN")} financial events.</p>
         </div>
-        {activeIsSeeded ? <button onClick={() => void load.refetch().then(() => queryClient.invalidateQueries({ queryKey: ["run-summary", DEMO_RUN] }))} disabled={load.isFetching} className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white shadow-lg shadow-[#112a2b]/10 transition hover:-translate-y-0.5 disabled:opacity-60"><Play size={15} fill="currentColor" /> {load.isFetching ? "Running controls…" : "Run controls again"}</button> : <Link href="/data" className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white">Create another run <ArrowRight size={15} /></Link>}
+        {activeIsSeeded ? <button onClick={() => void load.refetch().then(() => queryClient.invalidateQueries({ queryKey: ["run-summary", activeRun] }))} disabled={load.isFetching} className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white shadow-lg shadow-[#112a2b]/10 transition hover:-translate-y-0.5 disabled:opacity-60"><Play size={15} fill="currentColor" /> {load.isFetching ? "Running controls…" : "Run controls again"}</button> : <Link href="/data" className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white">Create another run <ArrowRight size={15} /></Link>}
       </section>
 
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
@@ -141,8 +146,8 @@ export function Dashboard() {
         <Metric icon={ScanSearch} label="Violation recall" value={data.ground_truth_available ? formatPercent(data.recall) : "Not scored"} tone="green" />
         <Metric icon={CircleDollarSign} label="Verified leakage" value={formatMoney(data.verified_leakage, true)} tone="orange" />
         <Metric icon={ShieldAlert} label="Unresolved" value={String(data.unresolved_count)} />
-        <Metric icon={ShieldCheck} label="Control coverage" value={coverage.data ? formatPercent(coverage.data.coverage_percentage) : "Not measured"} tone="green" />
-        <Metric icon={GitBranch} label="Primary / downstream" value={`${primaryCount} / ${downstreamCount}`} />
+        <Metric icon={ShieldCheck} label="Control coverage" value={data.control_coverage != null ? formatPercent(data.control_coverage) : "Not measured"} tone="green" />
+        <Metric icon={GitBranch} label="Primary / downstream" value={`${data.primary_violation_count} / ${data.downstream_violation_count}`} />
       </section>
 
       <section className="mb-6 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
@@ -191,7 +196,7 @@ export function Dashboard() {
             {(roots.data ?? []).slice(0, 5).map((root) => (
               <Link href={`/root-causes/${root.id}`} key={root.id} className="block rounded-lg p-1 transition hover:bg-[#f5f7f3]">
                 <div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="truncate font-medium">{root.title}</span><span className="number-tabular text-[#66716b]">{formatMoney(root.verified_impact, true)}</span></div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-[#edf0eb]"><div className="h-full rounded-full bg-[#2d7a5d]" style={{ width: `${Math.max(4, (Number(root.verified_impact) / rootMax) * 100)}%` }} /></div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-[#edf0eb]"><div className="h-full rounded-full bg-[#2d7a5d]" style={{ width: `${Math.max(4, ratioPercent(root.verified_impact, rootMax))}%` }} /></div>
               </Link>
             ))}
           </div>
@@ -218,8 +223,8 @@ export function Dashboard() {
         </div>
       </section>
 
-      {activeIsSeeded ? <><Link href={`/runs/${activeRun}/payments/PAY_82HD9`} className="group flex flex-col justify-between gap-5 rounded-2xl border border-[#efc6b3] bg-[#fff7f2] p-5 transition hover:border-[#e86f3a]/60 md:flex-row md:items-center">
-        <div className="flex items-start gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#ffe4d6] text-[#cc5a2c]"><ShieldAlert size={19} /></span><div><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#bd522a]">Featured proof · PAY_82HD9</p><h3 className="mt-1 text-base font-semibold">Gateway and bank match. The money is still wrong.</h3><p className="mt-1 text-xs leading-5 text-[#765f54]">Inspect the contracted 1.55% MDR against the observed 1.75% deduction.</p></div></div>
+      {activeIsSeeded && featuredViolation ? <><Link href={`/runs/${activeRun}/payments/${featuredViolation.payment_id}`} className="group flex flex-col justify-between gap-5 rounded-2xl border border-[#efc6b3] bg-[#fff7f2] p-5 transition hover:border-[#e86f3a]/60 md:flex-row md:items-center">
+        <div className="flex items-start gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#ffe4d6] text-[#cc5a2c]"><ShieldAlert size={19} /></span><div><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#bd522a]">Featured proof · {featuredViolation.payment_id}</p><h3 className="mt-1 text-base font-semibold">Gateway and bank match. The money is still wrong.</h3><p className="mt-1 text-xs leading-5 text-[#765f54]">Inspect the contracted MDR against the observed deduction.</p></div></div>
         <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-[#a9431f]">Open financial proof <ArrowRight size={16} className="transition group-hover:translate-x-1" /></span>
       </Link>
       <Link href={`/runs/${activeRun}/mutation-test`} className="group mt-4 flex flex-col justify-between gap-5 rounded-2xl border border-[#cbded3] bg-[#f4fbf7] p-5 transition hover:border-[#2d7a5d]/60 md:flex-row md:items-center">

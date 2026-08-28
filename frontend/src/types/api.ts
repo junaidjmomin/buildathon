@@ -53,6 +53,11 @@ export interface RunSummary {
   relationship_count: number;
   control_evaluation_count: number;
   breakdown: { passed: number; violation: number; warning: number; unresolved: number };
+  source_type: "DEMO" | "CSV_UPLOAD" | "RAZORPAY";
+  pass_count: number;
+  violation_count: number;
+  warning_count: number;
+  unresolved_relationship_count: number;
   precision: string;
   recall: string;
   false_positive_rate: string;
@@ -60,7 +65,15 @@ export interface RunSummary {
   cash_delayed: string;
   unresolved_count: number;
   processing_ms: number;
+  deterministic_processing_ms: number;
+  ai_processing_ms: number | null;
   evaluations_per_second: number;
+  persistence_ms: number;
+  total_processing_ms: number;
+  primary_violation_count: number;
+  downstream_violation_count: number;
+  control_coverage: string | null;
+  metrics_available: { ground_truth: boolean; precision: boolean; recall: boolean; false_positive_rate: boolean; control_coverage: boolean };
   ground_truth_available: boolean;
   metrics_scope: string;
 }
@@ -69,7 +82,7 @@ export interface RunListItem {
   id: string;
   name: string;
   status: string;
-  source: "SEEDED" | "RAZORPAY" | "CSV_UPLOAD";
+  source_type: "DEMO" | "RAZORPAY" | "CSV_UPLOAD";
   transaction_count: number;
   event_count: number;
   control_evaluation_count: number;
@@ -210,7 +223,7 @@ export interface ViolationLineageResponse {
     actual: string;
     difference: string;
     financial_impact: string;
-    causal_evidence: string;
+    causal_evidence: Record<string, unknown> | string;
   }>;
 }
 
@@ -447,11 +460,20 @@ export interface InvestigationExecution {
   workflow: "ROOT_CAUSE_INVESTIGATION";
   tenant_id: string;
   run_id: string;
+  source_type: "DEMO" | "CSV_UPLOAD" | "RAZORPAY";
   root_cause_id: string;
   violation_ids: string[];
   status: "PROVEN" | "UNRESOLVED";
   attempt_count: number;
   ai_configured: boolean;
+  orchestration_used: boolean;
+  orchestration_provider: string;
+  llm_used: boolean;
+  llm_provider: string | null;
+  llm_model: string | null;
+  mcp_used: boolean;
+  razorpay_context_used: boolean;
+  evidence_sources: string[];
   hypotheses: Array<{
     hypothesis_id: string;
     kind: string;

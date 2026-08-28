@@ -19,6 +19,17 @@ class EvaluationStatus(str, Enum):
     UNRESOLVED = "UNRESOLVED"
 
 
+class RunSourceType(str, Enum):
+    DEMO = "DEMO"
+    CSV_UPLOAD = "CSV_UPLOAD"
+    RAZORPAY = "RAZORPAY"
+
+
+class LineageType(str, Enum):
+    PRIMARY = "PRIMARY"
+    DOWNSTREAM = "DOWNSTREAM"
+
+
 class ControlType(str, Enum):
     MDR_RATE = "MDR_RATE"
     GST_ON_FEE = "GST_ON_FEE"
@@ -286,6 +297,10 @@ class Violation(ApiModel):
     confidence: Decimal = Decimal("1")
     status: EvaluationStatus = EvaluationStatus.VIOLATION
     root_cause_id: str | None = None
+    lineage_type: LineageType = LineageType.PRIMARY
+    root_violation_id: str | None = None
+    parent_violation_id: str | None = None
+    causal_evidence: dict[str, Any] = Field(default_factory=dict)
     occurred_at: datetime
 
 
@@ -304,6 +319,9 @@ class RootCause(ApiModel):
     verification_evidence: dict[str, Any] | None = None
     primary_violation_count: int = 0
     downstream_effect_count: int = 0
+    direct_impact: Decimal = Decimal("0")
+    downstream_impact: Decimal = Decimal("0")
+    total_attributable_impact: Decimal = Decimal("0")
 
 
 class StatusBreakdown(ApiModel):
@@ -320,38 +338,75 @@ class ConfusionMatrix(ApiModel):
     false_negative: int
 
 
+class MetricsAvailability(ApiModel):
+    ground_truth: bool = False
+    precision: bool = False
+    recall: bool = False
+    false_positive_rate: bool = False
+    control_coverage: bool = False
+
+
 class RunSummary(ApiModel):
     id: str
     name: str
     status: str
+    source_type: RunSourceType = RunSourceType.DEMO
     transaction_count: int
     event_count: int
     relationship_count: int
     control_evaluation_count: int
     breakdown: StatusBreakdown
+    pass_count: int = 0
+    violation_count: int = 0
+    warning_count: int = 0
+    unresolved_relationship_count: int = 0
     precision: Decimal
     recall: Decimal
     false_positive_rate: Decimal
     verified_leakage: Decimal
     cash_delayed: Decimal
     unresolved_count: int
+    unresolved_match_count: int = 0
     processing_ms: int
+    deterministic_processing_ms: int = 0
+    ai_processing_ms: int | None = None
     evaluations_per_second: int
+    persistence_ms: int = 0
+    total_processing_ms: int = 0
+    primary_violation_count: int = 0
+    downstream_violation_count: int = 0
+    control_coverage: Decimal | None = None
+    provider_used: str | None = None
+    model_used: str | None = None
+    mcp_used: bool = False
     confusion_matrix: ConfusionMatrix
     completed_at: datetime
     ground_truth_available: bool = True
     metrics_scope: str = "SEEDED_GROUND_TRUTH"
+    metrics_available: MetricsAvailability = Field(default_factory=MetricsAvailability)
 
 
 class RunListItem(ApiModel):
     id: str
     name: str
     status: str
-    source: str
+    source_type: RunSourceType
     transaction_count: int
     event_count: int
     control_evaluation_count: int
     completed_at: datetime | None = None
+
+
+class RunStage(ApiModel):
+    """One persisted pipeline stage of a control run, upload through finalize."""
+
+    stage: str
+    status: str
+    stage_index: int
+    started_at: datetime
+    finished_at: datetime | None = None
+    duration_ms: int | None = None
+    detail: dict[str, Any] = Field(default_factory=dict)
 
 
 class GraphNode(ApiModel):
@@ -394,6 +449,14 @@ class InfrastructureCapability(ApiModel):
     storage_policy: str
 
 
+class SourceRowError(ApiModel):
+    """A single invalid row reported without rejecting the whole file."""
+
+    row_number: int
+    column: str
+    message: str
+
+
 class SourceUploadResponse(ApiModel):
     upload_id: str | None = None
     filename: str
@@ -405,6 +468,8 @@ class SourceUploadResponse(ApiModel):
     row_count: int = 0
     columns: list[str] = Field(default_factory=list)
     decimal_values_checked: int = 0
+    row_errors: list[SourceRowError] = Field(default_factory=list)
+    row_error_count: int = 0
     storage_status: str = "NOT_STORED"
     object_path: str | None = None
 
@@ -428,6 +493,7 @@ class SourceRunResponse(ApiModel):
     control_evaluations_created: int
     violations_created: int
     persistence_status: str
+    stages: list[RunStage] = Field(default_factory=list)
 
 
 class AiCapability(ApiModel):
@@ -525,11 +591,6 @@ class ControlBacktest(ApiModel):
     canonical_data_unchanged: bool
 
 
-class LineageType(str, Enum):
-    PRIMARY = "PRIMARY"
-    DOWNSTREAM = "DOWNSTREAM"
-
-
 class ViolationLineageNode(ApiModel):
     id: str
     category: str
@@ -540,7 +601,7 @@ class ViolationLineageNode(ApiModel):
     actual: Decimal
     difference: Decimal
     financial_impact: Decimal
-    causal_evidence: str
+    causal_evidence: dict[str, Any] | str
 
 
 class ViolationLineageResponse(ApiModel):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from difflib import SequenceMatcher
@@ -15,10 +16,18 @@ from app.domain.models import (
     CaseEvidence,
     ControlType,
     FinancialEvent,
+    LineageType,
     RootCause,
+    RunStage,
     SourceRunResponse,
+    Violation,
 )
-from app.ingestion.csv import SourceCsvDocument
+from app.ingestion.csv import (
+    MONEY_COLUMNS,
+    REQUIRED_ID_COLUMNS,
+    TIMESTAMP_COLUMNS,
+    SourceCsvDocument,
+)
 from app.integrations.razorpay.sync import live_controls_for_tenant
 from app.persistence.database import session_scope
 from app.persistence.repository import (
@@ -31,6 +40,24 @@ from app.persistence.repository import (
 MATCH_THRESHOLD = Decimal("0.80")
 AMBIGUITY_MARGIN = Decimal("0.05")
 AMOUNT_TOLERANCE = Decimal("0.01")
+
+
+class _StageTimeline:
+    """Records the persisted stage timeline of a run, validation through finalize."""
+
+    def __init__(self) -> None:
+        self.stages: list[dict[str, Any]] = []
+
+    def record(self, stage: str, started: datetime, detail: dict[str, Any]) -> None:
+        self.stages.append(
+            {
+                "stage": stage,
+                "status": "COMPLETE",
+                "started_at": started,
+                "finished_at": datetime.now(timezone.utc),
+                "detail": detail,
+            }
+        )
 
 
 def execute_source_run(
@@ -48,8 +75,21 @@ def execute_source_run(
     and deterministic; no LLM participates in canonical edge creation.
     """
 
-    started = perf_counter()
+    total_started = perf_counter()
+    engine_started = perf_counter()
+    timeline = _StageTimeline()
+    validation_started = datetime.now(timezone.utc)
     _validate_bundle(documents)
+    documents, dropped_rows = _drop_invalid_rows(documents)
+    timeline.record(
+        "VALIDATE_INPUTS",
+        validation_started,
+        {
+            "files": len(documents),
+            "source_types": sorted(document.metadata.source_type for _, _, document in documents),
+            "invalid_rows_dropped": dropped_rows,
+        },
+    )
     fingerprint = sha256(
         "|".join(
             sorted(
@@ -61,11 +101,19 @@ def execute_source_run(
     run_id = f"RUN_CSV_{fingerprint[:20].upper()}"
     sync_id = f"CSV_INGEST_{fingerprint[:20].upper()}"
     completed_at = datetime.now(timezone.utc)
+    canonicalize_started = datetime.now(timezone.utc)
     events, edges, unresolved = _canonicalize(documents, run_id=run_id, completed_at=completed_at)
+    timeline.record(
+        "CANONICALIZE",
+        canonicalize_started,
+        {"events": len(events), "edges": len(edges), "unresolved_matches": unresolved},
+    )
+    engine_seconds = perf_counter() - engine_started
     controls = live_controls_for_tenant(tenant_id)
 
     with session_scope(tenant_id=tenant_id) as session:
         snapshots = SourceSnapshotRepository(session)
+        snapshot_started = datetime.now(timezone.utc)
         snapshot_ids: dict[tuple[str, str], list[str]] = defaultdict(list)
         snapshot_items: list[dict[str, Any]] = []
         snapshot_keys: list[tuple[str, str]] = []
@@ -92,12 +140,15 @@ def execute_source_run(
                         },
                         "captured_at": completed_at,
                         "run_id": run_id,
-                        "source_created_at": _row_timestamp(row, source_type, required=False),
+                        "source_created_at": _row_timestamp(
+                            row, source_type, row_number, required=False
+                        ),
                     }
                 )
         captured = snapshots.capture_many(tenant_id=tenant_id, items=snapshot_items)
         for key, snapshot in zip(snapshot_keys, captured, strict=True):
             snapshot_ids[key].append(snapshot.id)
+        timeline.record("PERSIST_SNAPSHOTS", snapshot_started, {"snapshots": len(captured)})
 
         persisted_events = []
         for event in events:
@@ -117,6 +168,7 @@ def execute_source_run(
             )
 
         run_repository = RunRepository(session)
+        persist_events_started = datetime.now(timezone.utc)
         run_repository.save_canonical_sync(
             run_id=run_id,
             sync_id=sync_id,
@@ -132,50 +184,138 @@ def execute_source_run(
                     document.metadata.source_type for _, _, document in documents
                 ),
                 "unresolved_matches": unresolved,
+                "invalid_rows_dropped": dropped_rows,
                 "pipeline_version": "csv-deterministic-v1",
             },
         )
         run_repository.save_controls(controls, tenant_id=tenant_id)
-        session.flush()
+        timeline.record(
+            "PERSIST_CANONICAL",
+            persist_events_started,
+            {"events": len(persisted_events), "edges": len(edges), "controls": len(controls)},
+        )
+        evaluation_started = perf_counter()
+        evaluate_started = datetime.now(timezone.utc)
         evaluations = build_live_control_evaluations(persisted_events, edges, controls)
         roots = _build_root_causes(run_id, evaluations)
         root_by_type = {root.category: root for root in roots}
-        evaluation_repository = ControlEvaluationRepository(session)
-        for evaluation in evaluations:
-            evaluation_repository.save(
-                tenant_id=tenant_id,
-                run_id=run_id,
-                evaluation_id=evaluation.evaluation_id,
-                control_id=evaluation.control.id,
-                control_version=evaluation.control.version,
-                target_type=evaluation.target_type,
-                target_id=evaluation.target_id,
-                outcome=evaluation.outcome.value,
-                expected_amount=evaluation.expected_amount,
-                actual_amount=evaluation.actual_amount,
-                tolerance_amount=evaluation.tolerance_amount,
-                difference_amount=evaluation.difference_amount,
-                financial_impact=evaluation.financial_impact,
-                confidence=Decimal("1"),
-                input_fingerprint=evaluation.input_fingerprint,
-                engine_version="sl3dge-deterministic-v1",
-                source_snapshot_ids=evaluation.source_snapshot_ids,
-                evidence=evaluation.evidence,
-                evaluated_at=completed_at,
+        violations = [
+            evaluation.violation.model_copy(
+                update={
+                    "root_cause_id": (
+                        root_by_type[evaluation.control.control_type.value].id
+                        if evaluation.control.control_type.value in root_by_type
+                        else None
+                    )
+                }
             )
-            if evaluation.violation is not None:
-                root = root_by_type.get(evaluation.control.control_type.value)
-                run_repository.save_violation(
-                    evaluation.violation.model_copy(
-                        update={"root_cause_id": root.id if root else None}
-                    ),
-                    run_id=run_id,
-                    tenant_id=tenant_id,
+            for evaluation in evaluations
+            if evaluation.violation is not None
+        ]
+        event_by_id = {event.id: event for event in persisted_events}
+        violation_by_payment: dict[str, Violation] = {}
+        for violation in violations:
+            if violation.control_type != ControlType.SETTLEMENT_ARITHMETIC:
+                violation_by_payment.setdefault(violation.payment_id, violation)
+        enriched_violations = []
+        for violation in violations:
+            parent = None
+            if violation.control_type == ControlType.SETTLEMENT_ARITHMETIC:
+                evaluation = next(
+                    item
+                    for item in evaluations
+                    if item.violation is not None and item.violation.id == violation.id
                 )
-        for root in roots:
-            run_repository.save_root_cause(root, run_id=run_id, tenant_id=tenant_id)
-        session.flush()
-        case_repository = CaseRepository(session)
+                payment_ids = [
+                    event_by_id[edge.from_event_id].external_id
+                    for edge in edges
+                    if edge.to_event_id == evaluation.event.id
+                    and edge.relationship == "INCLUDED_IN"
+                    and edge.from_event_id in event_by_id
+                ]
+                parent = next(
+                    (violation_by_payment.get(payment_id) for payment_id in payment_ids), None
+                )
+            if parent is not None:
+                enriched_violations.append(
+                    violation.model_copy(
+                        update={
+                            "lineage_type": LineageType.DOWNSTREAM,
+                            "root_violation_id": parent.root_violation_id or parent.id,
+                            "parent_violation_id": parent.id,
+                            "causal_evidence": {
+                                "relationship": "SETTLEMENT_ARITHMETIC_FOLLOWS_PAYMENT_DEDUCTIONS",
+                                "parent_violation_id": parent.id,
+                                "parent_control_type": parent.control_type.value,
+                                "authority": "DETERMINISTIC",
+                            },
+                        }
+                    )
+                )
+            else:
+                enriched_violations.append(
+                    violation.model_copy(
+                        update={
+                            "lineage_type": LineageType.PRIMARY,
+                            "root_violation_id": violation.id,
+                            "causal_evidence": {
+                                "relationship": "DIRECT_CONTROL_DEVIATION",
+                                "control_type": violation.control_type.value,
+                                "authority": "DETERMINISTIC",
+                            },
+                        }
+                    )
+                )
+        violations = enriched_violations
+        roots = [
+            root.model_copy(
+                update={
+                    "primary_violation_count": sum(
+                        item.root_cause_id == root.id and item.lineage_type == LineageType.PRIMARY
+                        for item in violations
+                    ),
+                    "downstream_effect_count": sum(
+                        item.root_cause_id == root.id
+                        and item.lineage_type == LineageType.DOWNSTREAM
+                        for item in violations
+                    ),
+                    "direct_impact": money(
+                        sum(
+                            (
+                                item.financial_impact
+                                for item in violations
+                                if item.root_cause_id == root.id
+                                and item.lineage_type == LineageType.PRIMARY
+                            ),
+                            Decimal("0"),
+                        )
+                    ),
+                    "downstream_impact": money(
+                        sum(
+                            (
+                                item.financial_impact
+                                for item in violations
+                                if item.root_cause_id == root.id
+                                and item.lineage_type == LineageType.DOWNSTREAM
+                            ),
+                            Decimal("0"),
+                        )
+                    ),
+                    "total_attributable_impact": money(
+                        sum(
+                            (
+                                item.financial_impact
+                                for item in violations
+                                if item.root_cause_id == root.id
+                            ),
+                            Decimal("0"),
+                        )
+                    ),
+                }
+            )
+            for root in roots
+        ]
+        investigations: list[tuple[str, RootCause, list[Any], list[CaseEvidence]]] = []
         for root in roots:
             related_evaluations = [
                 item
@@ -203,21 +343,56 @@ def execute_source_run(
                 )
                 for item in related_evaluations
             ]
-            case_repository.create_from_investigation(
-                tenant_id=tenant_id,
-                case_id=f"CASE_{root.id.removeprefix('RC_')}",
-                root_cause=root,
-                violations=related_violations,
-                evidence=evidence,
-                actor_id=actor_id,
+            investigations.append(
+                (f"CASE_{root.id.removeprefix('RC_')}", root, related_violations, evidence)
             )
+        engine_seconds += perf_counter() - evaluation_started
+        timeline.record(
+            "EVALUATE_CONTROLS",
+            evaluate_started,
+            {
+                "evaluations": len(evaluations),
+                "violations": sum(item.violation is not None for item in evaluations),
+                "root_causes": len(roots),
+            },
+        )
 
-        processing_ms = max(1, int((perf_counter() - started) * 1000))
-        run_repository.finalize_live_run(
+        persist_outcomes_started = datetime.now(timezone.utc)
+        evaluation_repository = ControlEvaluationRepository(session)
+        evaluation_repository.save_many(
+            [
+                {
+                    "tenant_id": tenant_id,
+                    "run_id": run_id,
+                    "id": evaluation.evaluation_id,
+                    "control_id": evaluation.control.id,
+                    "control_version": evaluation.control.version,
+                    "target_type": evaluation.target_type,
+                    "target_id": evaluation.target_id,
+                    "outcome": evaluation.outcome.value,
+                    "expected_amount": evaluation.expected_amount,
+                    "actual_amount": evaluation.actual_amount,
+                    "tolerance_amount": evaluation.tolerance_amount,
+                    "difference_amount": evaluation.difference_amount,
+                    "financial_impact": evaluation.financial_impact,
+                    "confidence": Decimal("1"),
+                    "input_fingerprint": evaluation.input_fingerprint,
+                    "engine_version": "sl3dge-deterministic-v1",
+                    "source_snapshot_ids": evaluation.source_snapshot_ids,
+                    "evidence": evaluation.evidence,
+                    "evaluated_at": completed_at,
+                }
+                for evaluation in evaluations
+            ]
+        )
+        run_repository.save_root_causes(roots, run_id=run_id, tenant_id=tenant_id)
+        run_repository.save_violations(violations, run_id=run_id, tenant_id=tenant_id)
+        case_repository = CaseRepository(session)
+        case_repository.create_many_from_investigations(
             tenant_id=tenant_id,
             run_id=run_id,
-            control_evaluation_count=len(evaluations),
-            processing_ms=processing_ms,
+            investigations=investigations,
+            actor_id=actor_id,
         )
         run_repository.write_audit(
             tenant_id=tenant_id,
@@ -236,6 +411,39 @@ def execute_source_run(
             },
             request_id=request_id,
         )
+        session.flush()
+        timeline.record(
+            "PERSIST_OUTCOMES",
+            persist_outcomes_started,
+            {
+                "violations": len(violations),
+                "root_causes": len(roots),
+                "cases": len(investigations),
+                "evaluations": len(evaluations),
+            },
+        )
+        engine_processing_ms = max(1, int(engine_seconds * 1000))
+        total_processing_ms = max(1, int((perf_counter() - total_started) * 1000))
+        persistence_ms = max(0, total_processing_ms - engine_processing_ms)
+        finalize_started = datetime.now(timezone.utc)
+        run_repository.finalize_live_run(
+            tenant_id=tenant_id,
+            run_id=run_id,
+            control_evaluation_count=len(evaluations),
+            processing_ms=engine_processing_ms,
+            persistence_ms=persistence_ms,
+            total_processing_ms=total_processing_ms,
+        )
+        timeline.record(
+            "FINALIZE",
+            finalize_started,
+            {
+                "engine_processing_ms": engine_processing_ms,
+                "persistence_ms": persistence_ms,
+                "total_processing_ms": total_processing_ms,
+            },
+        )
+        run_repository.save_run_stages(tenant_id=tenant_id, run_id=run_id, stages=timeline.stages)
 
     return SourceRunResponse(
         run_id=run_id,
@@ -249,6 +457,17 @@ def execute_source_run(
         control_evaluations_created=len(evaluations),
         violations_created=sum(item.violation is not None for item in evaluations),
         persistence_status="POSTGRES",
+        stages=[
+            RunStage(
+                stage=stage["stage"],
+                status=stage["status"],
+                stage_index=index,
+                started_at=stage["started_at"],
+                finished_at=stage["finished_at"],
+                detail=stage["detail"],
+            )
+            for index, stage in enumerate(timeline.stages)
+        ],
     )
 
 
@@ -267,6 +486,66 @@ def _validate_bundle(documents: list[tuple[str, str, SourceCsvDocument]]) -> Non
     missing = sorted(required - set(types))
     if missing:
         raise ValueError("A control run requires: " + ", ".join(missing))
+
+
+def _drop_invalid_rows(
+    documents: list[tuple[str, str, SourceCsvDocument]],
+) -> tuple[list[tuple[str, str, SourceCsvDocument]], int]:
+    """Remove only rows with deterministic validation errors.
+
+    A malformed row must not prevent unrelated valid rows from being ingested.
+    Upload metadata retains the row-level errors for user remediation, while the
+    execution manifest records how many rows were excluded from canonicalization.
+    """
+
+    filtered: list[tuple[str, str, SourceCsvDocument]] = []
+    dropped = 0
+    for artifact_id, filename, document in documents:
+        invalid_numbers = _recompute_invalid_row_numbers(document)
+        valid_rows = [
+            row
+            for row_number, row in enumerate(document.rows, start=2)
+            if row_number not in invalid_numbers
+        ]
+        dropped += len(document.rows) - len(valid_rows)
+        if valid_rows != document.rows:
+            document = replace(document, rows=valid_rows)
+        filtered.append((artifact_id, filename, document))
+    return filtered, dropped
+
+
+def _recompute_invalid_row_numbers(document: SourceCsvDocument) -> set[int]:
+    """Recompute the complete invalid-row set, beyond the capped API error list."""
+
+    source_type = document.metadata.source_type
+    id_column = REQUIRED_ID_COLUMNS.get(source_type)
+    timestamp_column = TIMESTAMP_COLUMNS.get(source_type)
+    invalid: set[int] = set()
+    for row_number, row in enumerate(document.rows, start=2):
+        if id_column is not None and not (row.get(id_column) or "").strip():
+            invalid.add(row_number)
+        if timestamp_column is not None:
+            raw_timestamp = (row.get(timestamp_column) or "").strip()
+            if not raw_timestamp:
+                invalid.add(row_number)
+            else:
+                try:
+                    datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
+                except ValueError:
+                    invalid.add(row_number)
+        for column in MONEY_COLUMNS.intersection(row):
+            raw = (row.get(column) or "").strip()
+            if not raw:
+                continue
+            try:
+                parsed = Decimal(raw)
+            except InvalidOperation:
+                invalid.add(row_number)
+                break
+            if not parsed.is_finite():
+                invalid.add(row_number)
+                break
+    return invalid
 
 
 def _canonicalize(
@@ -288,6 +567,7 @@ def _canonicalize(
         amount: Decimal,
         timestamp: datetime,
         normalized: dict[str, Any],
+        row_number: int,
     ) -> FinancialEvent:
         event = FinancialEvent(
             id=f"csv:{event_type.lower()}:{external_id}",
@@ -303,35 +583,41 @@ def _canonicalize(
             normalized_payload={"source_type": source_type, **normalized},
         )
         if event.id in events:
-            raise ValueError(f"Duplicate {event_type.lower()} identifier: {external_id}")
+            raise ValueError(
+                f"{source_type} row {row_number}: duplicate {event_type.lower()} "
+                f"identifier {external_id}"
+            )
         events[event.id] = event
         return event
 
-    for row in by_type.get("ORDERS", []):
-        order_id = _required(row, "order_id", "ORDERS")
+    for row_number, row in enumerate(by_type.get("ORDERS", []), start=2):
+        order_id = _required(row, "order_id", "ORDERS", row_number)
         add_event(
             "ORDERS",
             order_id,
             "ORDER",
             row,
-            amount=_amount(row, "amount"),
-            timestamp=_row_timestamp(row, "ORDERS"),
+            amount=_amount(row, "amount", row_number),
+            timestamp=_row_timestamp(row, "ORDERS", row_number),
             normalized={"customer_id": row.get("customer_id"), "payment_id": row.get("payment_id")},
+            row_number=row_number,
         )
 
     payment_rows = by_type.get("PAYMENTS", [])
     refund_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    for row in by_type.get("REFUNDS", []):
-        refund_totals[_required(row, "payment_id", "REFUNDS")] += _amount(row, "amount")
-    for row in payment_rows:
-        payment_id = _required(row, "payment_id", "PAYMENTS")
+    for row_number, row in enumerate(by_type.get("REFUNDS", []), start=2):
+        refund_totals[_required(row, "payment_id", "REFUNDS", row_number)] += _amount(
+            row, "amount", row_number
+        )
+    for row_number, row in enumerate(payment_rows, start=2):
+        payment_id = _required(row, "payment_id", "PAYMENTS", row_number)
         payment = add_event(
             "PAYMENTS",
             payment_id,
             "PAYMENT",
             row,
-            amount=_amount(row, "amount"),
-            timestamp=_row_timestamp(row, "PAYMENTS"),
+            amount=_amount(row, "amount", row_number),
+            timestamp=_row_timestamp(row, "PAYMENTS", row_number),
             normalized={
                 "order_id": row.get("order_id"),
                 "payment_method": row.get("payment_method", "").lower(),
@@ -343,69 +629,80 @@ def _canonicalize(
                 "tax": _decimal_text(row.get("tax")),
                 "amount_refunded": str(money(refund_totals[payment_id])),
             },
+            row_number=row_number,
         )
         order_id = row.get("order_id")
         if order_id and f"csv:order:{order_id}" in events:
             _add_edge(edges, run_id, events[f"csv:order:{order_id}"], payment, "PAID_BY")
 
-    for row in by_type.get("REFUNDS", []):
-        refund_id = _required(row, "refund_id", "REFUNDS")
+    for row_number, row in enumerate(by_type.get("REFUNDS", []), start=2):
+        refund_id = _required(row, "refund_id", "REFUNDS", row_number)
         refund = add_event(
             "REFUNDS",
             refund_id,
             "REFUND",
             row,
-            amount=_amount(row, "amount"),
-            timestamp=_row_timestamp(row, "REFUNDS"),
+            amount=_amount(row, "amount", row_number),
+            timestamp=_row_timestamp(row, "REFUNDS", row_number),
             normalized={"payment_id": row.get("payment_id"), "fee": "0.00"},
+            row_number=row_number,
         )
         payment = events.get(f"csv:payment:{row.get('payment_id', '')}")
         if payment is not None:
             _add_edge(edges, run_id, payment, refund, "REFUNDED_BY")
 
-    settlement_groups: dict[str, list[dict[str, str]]] = defaultdict(list)
-    for row in by_type.get("SETTLEMENTS", []):
-        settlement_groups[_required(row, "settlement_id", "SETTLEMENTS")].append(row)
-    for settlement_id, rows in settlement_groups.items():
-        amount = sum((_amount(row, "net_amount") for row in rows), Decimal("0"))
-        timestamp = max(_row_timestamp(row, "SETTLEMENTS") for row in rows)
+    settlement_groups: dict[str, list[tuple[int, dict[str, str]]]] = defaultdict(list)
+    for row_number, row in enumerate(by_type.get("SETTLEMENTS", []), start=2):
+        settlement_groups[_required(row, "settlement_id", "SETTLEMENTS", row_number)].append(
+            (row_number, row)
+        )
+    for settlement_id, numbered_rows in settlement_groups.items():
+        amount = sum(
+            (_amount(row, "net_amount", row_number) for row_number, row in numbered_rows),
+            Decimal("0"),
+        )
+        timestamp = max(
+            _row_timestamp(row, "SETTLEMENTS", row_number) for row_number, row in numbered_rows
+        )
         settlement = add_event(
             "SETTLEMENTS",
             settlement_id,
             "SETTLEMENT",
-            rows[0],
+            numbered_rows[0][1],
             amount=amount,
             timestamp=timestamp,
             normalized={
-                "payment_ids": [row.get("payment_id") for row in rows],
-                "row_count": len(rows),
+                "payment_ids": [row.get("payment_id") for _, row in numbered_rows],
+                "row_count": len(numbered_rows),
             },
+            row_number=numbered_rows[0][0],
         )
-        for row in rows:
+        for _, row in numbered_rows:
             payment = events.get(f"csv:payment:{row.get('payment_id', '')}")
             if payment is not None:
                 _add_edge(edges, run_id, payment, settlement, "INCLUDED_IN")
 
-    for row in by_type.get("CHARGEBACKS", []):
-        chargeback_id = _required(row, "chargeback_id", "CHARGEBACKS")
+    for row_number, row in enumerate(by_type.get("CHARGEBACKS", []), start=2):
+        chargeback_id = _required(row, "chargeback_id", "CHARGEBACKS", row_number)
         chargeback = add_event(
             "CHARGEBACKS",
             chargeback_id,
             "CHARGEBACK",
             row,
-            amount=_amount(row, "amount"),
-            timestamp=_row_timestamp(row, "CHARGEBACKS"),
+            amount=_amount(row, "amount", row_number),
+            timestamp=_row_timestamp(row, "CHARGEBACKS", row_number),
             normalized={"payment_id": row.get("payment_id"), "fee": _decimal_text(row.get("fee"))},
+            row_number=row_number,
         )
         payment = events.get(f"csv:payment:{row.get('payment_id', '')}")
         if payment is not None:
             _add_edge(edges, run_id, payment, chargeback, "CHARGEBACKED_BY")
 
     bank_events: list[FinancialEvent] = []
-    for row in by_type.get("BANK_RECONCILIATION", []):
-        bank_id = _required(row, "bank_txn_id", "BANK_RECONCILIATION")
-        credit = _amount(row, "credit")
-        debit = _amount(row, "debit")
+    for row_number, row in enumerate(by_type.get("BANK_RECONCILIATION", []), start=2):
+        bank_id = _required(row, "bank_txn_id", "BANK_RECONCILIATION", row_number)
+        credit = _amount(row, "credit", row_number)
+        debit = _amount(row, "debit", row_number)
         bank_events.append(
             add_event(
                 "BANK_RECONCILIATION",
@@ -413,11 +710,12 @@ def _canonicalize(
                 "BANK_CREDIT" if credit > 0 else "BANK_DEBIT",
                 row,
                 amount=credit if credit > 0 else debit,
-                timestamp=_row_timestamp(row, "BANK_RECONCILIATION"),
+                timestamp=_row_timestamp(row, "BANK_RECONCILIATION", row_number),
                 normalized={
                     "reference": row.get("reference"),
                     "description": row.get("description"),
                 },
+                row_number=row_number,
             )
         )
 
@@ -597,32 +895,32 @@ def _id_column(source_type: str) -> str:
     }[source_type]
 
 
-def _required(row: dict[str, str], column: str, source_type: str) -> str:
+def _required(row: dict[str, str], column: str, source_type: str, row_number: int) -> str:
     value = (row.get(column) or "").strip()
     if not value:
-        raise ValueError(f"{source_type} contains an empty {column}")
+        raise ValueError(f"{source_type} row {row_number}: empty required {column}")
     return value
 
 
-def _amount(row: dict[str, str], column: str) -> Decimal:
+def _amount(row: dict[str, str], column: str, row_number: int) -> Decimal:
     raw = (row.get(column) or "0").strip() or "0"
     try:
         value = Decimal(raw)
     except InvalidOperation as exc:
-        raise ValueError(f"Invalid decimal value in {column}") from exc
+        raise ValueError(f"row {row_number}: invalid decimal value '{raw}' in {column}") from exc
     if not value.is_finite():
-        raise ValueError(f"Non-finite decimal value in {column}")
+        raise ValueError(f"row {row_number}: non-finite decimal value in {column}")
     return money(value)
 
 
 def _decimal_text(value: str | None) -> str | None:
     if value is None or not value.strip():
         return None
-    return str(_amount({"value": value}, "value"))
+    return str(_amount({"value": value}, "value", 0))
 
 
 def _row_timestamp(
-    row: dict[str, str], source_type: str, *, required: bool = True
+    row: dict[str, str], source_type: str, row_number: int, *, required: bool = True
 ) -> datetime | None:
     column = {
         "ORDERS": "created_at",
@@ -635,10 +933,12 @@ def _row_timestamp(
     raw = (row.get(column) or "").strip()
     if not raw:
         if required:
-            raise ValueError(f"{source_type} contains an empty {column}")
+            raise ValueError(f"{source_type} row {row_number}: empty required {column}")
         return None
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise ValueError(f"{source_type} contains an invalid ISO-8601 {column}") from exc
+        raise ValueError(
+            f"{source_type} row {row_number}: invalid ISO-8601 {column} '{raw}'"
+        ) from exc
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

@@ -17,7 +17,12 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useAuth } from "@/components/auth-provider";
-import { setActiveRunId, useActiveRunId } from "@/lib/active-run";
+import {
+  resolveActiveRun,
+  setActiveRunId,
+  useActiveRunId,
+  useActiveRunOverride,
+} from "@/lib/active-run";
 import { api } from "@/lib/api";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -26,10 +31,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isNavigating = pendingHref !== null && pendingHref !== pathname;
   const auth = useAuth();
   const selectedRunId = useActiveRunId();
+  const isOverride = useActiveRunOverride();
   const runs = useQuery({ queryKey: ["runs"], queryFn: api.runs });
-  const activeRun =
-    runs.data?.find((run) => run.id === selectedRunId) ??
-    runs.data?.find((run) => run.source !== "SEEDED" && run.status === "COMPLETE");
+  const activeRun = resolveActiveRun(runs.data, selectedRunId, { allowSeeded: isOverride });
   const items = [
     { label: "Overview", icon: LayoutDashboard, href: "/" },
     {
@@ -93,13 +97,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <select
                 id="active-run"
                 value={activeRun?.id ?? ""}
-                onChange={(event) => setActiveRunId(event.currentTarget.value)}
+                onChange={(event) => {
+                  const run = runs.data?.find((item) => item.id === event.currentTarget.value);
+                  // Seeded demo selections stay session-scoped so they never
+                  // become the default workspace on the next page load.
+                  setActiveRunId(event.currentTarget.value, {
+                    persist: run?.source_type !== "DEMO",
+                  });
+                }}
                 className="max-w-56 bg-transparent font-medium text-[#52615a] outline-none"
               >
                 <option value="">Select a run</option>
                 {runs.data.map((run) => (
                   <option key={run.id} value={run.id}>
-                    {run.name} · {run.source.replaceAll("_", " ")}
+                    {run.name} · {run.source_type.replaceAll("_", " ")}
                   </option>
                 ))}
               </select>

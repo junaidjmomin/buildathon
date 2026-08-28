@@ -30,6 +30,13 @@ body {
   background: #c6ead9;
 }
 
+/* Inputs restyle focus via focus:border-*; everything else (buttons, links,
+   selects) relies on this keyboard-only indicator. */
+:focus-visible {
+  outline: 2px solid #1e6b51;
+  outline-offset: 2px;
+}
+
 .panel {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.94);

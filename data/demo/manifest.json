@@ -23,8 +23,8 @@
     "unresolved": 5
   },
   "run_outcomes": {
-    "pass": 439,
-    "violation": 56,
+    "pass": 1655,
+    "violation": 358,
     "warning": 0,
     "unresolved": 5,
     "precision": "1.0000",

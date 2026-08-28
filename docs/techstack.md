@@ -747,8 +747,10 @@ Its exact seeded counts are:
 }
 ```
 
-The full manifest also records 439 `PASS`, 56 `VIOLATION`, 0 `WARNING`, 5
-`UNRESOLVED`; mutation results 50/47/3 with 0 false positives; and pre-approval
+The manifest records payment-level ground truth of 439 `PASS`, 56 labeled
+violations, and 5 unresolved records. Its authoritative control-evaluation
+summary is 1,655 `PASS`, 358 `VIOLATION`, 0 `WARNING`, and 5 `UNRESOLVED`;
+mutation results remain 50/47/3 with 0 false positives; and pre-approval
 coverage of 2,009 material, 2,000 governed, and 9 ungoverned edges. Decimal
 metrics and all acceptance economics are strings. These are exact expectations,
 not approximate performance targets.

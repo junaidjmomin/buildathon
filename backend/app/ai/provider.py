@@ -79,6 +79,7 @@ class GroqStructuredProvider:
         max_output_tokens: int,
         max_input_chars: int,
     ) -> None:
+        self.provider_name = "groq"
         self.model_name = model
         self.max_input_chars = max_input_chars
         self.model = ChatGroq(

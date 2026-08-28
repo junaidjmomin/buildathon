@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LoaderCircle, ShieldCheck } from "lucide-react";
+import { ArrowRight, LoaderCircle, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
 import { api } from "@/lib/api";
@@ -24,7 +25,14 @@ export default function ControlsPage() {
           <LoaderCircle className="mx-auto mt-20 animate-spin text-[#1e6b51]" />
         ) : controls.isError ? (
           <div className="panel mt-7 rounded-2xl p-8 text-sm text-[#a43d32]" role="alert">
-            Controls could not be loaded.
+            Controls could not be loaded.{" "}
+            <button type="button" onClick={() => controls.refetch()} className="font-semibold underline">
+              Retry
+            </button>
+          </div>
+        ) : controls.data?.length === 0 ? (
+          <div className="panel mt-7 rounded-2xl p-8 text-sm text-[#66716b]">
+            No controls have been approved yet. Approve proposals on the Agreements page to populate the registry.
           </div>
         ) : (
           <section className="mt-7 space-y-3">
@@ -33,7 +41,11 @@ export default function ControlsPage() {
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                   <div>
                     <p className="font-mono text-[10px] text-[#758079]">{control.id} · v{control.version}</p>
-                    <h2 className="mt-1 text-base font-semibold">{control.name}</h2>
+                    <h2 className="mt-1 text-base font-semibold">
+                      <Link href={`/controls/${control.logical_control_key}`} className="inline-flex items-center gap-1 hover:underline">
+                        {control.name} <ArrowRight size={13} className="text-[#1e6b51]" />
+                      </Link>
+                    </h2>
                     <p className="mt-2 text-xs text-[#66716b]">{control.scope} · {control.expected}</p>
                     <p className="mt-2 text-[11px] text-[#78827d]">{control.source} · {control.source_clause}</p>
                   </div>

@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   UploadCloud,
 } from "lucide-react";
+import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
 import { api } from "@/lib/api";
@@ -79,6 +80,20 @@ export default function AgreementsPage() {
       </AppShell>
     );
   }
+  if (agreements.isError) {
+    return (
+      <AppShell>
+        <main className="mx-auto max-w-3xl px-5 py-10 md:px-8">
+          <div className="panel rounded-2xl p-8 text-sm text-[#a43d32]" role="alert">
+            Agreements could not be loaded.{" "}
+            <button type="button" onClick={() => agreements.refetch()} className="font-semibold underline">
+              Retry
+            </button>
+          </div>
+        </main>
+      </AppShell>
+    );
+  }
   if (!agreement) {
     return (
       <AppShell>
@@ -88,8 +103,19 @@ export default function AgreementsPage() {
       </AppShell>
     );
   }
-  if (!proposals.data) {
-    return <AppShell><main className="p-8">Agreement proposals could not be loaded.</main></AppShell>;
+  if (proposals.isError || !proposals.data) {
+    return (
+      <AppShell>
+        <main className="mx-auto max-w-3xl px-5 py-10 md:px-8">
+          <div className="panel rounded-2xl p-8 text-sm text-[#a43d32]" role="alert">
+            Agreement proposals could not be loaded.{" "}
+            <button type="button" onClick={() => proposals.refetch()} className="font-semibold underline">
+              Retry
+            </button>
+          </div>
+        </main>
+      </AppShell>
+    );
   }
 
   const clauses = new Map(agreement.clauses.map((clause) => [clause.id, clause]));
@@ -122,7 +148,7 @@ export default function AgreementsPage() {
 
         <section className="panel mb-6 mt-6 rounded-2xl p-5">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-            <div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#e5f2eb] text-[#1e6b51]"><FileText size={18} /></span><div><h2 className="text-sm font-semibold">{agreement.title}</h2><p className="mt-1 text-xs text-[#6c7771]">{agreement.merchant} · Effective {agreement.effective_from}</p></div></div>
+            <div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#e5f2eb] text-[#1e6b51]"><FileText size={18} /></span><div><h2 className="text-sm font-semibold"><Link href={`/agreements/${agreement.id}`} className="hover:underline">{agreement.title}</Link></h2><p className="mt-1 text-xs text-[#6c7771]">{agreement.merchant} · Effective {agreement.effective_from}</p></div></div>
             <span className="w-fit rounded-full bg-[#dff2e8] px-2.5 py-1 text-[10px] font-bold text-[#1e6b51]">{agreement.status}</span>
           </div>
           <div className="mt-4 grid gap-3 border-t border-[#e4e8e2] pt-4 text-[10px] text-[#6d7872] sm:grid-cols-3"><div><span className="block uppercase tracking-[0.1em]">Source</span><strong className="mt-1 block text-xs text-[#202b26]">{agreement.source_type}</strong></div><div><span className="block uppercase tracking-[0.1em]">Clauses indexed</span><strong className="mt-1 block text-xs text-[#202b26]">{agreement.clauses.length}</strong></div><div><span className="block uppercase tracking-[0.1em]">Content fingerprint</span><strong className="mt-1 block truncate font-mono text-xs text-[#202b26]">{agreement.content_hash}</strong></div></div>

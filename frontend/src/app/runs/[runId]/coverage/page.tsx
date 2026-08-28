@@ -17,7 +17,7 @@ export default function ControlCoveragePage() {
   });
 
   if (coverage.isPending) return <AppShell><div className="grid min-h-[calc(100vh-64px)] place-items-center"><LoaderCircle className="animate-spin text-[#1e6b51]" /></div></AppShell>;
-  if (!coverage.data) return <AppShell><main className="p-8">Control coverage could not be loaded.</main></AppShell>;
+  if (coverage.isError || !coverage.data) return <AppShell><main className="mx-auto max-w-3xl px-5 py-10 md:px-8"><div className="panel rounded-2xl p-8 text-sm text-[#a43d32]" role="alert">Control coverage could not be loaded.{" "}<button type="button" onClick={() => coverage.refetch()} className="font-semibold underline">Retry</button></div></main></AppShell>;
   const data = coverage.data;
 
   return (

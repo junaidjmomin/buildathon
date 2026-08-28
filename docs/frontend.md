@@ -442,14 +442,17 @@ Verified Leakage
 Unresolved
 ```
 
-Secondary:
+Secondary (authoritative control-evaluation outcomes):
 
 ```text
-PASS             439
-VIOLATION         56
+PASS             1,655
+VIOLATION         358
 WARNING            0
 UNRESOLVED          5
 ```
+
+Payment-level ground truth remains 439 pass, 56 labeled violations, and 5
+unresolved records for precision/recall scoring.
 
 Show measured throughput. The following values are illustrative runtime output,
 not seeded manifest counts:
@@ -1115,7 +1118,8 @@ The NovaCart UI must display the exact `data/demo/manifest.json` values:
 500 payments · 500 orders · 84 settlements · 84 bank entries
 5 refunds · 6 chargebacks · 1,179 events · 1,495 edges
 2,018 control evaluations
-439 PASS · 56 VIOLATION · 0 WARNING · 5 UNRESOLVED
+1,655 PASS · 358 VIOLATION · 0 WARNING · 5 UNRESOLVED (control outcomes)
+Payment ground truth: 439 PASS · 56 labeled violations · 5 UNRESOLVED
 ₹13,280.24 verified leakage
 ```
 
@@ -1391,7 +1395,7 @@ Difference ₹50,000
 8. Trace the complete Financial Event Graph
 9. Show one PRIMARY MDR violation and three DOWNSTREAM effects
 10. Open systemic root cause RC_MDR_01
-11. Run the bounded trace: collect evidence → fetch context → load control → generate and test hypothesis
+11. Run the bounded trace: collect evidence → load source context → load control → generate and test hypothesis
 12. Show the first hypothesis REJECTED → alternate hypothesis → VERIFIED → case attached
 13. Run 50 isolated financial mutations
 14. Show 47 detected / 3 missed / 0 false positives

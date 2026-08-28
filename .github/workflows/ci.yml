@@ -75,6 +75,20 @@ jobs:
   containers:
     runs-on: ubuntu-latest
     needs: [backend, frontend]
+    services:
+      postgres:
+        image: postgres:16.10-bookworm
+        env:
+          POSTGRES_DB: sl3dge_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sl3dge_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -83,6 +97,7 @@ jobs:
           context: backend
           file: backend/Dockerfile
           push: false
+          load: true
           tags: sl3dge-backend:ci
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
@@ -91,9 +106,57 @@ jobs:
           context: frontend
           file: frontend/Dockerfile
           push: false
+          load: true
           tags: sl3dge-frontend:ci
           build-args: |
             NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
             NEXT_PUBLIC_APP_MODE=demo
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+      - name: Start backend container against the CI Postgres
+        run: |
+          docker run -d --name sl3dge-backend --network host \
+            -e DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sl3dge_ci \
+            -e TRUSTED_HOSTS=localhost,127.0.0.1 \
+            sl3dge-backend:ci
+      - name: Apply migrations inside the backend container
+        run: docker exec sl3dge-backend alembic upgrade head
+      - name: Wait for backend readiness (live, ready, Docker healthcheck)
+        run: |
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health/live >/dev/null && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/health/live
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health/ready >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/health/ready
+          for _ in $(seq 1 30); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' sl3dge-backend)"
+            [ "$status" = "healthy" ] && break
+            sleep 5
+          done
+          test "$status" = "healthy"
+      - name: Smoke-test the API surface
+        run: |
+          curl -fsS http://127.0.0.1:8000/api/v1/health
+          curl -fsS http://127.0.0.1:8000/api/v1/capabilities/infrastructure
+      - name: Start frontend container
+        run: docker run -d --name sl3dge-frontend --network host sl3dge-frontend:ci
+      - name: Wait for frontend to serve
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/ >/dev/null; then
+              curl -fsS -o /dev/null -w "frontend HTTP %{http_code}\n" http://127.0.0.1:3000/
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          docker logs sl3dge-backend 2>&1 || true
+          docker logs sl3dge-frontend 2>&1 || true

@@ -113,11 +113,14 @@ export const api = {
   approveControl: (controlId: string) =>
     request<{ id: string; status: string }>(`/controls/${segment(controlId)}/approve`, { method: "POST" }),
   controls: () => request<Control[]>("/controls"),
+  controlVersions: (logicalControlKey: string) =>
+    request<Control[]>(`/controls/${segment(logicalControlKey)}/versions`),
   lineage: (runId: string, paymentId: string) =>
     request<ViolationLineageResponse>(`/runs/${segment(runId)}/payments/${segment(paymentId)}/lineage`),
   counterfactual: (runId: string, paymentId: string) =>
     request<CounterfactualSettlement>(`/runs/${segment(runId)}/payments/${segment(paymentId)}/counterfactual`),
   agreements: () => request<Agreement[]>("/agreements"),
+  agreement: (agreementId: string) => request<Agreement>(`/agreements/${segment(agreementId)}`),
   uploadAgreement: (formData: FormData) =>
     request<Agreement>(
       "/agreements/upload",

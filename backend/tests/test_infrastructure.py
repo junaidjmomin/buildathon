@@ -200,6 +200,40 @@ def test_polars_csv_ingestion_keeps_money_in_decimal_text_semantics() -> None:
     assert parsed.decimal_values_checked == 3
 
 
+def test_bulk_upsert_bypasses_orm_session_insert_grouping() -> None:
+    """Bulk writes must execute on the connection, not the ORM session.
+
+    ``Session.execute`` routes Core INSERT executemany through the ORM bulk
+    insert path, which splits rows with different NULL-column patterns into
+    separate statements. Against a hosted PostgreSQL one round trip is emitted
+    per group, which previously dominated end-to-end run latency (250
+    evaluations took 84 seconds). See ``_bulk_upsert`` for the full rationale.
+    """
+
+    from unittest.mock import MagicMock
+
+    from app.persistence.repository import _bulk_upsert
+
+    session = MagicMock()
+    session.get_bind.return_value.dialect.name = "postgresql"
+
+    values = [{"tenant_id": "t", "id": f"row_{index}", "amount": None} for index in range(8)] + [
+        {"tenant_id": "t", "id": f"row_{index}", "amount": Decimal("1.00")}
+        for index in range(8, 10)
+    ]
+
+    _bulk_upsert(
+        session,
+        ViolationRecord,
+        values,
+        conflict_columns=["tenant_id", "run_id", "id"],
+        update_columns=["payment_id"],
+    )
+
+    session.connection.return_value.execute.assert_called_once()
+    session.execute.assert_not_called()
+
+
 def test_source_upload_validates_locally_without_storage_credentials() -> None:
     response = TestClient(app).post(
         "/api/v1/sources/upload",
