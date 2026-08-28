@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from pathlib import PurePath
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
@@ -1449,6 +1450,124 @@ def payment_counterfactual(
         return store.counterfactual(payment_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Payment not found") from exc
+
+
+@router.post(
+    "/runs/{run_id}/temporal-replay",
+    response_model=TemporalReplayResponse,
+)
+def temporal_replay(
+    run_id: str,
+    payload: TemporalReplayRequest,
+    principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
+) -> TemporalReplayResponse:
+    """Replay MDR expectations under an approved effective-dated control version."""
+
+    if run_id == DEMO_RUN_ID:
+        _require_seeded_demo(principal)
+        store.ensure_loaded()
+        assert store.dataset is not None
+        controls = CONTROLS
+        payments = store.dataset.payments
+    elif get_settings().database_url:
+        with session_scope(tenant_id=principal.tenant_id) as session:
+            repository = RunRepository(session)
+            if session.get(RunRecord, (principal.tenant_id, run_id)) is None:
+                raise HTTPException(status_code=404, detail="Run not found")
+            controls = repository.list_controls(
+                tenant_id=principal.tenant_id,
+                approved_only=True,
+            )
+            payments = live_payment_views.payment_lifecycles(
+                session,
+                tenant_id=principal.tenant_id,
+                run_id=run_id,
+            )
+    else:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    candidate = next((control for control in controls if control.id == payload.control_id), None)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="Control version not found")
+    if candidate.status != "APPROVED":
+        raise HTTPException(status_code=409, detail="Replay requires an approved control version")
+    if candidate.logical_control_key != "DOMESTIC_CARD_MDR":
+        raise HTTPException(
+            status_code=422, detail="Replay currently supports MDR control versions"
+        )
+    try:
+        replay_rate = Decimal(str(candidate.parameters.get("rate")))
+        replay_tolerance = Decimal(str(candidate.parameters.get("tolerance", "0.01")))
+    except (InvalidOperation, TypeError) as exc:
+        raise HTTPException(
+            status_code=422, detail="Control rate and tolerance are invalid"
+        ) from exc
+    if not replay_rate.is_finite() or not replay_tolerance.is_finite():
+        raise HTTPException(status_code=422, detail="Control rate and tolerance must be finite")
+
+    baseline_expected = Decimal("0")
+    replay_expected = Decimal("0")
+    baseline_violations = 0
+    replay_violations = 0
+    evidence: list[dict[str, Any]] = []
+    for payment in payments:
+        if payment.payment_method.lower() != "card":
+            continue
+        baseline_control = next(
+            (
+                control
+                for control in controls
+                if control.logical_control_key == "DOMESTIC_CARD_MDR"
+                and control.status == "APPROVED"
+                and control.effective_from <= payment.captured_at.date()
+                and (
+                    control.effective_to is None
+                    or payment.captured_at.date() <= control.effective_to
+                )
+            ),
+            None,
+        )
+        if baseline_control is None:
+            continue
+        baseline_rate = Decimal(str(baseline_control.parameters.get("rate")))
+        baseline_tolerance = Decimal(str(baseline_control.parameters.get("tolerance", "0.01")))
+        expected_before = expected_fee(payment.amount, baseline_rate)
+        expected_after = expected_fee(payment.amount, replay_rate)
+        actual_fee = payment.actual_fee
+        baseline_expected += expected_before
+        replay_expected += expected_after
+        baseline_bad = abs(actual_fee - expected_before) > baseline_tolerance
+        replay_bad = abs(actual_fee - expected_after) > replay_tolerance
+        baseline_violations += int(baseline_bad)
+        replay_violations += int(replay_bad)
+        if len(evidence) < 100 and expected_before != expected_after:
+            evidence.append(
+                {
+                    "payment_id": payment.payment_id,
+                    "captured_at": payment.captured_at.isoformat(),
+                    "actual_fee": actual_fee,
+                    "baseline_expected_fee": expected_before,
+                    "replay_expected_fee": expected_after,
+                    "difference": money(expected_after - expected_before),
+                    "baseline_control_id": baseline_control.id,
+                    "replay_control_id": candidate.id,
+                }
+            )
+    return TemporalReplayResponse(
+        run_id=run_id,
+        control_id=candidate.id,
+        control_version=candidate.version,
+        logical_control_key=candidate.logical_control_key,
+        transaction_count=sum(
+            1 for payment in payments if payment.payment_method.lower() == "card"
+        ),
+        baseline_expected_amount=money(baseline_expected),
+        replay_expected_amount=money(replay_expected),
+        difference_amount=money(replay_expected - baseline_expected),
+        baseline_violation_count=baseline_violations,
+        replay_violation_count=replay_violations,
+        evidence=evidence,
+    )
 
 
 @router.get("/root-causes/{root_cause_id}", response_model=RootCause)

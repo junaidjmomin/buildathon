@@ -209,6 +209,20 @@ export interface ControlBacktest {
   canonical_data_unchanged: boolean;
 }
 
+export interface TemporalReplayResponse {
+  run_id: string;
+  control_id: string;
+  control_version: number;
+  logical_control_key: string;
+  transaction_count: number;
+  baseline_expected_amount: string;
+  replay_expected_amount: string;
+  difference_amount: string;
+  baseline_violation_count: number;
+  replay_violation_count: number;
+  evidence: Array<Record<string, unknown>>;
+}
+
 export interface ViolationLineageResponse {
   payment_id: string;
   primary_violation_count: number;

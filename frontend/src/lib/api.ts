@@ -27,6 +27,7 @@ import type {
   SourceUploadResponse,
   SourceUploadBatchResponse,
   SourceRunResponse,
+  TemporalReplayResponse,
   UnresolvedMatch,
   Violation,
   ViolationLineageResponse,
@@ -113,6 +114,11 @@ export const api = {
       `/controls/${segment(controlId)}/backtest${runId ? `?run_id=${segment(runId)}` : ""}`,
       { method: "POST" },
     ),
+  temporalReplay: (runId: string, controlId: string) =>
+    request<TemporalReplayResponse>(`/runs/${segment(runId)}/temporal-replay`, {
+      method: "POST",
+      body: JSON.stringify({ control_id: controlId }),
+    }),
   approveControl: (controlId: string) =>
     request<{ id: string; status: string }>(`/controls/${segment(controlId)}/approve`, { method: "POST" }),
   controls: () => request<Control[]>("/controls"),

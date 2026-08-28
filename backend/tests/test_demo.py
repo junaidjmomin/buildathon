@@ -141,6 +141,21 @@ def test_candidate_control_backtest_is_read_only_and_improves_coverage() -> None
     assert body["canonical_data_unchanged"] is True
 
 
+def test_temporal_replay_compares_an_approved_control_version() -> None:
+    client.post("/api/v1/demo/load")
+    response = client.post(
+        f"/api/v1/runs/{DEMO_RUN_ID}/temporal-replay",
+        json={"control_id": "CTRL_MDR_DOMESTIC_V2"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["control_id"] == "CTRL_MDR_DOMESTIC_V2"
+    assert body["logical_control_key"] == "DOMESTIC_CARD_MDR"
+    assert body["transaction_count"] == 500
+    assert Decimal(body["difference_amount"]) > Decimal("0")
+    assert body["evidence"]
+
+
 def test_hidden_overcharge_has_lineage_and_counterfactual_cash_flow() -> None:
     client.post("/api/v1/demo/load")
     lineage = client.get(f"/api/v1/runs/{DEMO_RUN_ID}/payments/PAY_82HD9/lineage").json()
