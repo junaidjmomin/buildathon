@@ -156,8 +156,8 @@ export default function RootCausePage() {
               <EmptyTrace pending={investigation.isPending} />
             ) : (
               <ol className="space-y-3" aria-label="Agent execution trace">
-                {execution.trace.map((step) => (
-                  <TraceRow key={`${step.sequence}-${step.node}`} step={step} />
+                {execution.trace.map((step, index) => (
+                  <TraceRow key={`${step.sequence}-${step.node}-${index}`} step={step} />
                 ))}
               </ol>
             )}

@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, CircleAlert, Clock3, FileCheck2, LoaderCircle, Send, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { Badge, EmptyState, ErrorState, MoneyText, PageHeader } from "@/components/ui/primitives";
 import { resolveActiveRun, useActiveRunId, useActiveRunOverride } from "@/lib/active-run";
@@ -19,6 +20,12 @@ export default function ExceptionsPage() {
   const activeRunId = activeRun?.id;
   const cases = useQuery({ queryKey: ["exception-cases", activeRunId], queryFn: () => api.exceptionCases(activeRunId ?? ""), enabled: Boolean(activeRunId) });
   const unresolved = useQuery({ queryKey: ["unresolved", activeRunId], queryFn: () => api.unresolvedMatches(activeRunId ?? ""), enabled: Boolean(activeRunId) });
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  useEffect(() => {
+    if (cases.data?.length && !cases.data.some((item) => item.id === selectedCaseId)) {
+      setSelectedCaseId(cases.data[0].id);
+    }
+  }, [cases.data, selectedCaseId]);
   const transition = useMutation({
     mutationFn: ({ caseId, action, note, version }: { caseId: string; action: "verify" | "escalate" | "resolve"; note: string; version: number }) => api.transitionCase(caseId, action, note, version),
     onSuccess: (updated) => queryClient.setQueryData<ExceptionCase[]>(["exception-cases", activeRunId], (current) => current?.map((item) => item.id === updated.id ? updated : item) ?? [updated]),
@@ -27,7 +34,7 @@ export default function ExceptionsPage() {
   if (runs.isPending || (Boolean(activeRunId) && (cases.isPending || unresolved.isPending))) return <div className="grid min-h-[calc(100vh-64px)] place-items-center"><LoaderCircle className="animate-spin text-[var(--evergreen)]" /></div>;
   if (!activeRunId) return <main className="p-8 text-[var(--paper-dim)]">No completed tenant run is available. Sync Razorpay from Data sources first.</main>;
   if (cases.isError || unresolved.isError) return <main className="mx-auto max-w-4xl p-8"><ErrorState what="Exception cases" onRetry={() => { void cases.refetch(); void unresolved.refetch(); }} /></main>;
-  const active = cases.data?.[0];
+  const active = cases.data?.find((item) => item.id === selectedCaseId) ?? cases.data?.[0];
   if (!active) return <main className="mx-auto max-w-4xl p-8"><EmptyState title="No exception cases for this run" body="The run may have no violations, or case generation has not produced an evidence-backed case yet. Review its outcomes on Overview." /><UnresolvedQueue activeRunId={activeRunId} seeded={activeRun?.source_type === "DEMO"} items={unresolved.data ?? []} /></main>;
 
   const act = (action: "verify" | "escalate" | "resolve") => {
@@ -51,6 +58,23 @@ export default function ExceptionsPage() {
         subtitle="A case cannot skip deterministic verification. Every transition remains in the audit trail."
       />
 
+      {cases.data && cases.data.length > 1 ? (
+        <section className="panel mb-6 overflow-hidden rounded-2xl">
+          <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
+            <div><h2 className="text-sm font-semibold text-[var(--paper)]">Exception inbox</h2><p className="mt-1 text-xs text-[var(--paper-faint)]">Select a case to inspect its evidence and workflow.</p></div>
+            <span className="number-tabular rounded-full border border-[var(--line-strong)] px-2.5 py-1 font-mono text-[10px] text-[var(--paper-dim)]">{cases.data.length} cases</span>
+          </div>
+          <div className="grid max-h-44 gap-2 overflow-y-auto p-3 sm:grid-cols-2 lg:grid-cols-3">
+            {cases.data.map((item) => (
+              <button key={item.id} type="button" onClick={() => setSelectedCaseId(item.id)} className={`rounded-xl border px-3 py-3 text-left transition-colors ${item.id === active.id ? "border-[var(--evergreen)] bg-[rgba(47,189,127,0.1)]" : "border-[var(--line)] bg-[var(--ink-700)] hover:border-[var(--line-strong)]"}`}>
+                <span className="block truncate text-xs font-semibold text-[var(--paper)]">{item.title}</span>
+                <span className="mt-1 block font-mono text-[10px] text-[var(--paper-faint)]">{item.id} · {item.status}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="mb-6 grid gap-4 lg:grid-cols-[0.7fr_1.3fr]">
         <div className="space-y-4">
           <div className="panel rounded-2xl p-5">
@@ -73,6 +97,8 @@ export default function ExceptionsPage() {
               </div>
             </div>
             <CaseActions status={active.status} pending={transition.isPending} act={act} />
+            {transition.isSuccess && <p role="status" className="mt-3 text-xs font-semibold text-[var(--evergreen)]">Case updated successfully. The audit trail has been refreshed.</p>}
+            {transition.isError && <p role="alert" className="mt-3 text-xs text-[var(--crimson)]">Case update failed: {transition.error.message}</p>}
           </div>
 
           <div className="panel overflow-hidden rounded-2xl">

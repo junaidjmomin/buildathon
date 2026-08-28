@@ -138,6 +138,14 @@ class CoverageStatus(str, Enum):
 
 
 class ControlCoverageItem(ApiModel):
+    """One runtime relationship type with its actual material event edges.
+
+    Only relationship types with at least one actual material edge in the run
+    belong here; detectability gaps proven by mutation testing are exposed as
+    ``MutationBlindSpot`` entries instead and never counted as ungoverned
+    runtime edges.
+    """
+
     id: str
     relationship: str
     description: str
@@ -148,6 +156,22 @@ class ControlCoverageItem(ApiModel):
     blind_spot: str | None = None
 
 
+class MutationBlindSpot(ApiModel):
+    """A failure mode the approved control suite cannot detect.
+
+    Derived from mutation testing (or from the absence of an approved control
+    for a known failure mode), never from runtime edge counts: a relationship
+    type with zero actual edges is a blind spot statement about the control
+    suite, not an ungoverned runtime edge.
+    """
+
+    id: str
+    relationship: str
+    failure_mode: str
+    description: str
+    reason: str
+
+
 class ControlCoverageSummary(ApiModel):
     run_id: str
     total_material_edges: int
@@ -156,6 +180,7 @@ class ControlCoverageSummary(ApiModel):
     ungoverned_edges: int
     coverage_percentage: Decimal
     items: list[ControlCoverageItem]
+    mutation_derived_blind_spots: list[MutationBlindSpot] = Field(default_factory=list)
 
 
 class ExceptionCaseStatus(str, Enum):

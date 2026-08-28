@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight, Beaker, Check, CircleDollarSign, Clock3, DatabaseZap, FileWarning,
-  Fingerprint, GitBranch, LoaderCircle, Play, ScanSearch, ShieldAlert, ShieldCheck,
+  Fingerprint, LoaderCircle, Play, ScanSearch, ShieldAlert, ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -143,15 +143,13 @@ export function Dashboard() {
         {activeIsSeeded ? <button onClick={() => void load.refetch().then(() => queryClient.invalidateQueries({ queryKey: ["run-summary", activeRun] }))} disabled={load.isFetching} className="flex items-center justify-center gap-2 rounded-xl bg-[var(--evergreen)] px-4 py-3 text-sm font-medium text-[#06120c] transition duration-150 hover:-translate-y-0.5 disabled:opacity-60"><Play size={15} fill="currentColor" /> {load.isFetching ? "Running controls…" : "Run controls again"}</button> : <Link href="/data" className="flex items-center justify-center gap-2 rounded-xl bg-[var(--evergreen)] px-4 py-3 text-sm font-medium text-[#06120c] transition duration-150 hover:-translate-y-0.5">Create another run <ArrowRight size={15} /></Link>}
       </section>
 
-      <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+      <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Metric icon={DatabaseZap} label="Transactions" value={data.transaction_count.toLocaleString("en-IN")} href="/data" />
         <Metric icon={Fingerprint} label="Controls evaluated" value={data.control_evaluation_count.toLocaleString("en-IN")} />
-        <Metric icon={ShieldCheck} label="Precision" value={data.ground_truth_available ? formatPercent(data.precision) : "Not scored"} tone="green" />
-        <Metric icon={ScanSearch} label="Violation recall" value={data.ground_truth_available ? formatPercent(data.recall) : "Not scored"} tone="green" />
         <Metric icon={CircleDollarSign} label="Verified leakage" value={formatMoney(data.verified_leakage, true)} tone="crimson" href="/exceptions" />
         <Metric icon={ShieldAlert} label="Unresolved" value={String(data.unresolved_count)} href="/exceptions" />
         <Metric icon={ShieldCheck} label="Control coverage" value={data.control_coverage != null ? formatPercent(data.control_coverage) : "Not measured"} tone="green" href={`/runs/${activeRun}/coverage`} />
-        <Metric icon={GitBranch} label="Primary / downstream" value={`${data.primary_violation_count} / ${data.downstream_violation_count}`} />
+        <Metric icon={ScanSearch} label={data.ground_truth_available ? "Precision" : "Run status"} value={data.ground_truth_available ? formatPercent(data.precision) : "Live"} tone="green" />
       </section>
 
       <section className="mb-6 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
@@ -196,7 +194,7 @@ export function Dashboard() {
         <div className="panel rounded-2xl p-5">
           <h2 className="text-sm font-semibold text-[var(--paper)]">Root-cause impact</h2>
           <p className="mb-5 mt-1 text-xs text-[var(--paper-faint)]">Structural clusters, not repeated symptoms</p>
-          <div className="space-y-4">
+          <div className="max-h-52 space-y-4 overflow-y-auto pr-1">
             {(roots.data ?? []).slice(0, 5).map((root) => (
               <Link href={`/root-causes/${root.id}`} key={root.id} className="block rounded-lg p-1 transition-colors hover:bg-[var(--ink-600)]">
                 <div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="truncate font-medium text-[var(--paper)]">{root.title}</span><span className="number-tabular font-mono text-[var(--paper-dim)]">{formatMoney(root.verified_impact, true)}</span></div>
@@ -208,13 +206,13 @@ export function Dashboard() {
         <div className="panel overflow-hidden rounded-2xl">
           <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
             <div><h2 className="text-sm font-semibold text-[var(--paper)]">Highest-impact exceptions</h2><p className="mt-1 text-xs text-[var(--paper-faint)]">Open a transaction to inspect the complete proof</p></div>
-            <span className="text-xs font-medium text-[var(--evergreen)]">{violations.data?.length ?? 0} verified</span>
+            <Link href="/exceptions" className="text-xs font-medium text-[var(--evergreen)] hover:underline">View all · {violations.data?.length ?? 0} verified</Link>
           </div>
-          <div className="overflow-x-auto">
+          <div className="max-h-72 overflow-auto">
             <table className="w-full min-w-[720px] text-left text-xs">
               <thead className="bg-[var(--ink-700)] text-[10px] uppercase tracking-[0.11em] text-[var(--paper-faint)]"><tr><th className="px-5 py-3">Transaction</th><th className="px-3 py-3">Category</th><th className="px-3 py-3">Expected</th><th className="px-3 py-3">Actual</th><th className="px-3 py-3 text-right">Impact</th><th /></tr></thead>
               <tbody className="divide-y divide-[var(--line)]">
-                {(violations.data ?? []).slice().sort((a, b) => compareDecimals(b.financial_impact, a.financial_impact)).slice(0, 7).map((item) => (
+                {(violations.data ?? []).slice().sort((a, b) => compareDecimals(b.financial_impact, a.financial_impact)).slice(0, 6).map((item) => (
                   <tr key={item.id} className="group transition-colors hover:bg-[var(--ink-600)]">
                     <td className="number-tabular px-5 py-3.5 font-mono text-[11px] font-semibold text-[var(--evergreen)]">{item.payment_id}</td>
                     <td className="px-3 py-3.5 font-medium text-[var(--paper)]">{item.category}</td><td className="px-3 py-3.5 text-[var(--paper-dim)]">{item.expected}</td><td className="px-3 py-3.5 text-[var(--crimson)]">{item.actual}</td><td className="number-tabular px-3 py-3.5 text-right font-mono font-semibold text-[var(--paper)]">{formatMoney(item.financial_impact)}</td>
@@ -227,20 +225,22 @@ export function Dashboard() {
         </div>
       </section>
 
-      {activeIsSeeded && featuredViolation ? <><Link href={`/runs/${activeRun}/payments/${featuredViolation.payment_id}`} className="group flex flex-col justify-between gap-5 rounded-2xl border border-[rgba(226,96,79,0.35)] bg-[rgba(226,96,79,0.07)] p-5 transition duration-150 hover:border-[var(--crimson)] md:flex-row md:items-center">
-        <div className="flex items-start gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[rgba(226,96,79,0.16)] text-[var(--crimson)]"><ShieldAlert size={19} /></span><div><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--crimson)]">Featured proof · {featuredViolation.payment_id}</p><h3 className="mt-1 text-base font-semibold text-[var(--paper)]">Gateway and bank match. The money is still wrong.</h3><p className="mt-1 text-xs leading-5 text-[var(--paper-dim)]">Inspect the contracted MDR against the observed deduction.</p></div></div>
-        <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-[var(--crimson)]">Open financial proof <ArrowRight size={16} className="transition-transform duration-150 group-hover:translate-x-1" /></span>
-      </Link>
-      <Link href={`/runs/${activeRun}/mutation-test`} className="group mt-4 flex flex-col justify-between gap-5 rounded-2xl border border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.06)] p-5 transition duration-150 hover:border-[var(--evergreen)] md:flex-row md:items-center">
-        <div className="flex items-start gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[rgba(47,189,127,0.16)] text-[var(--evergreen)]"><Beaker size={19} /></span><div><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--evergreen)]">Control quality</p><h3 className="mt-1 text-base font-semibold text-[var(--paper)]">Would your controls catch the money being wrong?</h3><p className="mt-1 text-xs leading-5 text-[var(--paper-dim)]">Inject 50 isolated financial failures and measure real detection coverage.</p></div></div>
-        <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-[var(--evergreen)]">Test my controls <ArrowRight size={16} className="transition-transform duration-150 group-hover:translate-x-1" /></span>
-      </Link></> : <section className="rounded-2xl border border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.06)] p-5"><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--evergreen)]">Live source verification</p><h3 className="mt-1 text-base font-semibold text-[var(--paper)]">Uploaded or connected-source evidence has been tested against approved controls.</h3><p className="mt-1 text-xs leading-5 text-[var(--paper-dim)]">Run control-quality mutations against this source, or open a root cause for bounded investigation.</p><div className="mt-4 flex flex-wrap gap-3"><Link href={`/runs/${activeRun}/mutation-test`} className="inline-flex items-center gap-2 rounded-lg bg-[var(--evergreen)] px-3 py-2 text-xs font-semibold text-[#06120c]">Run mutation tests <ArrowRight size={13} /></Link>{roots.data?.[0] ? <Link href={`/root-causes/${roots.data[0].id}`} className="inline-flex items-center gap-2 rounded-lg border border-[var(--line-strong)] bg-transparent px-3 py-2 text-xs font-semibold text-[var(--paper)] transition-colors hover:border-[var(--evergreen)]">Investigate root cause <ArrowRight size={13} /></Link> : null}<Link href="/data" className="inline-flex items-center gap-2 rounded-lg border border-[var(--line-strong)] bg-transparent px-3 py-2 text-xs font-semibold text-[var(--paper)] transition-colors hover:border-[var(--evergreen)]">Open data sources</Link></div>{exportEvidence.data ? <p className="mt-3 text-[10px] text-[var(--evergreen)]">Stored privately as {exportEvidence.data.artifact_id}.</p> : exportEvidence.isError ? <p className="mt-3 text-[10px] text-[var(--crimson)]">Evidence export is unavailable until private Storage is configured.</p> : null}</section>}
-      <section className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <QuickLink href="/agreements" label="Agreement provenance" detail="Clause → typed control → immutable version" />
-        <QuickLink href={`/runs/${activeRun}/replay`} label="Temporal replay" detail="Compare approved MDR versions on this run" />
-        <QuickLink href={`/runs/${activeRun}/coverage`} label="Control coverage" detail="Measure governed and ungoverned money edges" />
-        <QuickLink href={`/runs/${activeRun}/operations`} label="Run operations" detail="Stage timings, throughput, and completion health" />
-        {activeIsSeeded ? <QuickLink href="/exceptions" label="Evidence cases" detail="Verify, escalate or resolve with an audit trail" /> : roots.data?.[0] ? <QuickLink href={`/root-causes/${roots.data[0].id}`} label="Root-cause evidence" detail="Open the deterministic cluster and investigation trace" /> : <QuickLink href="/data" label="No root cause yet" detail="Sync evidence and run deterministic controls" />}
+      <section className="mt-5 rounded-2xl border border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.06)] p-5">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div className="flex items-start gap-4">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[rgba(47,189,127,0.16)] text-[var(--evergreen)]"><Beaker size={19} /></span>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--evergreen)]">Recommended next action</p>
+              <h3 className="mt-1 text-base font-semibold text-[var(--paper)]">{activeIsSeeded && featuredViolation ? `Inspect ${featuredViolation.payment_id} financial proof` : "Validate this run’s control quality"}</h3>
+              <p className="mt-1 text-xs leading-5 text-[var(--paper-dim)]">{activeIsSeeded ? "Start with the highest-signal exception, then open deeper lineage or mutation evidence only if needed." : "Run deterministic mutations or investigate the leading root cause before exporting evidence."}</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {activeIsSeeded && featuredViolation ? <Link href={`/runs/${activeRun}/payments/${featuredViolation.payment_id}`} className="inline-flex items-center gap-2 rounded-lg bg-[var(--evergreen)] px-3 py-2 text-xs font-semibold text-[#06120c]">Open proof <ArrowRight size={13} /></Link> : <Link href={`/runs/${activeRun}/mutation-test`} className="inline-flex items-center gap-2 rounded-lg bg-[var(--evergreen)] px-3 py-2 text-xs font-semibold text-[#06120c]">Run mutation test <ArrowRight size={13} /></Link>}
+            {roots.data?.[0] ? <Link href={`/root-causes/${roots.data[0].id}`} className="inline-flex items-center gap-2 rounded-lg border border-[var(--line-strong)] px-3 py-2 text-xs font-semibold text-[var(--paper)]">Root cause <ArrowRight size={13} /></Link> : null}
+          </div>
+        </div>
+        {exportEvidence.data ? <p className="mt-3 text-[10px] text-[var(--evergreen)]">Evidence pack stored privately as {exportEvidence.data.artifact_id}.</p> : exportEvidence.isError ? <p className="mt-3 text-[10px] text-[var(--crimson)]">Evidence export is unavailable until private Storage is configured.</p> : null}
       </section>
     </main>
   );
@@ -263,8 +263,4 @@ function Metric({ icon: Icon, label, value, tone = "default", href }: { icon: ty
 
 function Outcome({ label, value, color }: { label: string; value: number; color: string }) {
   return <div className="bg-[var(--ink-800)] px-5 py-4"><div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--paper-faint)]"><span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} /> {label}</div><p className="number-tabular font-mono text-2xl font-semibold tracking-[-0.04em] text-[var(--paper)]">{value}</p></div>;
-}
-
-function QuickLink({ href, label, detail }: { href: string; label: string; detail: string }) {
-  return <Link href={href} className="panel group flex items-center justify-between rounded-xl p-4 transition duration-150 hover:border-[var(--line-strong)]"><div><p className="text-xs font-semibold text-[var(--paper)]">{label}</p><p className="mt-1 text-[10px] text-[var(--paper-faint)]">{detail}</p></div><ArrowRight size={14} className="text-[var(--paper-faint)] transition-all duration-150 group-hover:translate-x-1 group-hover:text-[var(--evergreen)]" /></Link>;
 }

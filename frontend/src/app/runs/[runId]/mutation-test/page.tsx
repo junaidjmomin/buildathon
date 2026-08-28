@@ -283,8 +283,10 @@ function CandidateBacktest({ runId }: { runId: string }) {
               <Check size={13} /> Approved explicitly. Future suites will apply this control.
             </p>
           )}
+          {approve.isError && <p role="alert" className="mt-3 text-xs text-[var(--crimson)]">Approval failed: {approve.error.message}</p>}
         </div>
       )}
+      {backtest.isError && <p role="alert" className="mt-3 text-xs text-[var(--crimson)]">Backtest failed: {backtest.error.message}</p>}
     </div>
   );
 }
