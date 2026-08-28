@@ -13,13 +13,18 @@ import {
   WalletCards,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
+import { setActiveRunId } from "@/lib/active-run";
 import { api } from "@/lib/api";
 
 const PRODUCTION_MODE = process.env.NEXT_PUBLIC_APP_MODE === "production";
 
 export default function DataSourcesPage() {
+  const router = useRouter();
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const status = useQuery({ queryKey: ["razorpay-status"], queryFn: api.razorpayStatus });
   const mcp = useQuery({
     queryKey: ["razorpay-mcp-capability"],
@@ -30,7 +35,20 @@ export default function DataSourcesPage() {
     mutationFn: () =>
       api.submitRazorpaySyncJob(`ui-${Date.now()}-${globalThis.crypto.randomUUID()}`),
   });
-  const upload = useMutation({ mutationFn: api.uploadSource });
+  const upload = useMutation({ mutationFn: api.uploadSources });
+  const execute = useMutation({
+    mutationFn: () => {
+      const uploadIds = upload.data?.files.map((file) => file.upload_id).filter(Boolean) ?? [];
+      if (uploadIds.length !== selectedFiles.length) {
+        throw new Error("Every selected file must pass classification before execution.");
+      }
+      return api.createRunFromUploads(selectedFiles, uploadIds as string[]);
+    },
+    onSuccess: (run) => {
+      setActiveRunId(run.run_id);
+      router.push("/");
+    },
+  });
   const jobId = submit.data?.job.id;
   const job = useQuery({
     queryKey: ["background-job", jobId],
@@ -105,8 +123,8 @@ export default function DataSourcesPage() {
           <SourceCard
             icon={FileUp}
             title="Upload Files"
-            description="Validate CSV money fields deterministically, then persist to private Storage when configured."
-            badge="MANUAL"
+            description="Upload related CSVs together. Headers and content are classified deterministically before private storage."
+            badge="MULTI-FILE"
           >
             <label className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#d6ddd7] bg-white px-3 py-2 text-xs font-semibold text-[#4e5c55]">
               {upload.isPending ? (
@@ -114,15 +132,20 @@ export default function DataSourcesPage() {
               ) : (
                 <FileUp size={13} />
               )}
-              {upload.isPending ? "Validating…" : "Choose CSV"}
+              {upload.isPending ? "Classifying…" : "Choose CSV files"}
               <input
                 className="sr-only"
                 type="file"
                 accept=".csv,text/csv"
+                multiple
                 disabled={upload.isPending}
                 onChange={(event) => {
-                  const selected = event.currentTarget.files?.[0];
-                  if (selected) upload.mutate(selected);
+                  const selected = Array.from(event.currentTarget.files ?? []);
+                  if (selected.length) {
+                    setSelectedFiles(selected);
+                    execute.reset();
+                    upload.mutate(selected);
+                  }
                   event.currentTarget.value = "";
                 }}
               />
@@ -131,12 +154,34 @@ export default function DataSourcesPage() {
               className="mt-3 min-h-10 text-[10px] leading-4 text-[#66716b]"
               aria-live="polite"
             >
-              {upload.data &&
-                `${upload.data.filename}: ${upload.data.row_count} rows · ${
-                  upload.data.storage_status === "PRIVATE_STORAGE"
-                    ? "stored privately"
-                    : "validated locally"
-                }`}
+              {upload.data ? <div className="space-y-1.5">
+                <p className="font-semibold text-[#1e6b51]">{upload.data.accepted_count} accepted · {upload.data.rejected_count} rejected</p>
+                {upload.data.files.map((file) => <div key={`${file.filename}-${file.upload_id ?? "rejected"}`} className={`rounded-lg border px-2.5 py-2 ${file.status === "ACCEPTED" ? "border-[#d8e5dc] bg-[#f6faf7]" : "border-[#efd3c5] bg-[#fff8f4]"}`}>
+                  <p className="font-semibold text-[#27332d]">{file.filename}</p>
+                  <p>{file.status === "ACCEPTED" ? `${file.source_type.replaceAll("_", " ")} · ${file.row_count} rows · ${Math.round(Number(file.classification_confidence) * 100)}% confidence` : file.error}</p>
+                </div>)}
+                {upload.data.rejected_count === 0 && upload.data.accepted_count > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => execute.mutate()}
+                    disabled={execute.isPending}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[#112a2b] px-3 py-2.5 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {execute.isPending ? (
+                      <LoaderCircle size={13} className="animate-spin" />
+                    ) : (
+                      <ArrowRight size={13} />
+                    )}
+                    {execute.isPending ? "Executing deterministic controls…" : "Create run and execute controls"}
+                  </button>
+                ) : null}
+                {execute.data ? (
+                  <p className="rounded-lg bg-[#e8f5ed] px-2.5 py-2 font-semibold text-[#1e6b51]">
+                    Run complete · {execute.data.events_created} events · {execute.data.violations_created} violations
+                  </p>
+                ) : null}
+                {execute.error ? <p className="text-[#a43d32]">{execute.error.message}</p> : null}
+              </div> : null}
               {upload.error && <span className="text-[#a43d32]">{upload.error.message}</span>}
             </div>
           </SourceCard>

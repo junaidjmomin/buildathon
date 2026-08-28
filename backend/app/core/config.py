@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     max_upload_bytes: int = Field(
         default=10 * 1024 * 1024, alias="MAX_UPLOAD_BYTES", ge=1024, le=100 * 1024 * 1024
     )
+    max_upload_files: int = Field(default=20, alias="MAX_UPLOAD_FILES", ge=1, le=100)
+    max_upload_batch_bytes: int = Field(
+        default=50 * 1024 * 1024,
+        alias="MAX_UPLOAD_BATCH_BYTES",
+        ge=1024,
+        le=500 * 1024 * 1024,
+    )
     max_agreement_pages: int = Field(default=200, alias="MAX_AGREEMENT_PAGES", ge=1, le=1000)
     max_pdf_page_content_bytes: int = Field(
         default=5 * 1024 * 1024,

@@ -9,13 +9,39 @@ export interface DemoLoadResponse {
 }
 
 export interface SourceUploadResponse {
-  upload_id: string;
+  upload_id: string | null;
   filename: string;
+  source_type: string;
+  classification_confidence: string;
+  classification_evidence: string[];
+  status: "ACCEPTED" | "REJECTED";
+  error: string | null;
   row_count: number;
   columns: string[];
   decimal_values_checked: number;
   storage_status: "VALIDATED_ONLY" | "PRIVATE_STORAGE";
   object_path: string | null;
+}
+
+export interface SourceUploadBatchResponse {
+  file_count: number;
+  accepted_count: number;
+  rejected_count: number;
+  files: SourceUploadResponse[];
+}
+
+export interface SourceRunResponse {
+  run_id: string;
+  name: string;
+  status: "COMPLETE";
+  source_types: string[];
+  files_ingested: number;
+  events_created: number;
+  edges_created: number;
+  unresolved_matches: number;
+  control_evaluations_created: number;
+  violations_created: number;
+  persistence_status: "POSTGRES";
 }
 
 export interface RunSummary {
@@ -43,7 +69,7 @@ export interface RunListItem {
   id: string;
   name: string;
   status: string;
-  source: "SEEDED" | "RAZORPAY";
+  source: "SEEDED" | "RAZORPAY" | "CSV_UPLOAD";
   transaction_count: number;
   event_count: number;
   control_evaluation_count: number;
@@ -266,6 +292,16 @@ export interface AgreementClause {
   text: string;
   effective_from: string;
   effective_to: string | null;
+  source_type: "PDF_TEXT_EXTRACTION" | "MANUAL_ENTRY" | string;
+  created_by: string | null;
+}
+
+export interface AgreementClauseCreate {
+  reference: string;
+  heading: string;
+  text: string;
+  effective_from?: string;
+  effective_to?: string;
 }
 
 export interface Agreement {

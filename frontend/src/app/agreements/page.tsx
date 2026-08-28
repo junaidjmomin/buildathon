@@ -8,6 +8,7 @@ import {
   FileCheck2,
   FileText,
   LoaderCircle,
+  Plus,
   ScanText,
   ShieldCheck,
   UploadCloud,
@@ -50,6 +51,24 @@ export default function AgreementsPage() {
       queryClient.setQueryData(["agreement-proposals", created.id], []);
     },
   });
+  const addClause = useMutation({
+    mutationFn: (payload: {
+      reference: string;
+      heading: string;
+      text: string;
+      effective_from?: string;
+      effective_to?: string;
+    }) => api.addAgreementClause(agreement!.id, payload),
+    onSuccess: (created) => {
+      queryClient.setQueryData(
+        ["agreements"],
+        agreements.data?.map((item) =>
+          item.id === agreement?.id ? { ...item, clauses: [...item.clauses, created] } : item,
+        ),
+      );
+      queryClient.invalidateQueries({ queryKey: ["agreement-proposals", agreement?.id] });
+    },
+  });
 
   if (agreements.isPending || (Boolean(agreement) && proposals.isPending)) {
     return (
@@ -64,36 +83,7 @@ export default function AgreementsPage() {
     return (
       <AppShell>
         <main className="mx-auto max-w-3xl px-5 py-10 md:px-8">
-          <section className="panel rounded-2xl p-6 md:p-8">
-            <div className="flex items-start gap-3">
-              <span className="grid h-11 w-11 place-items-center rounded-xl bg-[#e5f2eb] text-[#1e6b51]"><UploadCloud size={20} /></span>
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#1e6b51]">Tenant agreement registry</p>
-                <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em]">Upload the governing merchant agreement</h1>
-                <p className="mt-2 text-sm leading-6 text-[#66716b]">The PDF is stored privately. sl3dge extracts provenance-linked pages, then the agent may propose typed controls for human review.</p>
-              </div>
-            </div>
-            <form
-              className="mt-7 grid gap-4 sm:grid-cols-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const formData = new FormData(event.currentTarget);
-                if (!formData.get("effective_to")) formData.delete("effective_to");
-                upload.mutate(formData);
-              }}
-            >
-              <label className="grid gap-1.5 text-xs font-medium">Merchant name<input name="merchant" required maxLength={200} className="rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
-              <label className="grid gap-1.5 text-xs font-medium">Agreement title<input name="title" required maxLength={240} className="rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
-              <label className="grid gap-1.5 text-xs font-medium">Effective from<input name="effective_from" type="date" required className="rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
-              <label className="grid gap-1.5 text-xs font-medium">Effective to <span className="font-normal text-[#7b857f]">(optional)</span><input name="effective_to" type="date" className="rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
-              <label className="grid gap-1.5 text-xs font-medium sm:col-span-2">Agreement PDF<input name="file" type="file" accept="application/pdf,.pdf" required className="rounded-xl border border-dashed border-[#cfd8d1] bg-[#f8faf7] px-3 py-5 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[#e5f2eb] file:px-3 file:py-2 file:font-semibold file:text-[#1e6b51]" /></label>
-              {upload.isError ? <p role="alert" className="text-xs text-[#b34a25] sm:col-span-2">{upload.error.message}</p> : null}
-              <button type="submit" disabled={upload.isPending} className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white disabled:opacity-60 sm:col-span-2">
-                {upload.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <UploadCloud size={15} />} Upload and extract agreement
-              </button>
-            </form>
-            {DEMO_MODE ? <p className="mt-4 text-center text-[10px] text-[#7a847e]">The seeded NovaCart agreement normally appears after loading the demo.</p> : null}
-          </section>
+          <AgreementIntake upload={upload} />
         </main>
       </AppShell>
     );
@@ -121,10 +111,16 @@ export default function AgreementsPage() {
           </button>
         </section>
 
+        <AgreementIntake
+          agreementId={agreement.id}
+          addClause={addClause}
+          upload={upload}
+        />
+
         {extract.isError ? <p role="alert" className="mb-5 rounded-xl border border-[#efc6b3] bg-[#fff7f2] px-4 py-3 text-xs text-[#a9431f]">{extract.error.message}</p> : null}
         {verify.isError || approve.isError ? <p role="alert" className="mb-5 rounded-xl border border-[#efc6b3] bg-[#fff7f2] px-4 py-3 text-xs text-[#a9431f]">{(verify.error ?? approve.error)?.message}</p> : null}
 
-        <section className="panel mb-6 rounded-2xl p-5">
+        <section className="panel mb-6 mt-6 rounded-2xl p-5">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
             <div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#e5f2eb] text-[#1e6b51]"><FileText size={18} /></span><div><h2 className="text-sm font-semibold">{agreement.title}</h2><p className="mt-1 text-xs text-[#6c7771]">{agreement.merchant} · Effective {agreement.effective_from}</p></div></div>
             <span className="w-fit rounded-full bg-[#dff2e8] px-2.5 py-1 text-[10px] font-bold text-[#1e6b51]">{agreement.status}</span>
@@ -135,7 +131,7 @@ export default function AgreementsPage() {
         <section className="mb-6 grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
           <div className="panel overflow-hidden rounded-2xl">
             <div className="border-b border-[#e2e5df] px-5 py-4"><h2 className="text-sm font-semibold">Agreement clauses</h2><p className="mt-1 text-xs text-[#78827d]">Exact source text and page provenance</p></div>
-            <div className="divide-y divide-[#e8ebe6]">{agreement.clauses.map((clause) => <div key={clause.id} className="p-4"><div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#1e6b51]">Clause {clause.reference} · Page {clause.page}</p><span className="text-[9px] text-[#7a847e]">{clause.effective_from}</span></div><h3 className="mt-1.5 text-xs font-semibold">{clause.heading}</h3><p className="mt-2 text-[11px] leading-5 text-[#66716b]">{clause.text}</p></div>)}</div>
+            <div className="divide-y divide-[#e8ebe6]">{agreement.clauses.map((clause) => <div key={clause.id} className="p-4"><div className="flex items-center justify-between gap-3"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#1e6b51]">Clause {clause.reference} · {clause.source_type === "MANUAL_ENTRY" ? "Manual entry" : `Page ${clause.page}`}</p><span className="text-[9px] text-[#7a847e]">{clause.effective_from}</span></div><h3 className="mt-1.5 text-xs font-semibold">{clause.heading}</h3><p className="mt-2 text-[11px] leading-5 text-[#66716b]">{clause.text}</p></div>)}</div>
           </div>
 
           <div className="space-y-3">
@@ -171,5 +167,76 @@ export default function AgreementsPage() {
         </section>
       </main>
     </AppShell>
+  );
+}
+
+type IntakeMutation = {
+  isPending: boolean;
+  isError: boolean;
+  error: Error | null;
+  mutate: (formData: FormData) => void;
+};
+
+type ClauseMutation = {
+  isPending: boolean;
+  isError: boolean;
+  isSuccess: boolean;
+  error: Error | null;
+  mutate: (payload: {
+    reference: string;
+    heading: string;
+    text: string;
+    effective_from?: string;
+    effective_to?: string;
+  }) => void;
+};
+
+function AgreementIntake({
+  upload,
+  agreementId,
+  addClause,
+}: {
+  upload: IntakeMutation;
+  agreementId?: string;
+  addClause?: ClauseMutation;
+}) {
+  const seededAgreement = DEMO_MODE && agreementId === "AGR_NOVACART_2026";
+  const manualDisabled = !agreementId || seededAgreement;
+  return (
+    <section className="mb-6 grid gap-5 lg:grid-cols-2">
+      <div className="panel rounded-2xl p-5 md:p-6">
+        <div className="flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#e5f2eb] text-[#1e6b51]"><UploadCloud size={19} /></span>
+          <div><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#1e6b51]">Agreement intake</p><h2 className="mt-1 text-lg font-semibold">Upload agreement PDF</h2><p className="mt-1 text-xs leading-5 text-[#66716b]">Stored privately; pages and clause provenance are extracted automatically.</p></div>
+        </div>
+        <form className="mt-5 grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); if (!data.get("effective_to")) data.delete("effective_to"); upload.mutate(data); }}>
+          <label className="grid min-w-0 gap-1.5 text-xs font-medium">Merchant name<input name="merchant" required maxLength={200} className="w-full min-w-0 rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
+          <label className="grid min-w-0 gap-1.5 text-xs font-medium">Agreement title<input name="title" required maxLength={240} className="w-full min-w-0 rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
+          <label className="grid min-w-0 gap-1.5 text-xs font-medium">Effective from<input name="effective_from" type="date" required className="w-full min-w-0 rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
+          <label className="grid min-w-0 gap-1.5 text-xs font-medium">Effective to <span className="font-normal text-[#7b857f]">(optional)</span><input name="effective_to" type="date" className="w-full min-w-0 rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 outline-none focus:border-[#1e6b51]" /></label>
+          <label className="grid gap-1.5 text-xs font-medium sm:col-span-2">PDF file<input name="file" type="file" accept="application/pdf,.pdf" required className="rounded-xl border border-dashed border-[#cfd8d1] bg-[#f8faf7] px-3 py-4 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[#e5f2eb] file:px-3 file:py-2 file:font-semibold file:text-[#1e6b51]" /></label>
+          {upload.isError ? <p role="alert" className="text-xs text-[#b34a25] sm:col-span-2">{upload.error?.message}</p> : null}
+          <button type="submit" disabled={upload.isPending} className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white disabled:opacity-60 sm:col-span-2">{upload.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <UploadCloud size={15} />} Upload and extract PDF</button>
+        </form>
+      </div>
+
+      <div className="panel rounded-2xl p-5 md:p-6">
+        <div className="flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#eef0eb] text-[#52615a]"><Plus size={19} /></span>
+          <div><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#52615a]">Clause registry</p><h2 className="mt-1 text-lg font-semibold">Add clause manually</h2><p className="mt-1 text-xs leading-5 text-[#66716b]">For amendments or clauses that cannot be extracted reliably from a PDF.</p></div>
+        </div>
+        {manualDisabled ? <p className="mt-4 rounded-xl border border-[#e0e4de] bg-[#f7f8f5] px-3 py-2.5 text-[11px] leading-5 text-[#66716b]">{seededAgreement ? "The seeded agreement is immutable. Upload your PDF first; the newly uploaded agreement will support manual clauses immediately." : "Upload an agreement PDF first; manual clauses must belong to an agreement."}</p> : null}
+        <form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); if (!addClause) return; const data = new FormData(event.currentTarget); const payload = { reference: String(data.get("reference") ?? ""), heading: String(data.get("heading") ?? ""), text: String(data.get("text") ?? ""), effective_from: String(data.get("effective_from") ?? "") || undefined, effective_to: String(data.get("effective_to") ?? "") || undefined }; addClause.mutate(payload); }}>
+          <label className="grid min-w-0 gap-1.5 text-xs font-medium">Reference<input name="reference" required disabled={manualDisabled} placeholder="e.g. 4.2(a)" className="w-full min-w-0 rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 disabled:bg-[#f1f3ef]" /></label>
+          <label className="grid min-w-0 gap-1.5 text-xs font-medium">Heading<input name="heading" required disabled={manualDisabled} placeholder="Domestic MDR" className="w-full min-w-0 rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 disabled:bg-[#f1f3ef]" /></label>
+          <label className="grid min-w-0 gap-1.5 text-xs font-medium">Effective from<input name="effective_from" type="date" disabled={manualDisabled} className="w-full min-w-0 rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 disabled:bg-[#f1f3ef]" /></label>
+          <label className="grid min-w-0 gap-1.5 text-xs font-medium">Effective to<input name="effective_to" type="date" disabled={manualDisabled} className="w-full min-w-0 rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 disabled:bg-[#f1f3ef]" /></label>
+          <label className="grid min-w-0 gap-1.5 text-xs font-medium sm:col-span-2">Clause text<textarea name="text" required disabled={manualDisabled} rows={4} className="w-full min-w-0 resize-y rounded-xl border border-[#dfe4de] bg-white px-3 py-2.5 disabled:bg-[#f1f3ef]" /></label>
+          {addClause?.isError ? <p role="alert" className="text-xs text-[#b34a25] sm:col-span-2">{addClause.error?.message}</p> : null}
+          {addClause?.isSuccess ? <p role="status" className="text-xs text-[#1e6b51] sm:col-span-2">Clause added with immutable audit provenance.</p> : null}
+          <button type="submit" disabled={manualDisabled || addClause?.isPending} className="flex items-center justify-center gap-2 rounded-xl border border-[#b8c9bc] bg-white px-4 py-3 text-sm font-semibold text-[#1e6b51] disabled:cursor-not-allowed disabled:opacity-45 sm:col-span-2">{addClause?.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Plus size={15} />} Add clause</button>
+        </form>
+      </div>
+    </section>
   );
 }

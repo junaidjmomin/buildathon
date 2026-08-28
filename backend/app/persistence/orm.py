@@ -180,6 +180,10 @@ class AgreementClauseRecord(Base):
     text: Mapped[str] = mapped_column(Text)
     effective_from: Mapped[date] = mapped_column(Date)
     effective_to: Mapped[date | None] = mapped_column(Date)
+    source_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="PDF_TEXT_EXTRACTION"
+    )
+    created_by: Mapped[str | None] = mapped_column(String(160))
     content_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

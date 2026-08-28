@@ -12,6 +12,10 @@ Authority order:
 If two sections conflict, the later section explicitly marked **authoritative**
 wins. This document contains one authoritative 22-step recorded demo flow.
 
+## Current implementation note
+
+The Agreements workspace keeps both **Upload agreement PDF** and **Add clause manually** visible. The Data Sources workspace accepts multiple CSV files in one selection and displays a deterministic content-derived type, confidence, row count, and accepted/rejected state for every file. Returning to Overview reuses the session-cached seeded run; only the explicit **Run controls again** action re-executes it. Remaining work is tracked in `PENDING_TASKS.md`.
+
 ## 0. Mission
 
 Build a frontend that makes sl3dge's core distinction visually obvious:
@@ -776,7 +780,7 @@ Observed Behaviour
 1.75%
 
 Affected Transactions
-37 / 37 reproduce deviation
+25 / 25 reproduce deviation
 ```
 
 Final state:
@@ -846,7 +850,7 @@ Orders       500 rows   Healthy
 Payments     500 rows   Healthy
 Settlements   84 rows   Healthy
 Bank          84 rows   Healthy
-Refunds       47 rows   Healthy
+Refunds        5 rows   Healthy
 Chargebacks    6 rows   Healthy
 ```
 

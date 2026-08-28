@@ -115,6 +115,8 @@ pnpm --dir frontend lint
 pnpm --dir frontend build
 ```
 
+The current implementation gap register and prototype completion estimate are maintained in [docs/PENDING_TASKS.md](docs/PENDING_TASKS.md).
+
 CI repeats these checks against PostgreSQL and builds both containers.
 
 ## Production deployment

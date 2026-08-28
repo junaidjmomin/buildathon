@@ -11,7 +11,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.domain.models import Agreement, AgreementClause, Control, ControlProposal, ControlType
+from app.domain.models import (
+    Agreement,
+    AgreementClause,
+    AgreementClauseCreate,
+    Control,
+    ControlProposal,
+    ControlType,
+)
 from app.ingestion.pdf import AgreementPdfError, extract_agreement_pages
 from app.main import app
 from app.persistence.database import get_engine, get_session_factory
@@ -176,6 +183,31 @@ def test_agreement_and_draft_proposals_are_durable_and_tenant_scoped() -> None:
         assert proposals == [proposal]
         assert repository.list(tenant_id="merchant_b") == []
 
+        manual = repository.add_clause(
+            tenant_id="merchant_a",
+            agreement_id=agreement.id,
+            clause=AgreementClauseCreate(
+                reference="4.2(a)",
+                heading="Domestic MDR amendment",
+                text="Domestic card MDR changes to 1.60 percent.",
+            ),
+            actor_id="analyst-a",
+        )
+        repeated = repository.add_clause(
+            tenant_id="merchant_a",
+            agreement_id=agreement.id,
+            clause=AgreementClauseCreate(
+                reference="4.2(a)",
+                heading="Domestic MDR amendment",
+                text="Domestic card MDR changes to 1.60 percent.",
+            ),
+            actor_id="analyst-a",
+        )
+        assert manual == repeated
+        assert manual.source_type == "MANUAL_ENTRY"
+        assert manual.created_by == "analyst-a"
+        assert len(repository.get(tenant_id="merchant_a", agreement_id=agreement.id).clauses) == 2
+
         with pytest.raises(ValueError, match="verification must pass"):
             repository.approve_proposal(
                 tenant_id="merchant_a",
@@ -273,12 +305,13 @@ def test_agreement_upload_is_content_addressed_and_idempotent(
         "effective_from": "2026-01-01",
     }
     try:
-        first = TestClient(app).post(
+        client = TestClient(app)
+        first = client.post(
             "/api/v1/agreements/upload",
             data=payload,
             files={"file": ("agreement.pdf", content, "application/pdf")},
         )
-        second = TestClient(app).post(
+        second = client.post(
             "/api/v1/agreements/upload",
             data=payload,
             files={"file": ("agreement.pdf", content, "application/pdf")},
@@ -287,6 +320,30 @@ def test_agreement_upload_is_content_addressed_and_idempotent(
         assert first.json()["id"] == second.json()["id"]
         assert first.json()["clauses"][0]["page"] == 1
         assert len(uploaded) == 1
+        clause_payload = {
+            "reference": "4.2(a)",
+            "heading": "Domestic MDR amendment",
+            "text": "Domestic card MDR changes to 1.60 percent.",
+        }
+        clause = client.post(
+            f"/api/v1/agreements/{first.json()['id']}/clauses",
+            json=clause_payload,
+        )
+        repeated_clause = client.post(
+            f"/api/v1/agreements/{first.json()['id']}/clauses",
+            json=clause_payload,
+        )
+        assert clause.status_code == repeated_clause.status_code == 201
+        assert clause.json()["id"] == repeated_clause.json()["id"]
+        assert clause.json()["source_type"] == "MANUAL_ENTRY"
+        assert clause.json()["created_by"] == "local-demo-user"
+        listed = client.get("/api/v1/agreements")
+        proposals = client.get(f"/api/v1/agreements/{first.json()['id']}/control-proposals")
+        assert listed.status_code == 200
+        assert listed.json()[0]["id"] == first.json()["id"]
+        assert len(listed.json()[0]["clauses"]) == 2
+        assert proposals.status_code == 200
+        assert proposals.json() == []
     finally:
         get_session_factory.cache_clear()
         get_engine.cache_clear()

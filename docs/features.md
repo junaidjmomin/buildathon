@@ -645,8 +645,8 @@ Domestic Visa
 Expected MDR: 1.55%
 Observed MDR: 1.75%
 First seen: 18 Aug
-Affected: 23
-Impact: ₹8,421.70
+Affected: 25
+Impact: ₹2,042.82
 ```
 
 Root-cause clustering is not enough by itself.

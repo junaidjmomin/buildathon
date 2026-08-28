@@ -156,7 +156,7 @@ The deterministic control and verification layers remain authoritative even when
 
 The configured development services have been exercised with the current code:
 
-- Alembic reached revision `0009_foreign_key_support_indexes` on Supabase.
+- Alembic reached revision `0010_manual_agreement_clauses` on Supabase.
 - A temporary least-privilege runtime role proved cross-tenant read/update/insert
   isolation on every tenant-owned table, then was removed.
 - Private Supabase Storage upload and exact-path compensation delete passed.

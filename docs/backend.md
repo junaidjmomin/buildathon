@@ -13,6 +13,10 @@ If two sections conflict, the later section explicitly marked **authoritative**
 wins. This document contains one authoritative backend build order and one
 authoritative differentiated acceptance test.
 
+## Current implementation note
+
+`POST /api/v1/sources/uploads` accepts a bounded multi-file CSV batch, validates Decimal money fields, deterministically classifies orders/payments/refunds/settlements/chargebacks/bank reconciliation from content, and returns per-file evidence. `POST /api/v1/agreements/{agreement_id}/clauses` adds an idempotent, audited manual clause to a durable tenant agreement. The schema authority is Alembic revision `0010_manual_agreement_clauses`. Upload-to-run execution remains a P0 item in `PENDING_TASKS.md`.
+
 ## 0. Mission
 
 Build the backend for **sl3dge**, an AI Finance Controller for the Razorpay Buildathon.

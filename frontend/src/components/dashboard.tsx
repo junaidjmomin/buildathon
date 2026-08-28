@@ -1,13 +1,13 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight, Beaker, Check, CircleDollarSign, Clock3, DatabaseZap, FileWarning,
   Fingerprint, GitBranch, LoaderCircle, Play, ScanSearch, ShieldAlert, ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
 
+import { useActiveRunId } from "@/lib/active-run";
 import { api } from "@/lib/api";
 import { compareDecimals, formatMoney, formatPercent } from "@/lib/format";
 
@@ -16,45 +16,39 @@ const DEMO_MODE = process.env.NEXT_PUBLIC_APP_MODE !== "production";
 
 export function Dashboard() {
   const queryClient = useQueryClient();
-  const [runId, setRunId] = useState<string | null>(null);
-  const load = useMutation({
-    mutationFn: api.loadDemo,
-    onSuccess: (demo) => {
-      setRunId(demo.run_id);
-      queryClient.invalidateQueries();
-    },
+  const selectedRunId = useActiveRunId();
+  const runs = useQuery({ queryKey: ["runs"], queryFn: api.runs });
+  const selectedRun = runs.data?.find(
+    (run) => run.id === selectedRunId && run.status === "COMPLETE",
+  );
+  const latestRealRun = runs.data?.find(
+    (run) => run.source !== "SEEDED" && run.status === "COMPLETE",
+  );
+  const load = useQuery({
+    queryKey: ["demo-load"],
+    queryFn: api.loadDemo,
+    enabled: DEMO_MODE && runs.isSuccess && !selectedRun && !latestRealRun,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: Number.POSITIVE_INFINITY,
   });
-
-  useEffect(() => {
-    if (DEMO_MODE) load.mutate();
-    // The seeded demo executes only once when the console opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const productionRuns = useQuery({
-    queryKey: ["runs"],
-    queryFn: api.runs,
-    enabled: !DEMO_MODE,
-  });
-  const activeRun = DEMO_MODE
-    ? (runId ?? DEMO_RUN)
-    : productionRuns.data?.find(
-        (run) => run.source === "RAZORPAY" && run.status === "COMPLETE",
-      )?.id;
+  const demoRunId = load.data?.run_id;
+  const activeRunRecord = selectedRun ?? latestRealRun;
+  const activeRun = activeRunRecord?.id ?? demoRunId;
+  const activeIsSeeded = activeRunRecord?.source === "SEEDED" || activeRun === DEMO_RUN;
   const summary = useQuery({
-    queryKey: ["run-summary", activeRun], queryFn: () => api.summary(activeRun ?? ""), enabled: Boolean(activeRun) && (!DEMO_MODE || Boolean(runId)),
+    queryKey: ["run-summary", activeRun], queryFn: () => api.summary(activeRun ?? ""), enabled: Boolean(activeRun),
   });
   const violations = useQuery({
-    queryKey: ["violations", activeRun], queryFn: () => api.violations(activeRun ?? ""), enabled: Boolean(activeRun) && (!DEMO_MODE || Boolean(runId)),
+    queryKey: ["violations", activeRun], queryFn: () => api.violations(activeRun ?? ""), enabled: Boolean(activeRun),
   });
   const roots = useQuery({
-    queryKey: ["root-causes", activeRun], queryFn: () => api.rootCauses(activeRun ?? ""), enabled: Boolean(activeRun) && (!DEMO_MODE || Boolean(runId)),
+    queryKey: ["root-causes", activeRun], queryFn: () => api.rootCauses(activeRun ?? ""), enabled: Boolean(activeRun),
   });
   const coverage = useQuery({
-    queryKey: ["control-coverage", activeRun], queryFn: () => api.controlCoverage(activeRun ?? ""), enabled: DEMO_MODE && Boolean(runId),
+    queryKey: ["control-coverage", activeRun], queryFn: () => api.controlCoverage(activeRun ?? ""), enabled: activeIsSeeded && Boolean(activeRun),
   });
 
-  if (!DEMO_MODE && productionRuns.isPending) {
+  if (runs.isPending) {
     return (
       <main className="grid min-h-[calc(100vh-64px)] place-items-center p-8 text-center">
         <div><LoaderCircle className="mx-auto mb-4 animate-spin text-[#1e6b51]" size={28} /><p className="text-sm font-medium">Loading tenant runs</p></div>
@@ -62,45 +56,45 @@ export function Dashboard() {
     );
   }
 
-  if (!DEMO_MODE && productionRuns.isError) {
+  if (runs.isError) {
     return (
-      <main className="mx-auto max-w-4xl px-5 py-16 md:px-8"><div className="panel rounded-2xl p-8 text-center" role="alert"><FileWarning className="mx-auto mb-4 text-[#e86f3a]" /><h1 className="text-xl font-semibold">Runs could not be loaded</h1><p className="mt-2 text-sm text-[#66716b]">Retry after checking the authenticated API connection.</p><button className="mt-5 rounded-lg bg-[#112a2b] px-4 py-2 text-sm font-medium text-white" onClick={() => void productionRuns.refetch()}>Retry</button></div></main>
+      <main className="mx-auto max-w-4xl px-5 py-16 md:px-8"><div className="panel rounded-2xl p-8 text-center" role="alert"><FileWarning className="mx-auto mb-4 text-[#e86f3a]" /><h1 className="text-xl font-semibold">Runs could not be loaded</h1><p className="mt-2 text-sm text-[#66716b]">Retry after checking the authenticated API connection.</p><button className="mt-5 rounded-lg bg-[#112a2b] px-4 py-2 text-sm font-medium text-white" onClick={() => void runs.refetch()}>Retry</button></div></main>
     );
   }
 
-  if (!DEMO_MODE && !activeRun) {
+  if (!activeRun && (!DEMO_MODE || load.isSuccess)) {
     return (
       <main className="mx-auto max-w-4xl px-5 py-16 md:px-8">
         <div className="panel rounded-2xl p-8 md:p-12">
           <ShieldCheck className="mb-5 text-[#1e6b51]" size={30} />
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1e6b51]">Production workspace</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em]">No completed Razorpay run</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#66716b]">Production never loads synthetic data or executes controls merely because a page opened. Connect an approved source and start an explicit, auditable run.</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em]">No completed control run</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#66716b]">Upload an accepted source bundle or connect Razorpay to start an explicit, auditable run.</p>
           <Link href="/data" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white">Open data sources <ArrowRight size={15} /></Link>
         </div>
       </main>
     );
   }
 
-  if ((DEMO_MODE && load.isPending) || summary.isPending) {
+  if ((DEMO_MODE && !activeRunRecord && load.isPending) || summary.isPending) {
     return (
       <main className="grid min-h-[calc(100vh-64px)] place-items-center p-8 text-center">
         <div><LoaderCircle className="mx-auto mb-4 animate-spin text-[#1e6b51]" size={28} />
-          <p className="text-sm font-medium">{DEMO_MODE ? "Running NovaCart controls" : "Loading the latest completed run"}</p>
-          <p className="mt-1 text-xs text-[#66716b]">{DEMO_MODE ? "Rebuilding expected state from the agreement…" : "Reading tenant-scoped deterministic results…"}</p>
+          <p className="text-sm font-medium">{activeRunRecord ? "Loading the selected control run" : "Running NovaCart controls"}</p>
+          <p className="mt-1 text-xs text-[#66716b]">{activeRunRecord ? "Reading tenant-scoped deterministic results…" : "Rebuilding expected state from the agreement…"}</p>
         </div>
       </main>
     );
   }
 
-  if ((DEMO_MODE && load.isError) || summary.isError) {
+  if ((!activeRunRecord && load.isError) || summary.isError) {
     return (
       <main className="mx-auto max-w-6xl p-9">
         <div className="panel mt-12 rounded-2xl p-8 text-center">
           <FileWarning className="mx-auto mb-4 text-[#e86f3a]" />
           <h1 className="text-xl font-semibold">The control API is unavailable</h1>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#66716b]">{DEMO_MODE ? "Start FastAPI on port 8000 and retry. Financial results are never simulated in the browser." : "The authenticated run summary could not be loaded. No unavailable financial value has been replaced with demo data."}</p>
-          <button onClick={() => DEMO_MODE ? load.mutate() : void summary.refetch()} className="mt-5 rounded-lg bg-[#112a2b] px-4 py-2 text-sm font-medium text-white">Retry connection</button>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#66716b]">The authenticated run summary could not be loaded. No unavailable financial value has been replaced with demo data.</p>
+          <button onClick={() => activeRunRecord ? void summary.refetch() : void load.refetch()} className="mt-5 rounded-lg bg-[#112a2b] px-4 py-2 text-sm font-medium text-white">Retry connection</button>
         </div>
       </main>
     );
@@ -140,7 +134,7 @@ export function Dashboard() {
           <h1 className="text-3xl font-semibold tracking-[-0.035em] md:text-[38px]">{data.name}</h1>
           <p className="mt-2 text-sm text-[#66716b]">Rebuilt expected cash movement across {data.event_count.toLocaleString("en-IN")} financial events.</p>
         </div>
-        {DEMO_MODE ? <button onClick={() => load.mutate()} className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white shadow-lg shadow-[#112a2b]/10 transition hover:-translate-y-0.5"><Play size={15} fill="currentColor" /> Run controls again</button> : <Link href="/data" className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white">Sync another run <ArrowRight size={15} /></Link>}
+        {activeIsSeeded ? <button onClick={() => void load.refetch().then(() => queryClient.invalidateQueries({ queryKey: ["run-summary", DEMO_RUN] }))} disabled={load.isFetching} className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white shadow-lg shadow-[#112a2b]/10 transition hover:-translate-y-0.5 disabled:opacity-60"><Play size={15} fill="currentColor" /> {load.isFetching ? "Running controls…" : "Run controls again"}</button> : <Link href="/data" className="flex items-center justify-center gap-2 rounded-xl bg-[#112a2b] px-4 py-3 text-sm font-medium text-white">Create another run <ArrowRight size={15} /></Link>}
       </section>
 
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
@@ -218,7 +212,7 @@ export function Dashboard() {
                   <tr key={item.id} className="group hover:bg-[#f9faf7]">
                     <td className="px-5 py-3.5 font-mono text-[11px] font-semibold text-[#1e6b51]">{item.payment_id}</td>
                     <td className="px-3 py-3.5 font-medium">{item.category}</td><td className="px-3 py-3.5 text-[#66716b]">{item.expected}</td><td className="px-3 py-3.5 text-[#b14e29]">{item.actual}</td><td className="number-tabular px-3 py-3.5 text-right font-semibold">{formatMoney(item.financial_impact)}</td>
-                    <td className="px-3">{DEMO_MODE ? <Link href={`/runs/${activeRun}/payments/${item.payment_id}`}><ArrowRight size={15} className="text-[#89928d] group-hover:text-[#1e6b51]" /></Link> : item.root_cause_id ? <Link href={`/root-causes/${item.root_cause_id}`} aria-label={`Open root cause for ${item.payment_id}`}><ArrowRight size={15} className="text-[#89928d] group-hover:text-[#1e6b51]" /></Link> : null}</td>
+                    <td className="px-3">{activeIsSeeded ? <Link href={`/runs/${activeRun}/payments/${item.payment_id}`}><ArrowRight size={15} className="text-[#89928d] group-hover:text-[#1e6b51]" /></Link> : item.root_cause_id ? <Link href={`/root-causes/${item.root_cause_id}`} aria-label={`Open root cause for ${item.payment_id}`}><ArrowRight size={15} className="text-[#89928d] group-hover:text-[#1e6b51]" /></Link> : null}</td>
                   </tr>
                 ))}
               </tbody>
@@ -227,7 +221,7 @@ export function Dashboard() {
         </div>
       </section>
 
-      {DEMO_MODE ? <><Link href={`/runs/${activeRun}/payments/PAY_82HD9`} className="group flex flex-col justify-between gap-5 rounded-2xl border border-[#efc6b3] bg-[#fff7f2] p-5 transition hover:border-[#e86f3a]/60 md:flex-row md:items-center">
+      {activeIsSeeded ? <><Link href={`/runs/${activeRun}/payments/PAY_82HD9`} className="group flex flex-col justify-between gap-5 rounded-2xl border border-[#efc6b3] bg-[#fff7f2] p-5 transition hover:border-[#e86f3a]/60 md:flex-row md:items-center">
         <div className="flex items-start gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#ffe4d6] text-[#cc5a2c]"><ShieldAlert size={19} /></span><div><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#bd522a]">Featured proof · PAY_82HD9</p><h3 className="mt-1 text-base font-semibold">Gateway and bank match. The money is still wrong.</h3><p className="mt-1 text-xs leading-5 text-[#765f54]">Inspect the contracted 1.55% MDR against the observed 1.75% deduction.</p></div></div>
         <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-[#a9431f]">Open financial proof <ArrowRight size={16} className="transition group-hover:translate-x-1" /></span>
       </Link>
@@ -237,8 +231,8 @@ export function Dashboard() {
       </Link></> : <section className="rounded-2xl border border-[#cbded3] bg-[#f4fbf7] p-5"><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#1e6b51]">Live Razorpay verification</p><h3 className="mt-1 text-base font-semibold">Actual gateway evidence has been tested against approved controls.</h3><p className="mt-1 text-xs leading-5 text-[#5e7168]">Open a root cause to run the bounded investigation trace, or sync another immutable run.</p><div className="mt-4 flex flex-wrap gap-3">{roots.data?.[0] ? <Link href={`/root-causes/${roots.data[0].id}`} className="inline-flex items-center gap-2 rounded-lg bg-[#112a2b] px-3 py-2 text-xs font-semibold text-white">Investigate root cause <ArrowRight size={13} /></Link> : null}<Link href="/data" className="inline-flex items-center gap-2 rounded-lg border border-[#cbded3] bg-white px-3 py-2 text-xs font-semibold">Open data sources</Link></div></section>}
       <section className="mt-4 grid gap-3 md:grid-cols-3">
         <QuickLink href="/agreements" label="Agreement provenance" detail="Clause → typed control → immutable version" />
-        {DEMO_MODE ? <QuickLink href={`/runs/${activeRun}/coverage`} label="Control coverage" detail="Measure governed and ungoverned money edges" /> : <QuickLink href="/data" label="Source provenance" detail="Immutable snapshots, checksums and sync job status" />}
-        {DEMO_MODE ? <QuickLink href="/exceptions" label="Evidence cases" detail="Verify, escalate or resolve with an audit trail" /> : roots.data?.[0] ? <QuickLink href={`/root-causes/${roots.data[0].id}`} label="Agent investigation" detail="Hypothesize, reject, retry and verify" /> : <QuickLink href="/data" label="No root cause yet" detail="Sync evidence and run deterministic controls" />}
+        {activeIsSeeded ? <QuickLink href={`/runs/${activeRun}/coverage`} label="Control coverage" detail="Measure governed and ungoverned money edges" /> : <QuickLink href="/data" label="Source provenance" detail="Immutable snapshots, checksums and sync job status" />}
+        {activeIsSeeded ? <QuickLink href="/exceptions" label="Evidence cases" detail="Verify, escalate or resolve with an audit trail" /> : roots.data?.[0] ? <QuickLink href={`/root-causes/${roots.data[0].id}`} label="Root-cause evidence" detail="Open the deterministic cluster and investigation trace" /> : <QuickLink href="/data" label="No root cause yet" detail="Sync evidence and run deterministic controls" />}
       </section>
     </main>
   );

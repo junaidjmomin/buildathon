@@ -59,6 +59,16 @@ class AgreementClause(ApiModel):
     text: str
     effective_from: date
     effective_to: date | None = None
+    source_type: str = "PDF_TEXT_EXTRACTION"
+    created_by: str | None = None
+
+
+class AgreementClauseCreate(ApiModel):
+    reference: str = Field(min_length=1, max_length=120)
+    heading: str = Field(min_length=1, max_length=240)
+    text: str = Field(min_length=1, max_length=50_000)
+    effective_from: date | None = None
+    effective_to: date | None = None
 
 
 class Agreement(ApiModel):
@@ -385,13 +395,39 @@ class InfrastructureCapability(ApiModel):
 
 
 class SourceUploadResponse(ApiModel):
-    upload_id: str
+    upload_id: str | None = None
     filename: str
-    row_count: int
-    columns: list[str]
-    decimal_values_checked: int
-    storage_status: str
+    source_type: str = "UNRESOLVED"
+    classification_confidence: Decimal = Decimal("0")
+    classification_evidence: list[str] = Field(default_factory=list)
+    status: str = "ACCEPTED"
+    error: str | None = None
+    row_count: int = 0
+    columns: list[str] = Field(default_factory=list)
+    decimal_values_checked: int = 0
+    storage_status: str = "NOT_STORED"
     object_path: str | None = None
+
+
+class SourceUploadBatchResponse(ApiModel):
+    file_count: int
+    accepted_count: int
+    rejected_count: int
+    files: list[SourceUploadResponse]
+
+
+class SourceRunResponse(ApiModel):
+    run_id: str
+    name: str
+    status: str
+    source_types: list[str]
+    files_ingested: int
+    events_created: int
+    edges_created: int
+    unresolved_matches: int
+    control_evaluations_created: int
+    violations_created: int
+    persistence_status: str
 
 
 class AiCapability(ApiModel):

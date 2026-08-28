@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { api } from "@/lib/api";
@@ -37,9 +37,13 @@ const LABELS: Record<string, string> = {
 export default function MutationTestPage() {
   const { runId } = useParams<{ runId: string }>();
   const mutation = useMutation({ mutationFn: () => api.runMutationTest(runId) });
+  const autoRunStarted = useRef(false);
 
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_APP_MODE !== "production") mutation.mutate();
+    if (process.env.NEXT_PUBLIC_APP_MODE !== "production" && !autoRunStarted.current) {
+      autoRunStarted.current = true;
+      mutation.mutate();
+    }
     // Run one isolated suite on first entry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

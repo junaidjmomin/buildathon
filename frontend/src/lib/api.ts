@@ -1,5 +1,7 @@
 import type {
   Agreement,
+  AgreementClause,
+  AgreementClauseCreate,
   BackgroundJob,
   Control,
   ControlBacktest,
@@ -23,6 +25,8 @@ import type {
   RunSummary,
   RunListItem,
   SourceUploadResponse,
+  SourceUploadBatchResponse,
+  SourceRunResponse,
   UnresolvedMatch,
   Violation,
   ViolationLineageResponse,
@@ -108,6 +112,7 @@ export const api = {
     request<ControlBacktest>(`/controls/${segment(controlId)}/backtest`, { method: "POST" }),
   approveControl: (controlId: string) =>
     request<{ id: string; status: string }>(`/controls/${segment(controlId)}/approve`, { method: "POST" }),
+  controls: () => request<Control[]>("/controls"),
   lineage: (runId: string, paymentId: string) =>
     request<ViolationLineageResponse>(`/runs/${segment(runId)}/payments/${segment(paymentId)}/lineage`),
   counterfactual: (runId: string, paymentId: string) =>
@@ -119,6 +124,11 @@ export const api = {
       { method: "POST", body: formData },
       60_000,
     ),
+  addAgreementClause: (agreementId: string, clause: AgreementClauseCreate) =>
+    request<AgreementClause>(`/agreements/${segment(agreementId)}/clauses`, {
+      method: "POST",
+      body: JSON.stringify(clause),
+    }),
   agreementProposals: (agreementId: string) =>
     request<ControlProposal[]>(`/agreements/${segment(agreementId)}/control-proposals`),
   extractAgreementControls: (agreementId: string) =>
@@ -187,5 +197,21 @@ export const api = {
     const body = new FormData();
     body.append("file", file);
     return request<SourceUploadResponse>("/sources/upload", { method: "POST", body });
+  },
+  uploadSources: (files: File[]) => {
+    const body = new FormData();
+    files.forEach((file) => body.append("files", file));
+    return request<SourceUploadBatchResponse>("/sources/uploads", { method: "POST", body }, 120_000);
+  },
+  createRunFromUploads: (files: File[], uploadIds: string[], name?: string) => {
+    const body = new FormData();
+    files.forEach((file) => body.append("files", file));
+    uploadIds.forEach((uploadId) => body.append("upload_ids", uploadId));
+    if (name?.trim()) body.append("name", name.trim());
+    return request<SourceRunResponse>(
+      "/runs/from-uploads",
+      { method: "POST", body },
+      120_000,
+    );
   },
 };

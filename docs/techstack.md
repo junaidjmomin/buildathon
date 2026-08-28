@@ -13,6 +13,10 @@ If two sections conflict, the later section explicitly marked **authoritative**
 wins. This document contains one authoritative engineering build order and one
 authoritative differentiated acceptance test.
 
+## Current implementation note
+
+The implemented frontend is Next.js 16.3 with TanStack Query. Multi-file source ingestion uses one multipart request containing repeated `files` fields; classification and financial parsing remain in FastAPI/Polars. Agreement PDFs and accepted CSVs are private Supabase Storage objects whose metadata and categorized paths are stored in Postgres. See `PENDING_TASKS.md` for remaining prototype and production-pilot work.
+
 ## 0. Goal
 
 This document is the engineering contract for implementing **sl3dge**.

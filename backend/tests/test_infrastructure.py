@@ -30,6 +30,7 @@ from app.domain.models import (
 )
 from app.ingestion.csv import parse_source_csv
 from app.main import app
+from app.mutations.engine import execute_mutation_test
 from app.persistence.database import get_engine, get_session_factory
 from app.persistence.orm import (
     AgentExecutionRecord,
@@ -37,6 +38,7 @@ from app.persistence.orm import (
     Base,
     EventEdgeRecord,
     EventRecord,
+    MutationTestRecord,
     RootCauseRecord,
     RunRecord,
     SourceSnapshotRecord,
@@ -139,6 +141,35 @@ def test_concurrent_first_demo_reads_initialize_the_seed_only_once(
     assert len(load_calls) == 1
 
 
+def test_mutation_test_persistence_is_retry_safe() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    result = execute_mutation_test("RUN_TEST", generate_dataset().payments)
+    now = datetime.now(timezone.utc)
+
+    with Session(engine) as session:
+        session.add(
+            RunRecord(
+                tenant_id="novacart_demo",
+                id="RUN_TEST",
+                name="Retry-safe mutation run",
+                status="COMPLETE",
+                seed=20260825,
+                manifest={},
+                completed_at=now,
+                created_at=now,
+            )
+        )
+        session.flush()
+        repository = RunRepository(session)
+        repository.save_mutation_test(result)
+        session.flush()
+        repository.save_mutation_test(result)
+        session.flush()
+
+        assert session.scalar(select(func.count()).select_from(MutationTestRecord)) == 1
+
+
 def test_settlement_and_bank_events_store_batch_aggregates() -> None:
     dataset = generate_dataset()
     events, _ = canonical_records("RUN_TEST", dataset)
@@ -179,6 +210,48 @@ def test_source_upload_validates_locally_without_storage_credentials() -> None:
     assert response.json()["decimal_values_checked"] == 1
     assert response.json()["storage_status"] == "VALIDATED_ONLY"
     assert response.json()["object_path"] is None
+
+
+@pytest.mark.parametrize(
+    ("filename", "source_type"),
+    [
+        ("orders.csv", "ORDERS"),
+        ("payments.csv", "PAYMENTS"),
+        ("refunds.csv", "REFUNDS"),
+        ("settlements.csv", "SETTLEMENTS"),
+        ("chargebacks.csv", "CHARGEBACKS"),
+        ("bank.csv", "BANK_RECONCILIATION"),
+    ],
+)
+def test_documented_csv_sources_are_classified_by_content(
+    filename: str,
+    source_type: str,
+) -> None:
+    source_path = Path(__file__).parents[2] / "docs" / filename
+    parsed = parse_source_csv(source_path.read_bytes(), filename=filename)
+    assert parsed.source_type == source_type
+    assert parsed.classification_confidence == Decimal("0.99")
+    assert parsed.classification_evidence
+
+
+def test_source_batch_upload_classifies_each_file_independently() -> None:
+    response = TestClient(app).post(
+        "/api/v1/sources/uploads",
+        files=[
+            ("files", ("payments.csv", b"payment_id,amount\nPAY_1,100.00\n", "text/csv")),
+            (
+                "files",
+                ("refunds.csv", b"refund_id,payment_id,amount\nREF_1,PAY_1,10.00\n", "text/csv"),
+            ),
+            ("files", ("unknown.csv", b"foo,bar\n1,2\n", "text/csv")),
+        ],
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["accepted_count"] == 2
+    assert payload["rejected_count"] == 1
+    assert [item["source_type"] for item in payload["files"][:2]] == ["PAYMENTS", "REFUNDS"]
+    assert payload["files"][2]["status"] == "REJECTED"
 
 
 def test_ai_runtime_gracefully_degrades_without_key() -> None:

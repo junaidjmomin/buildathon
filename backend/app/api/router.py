@@ -25,6 +25,7 @@ from app.core.config import get_settings
 from app.domain.models import (
     Agreement,
     AgreementClause,
+    AgreementClauseCreate,
     AiCapability,
     BackgroundJob,
     CaseEvidence,
@@ -53,19 +54,22 @@ from app.domain.models import (
     RootCause,
     RunListItem,
     RunSummary,
+    SourceRunResponse,
+    SourceUploadBatchResponse,
     SourceUploadResponse,
     UnresolvedMatch,
     Violation,
     ViolationLineageResponse,
 )
-from app.ingestion.csv import parse_source_csv
+from app.ingestion.csv import parse_source_csv, read_source_csv
 from app.ingestion.pdf import extract_agreement_pages
+from app.ingestion.pipeline import execute_source_run
 from app.integrations.razorpay.client import RazorpayNotConfiguredError
 from app.integrations.razorpay.mcp_evidence import capability as mcp_evidence_capability
 from app.integrations.razorpay.sync import connection_status, sync_razorpay
 from app.mutations.engine import MUTATION_TEST_ID, execute_mutation_test
 from app.persistence.database import session_scope
-from app.persistence.orm import BackgroundJobRecord
+from app.persistence.orm import ArtifactRecord, BackgroundJobRecord
 from app.persistence.repository import (
     AgentExecutionRepository,
     AgreementRepository,
@@ -149,12 +153,7 @@ def ai_capability() -> AiCapability:
     )
 
 
-@router.post("/sources/upload", response_model=SourceUploadResponse)
-async def upload_source(
-    file: Annotated[UploadFile, File()],
-    principal: Annotated[Principal, Depends(require_roles("analyst"))],
-    request: Request,
-) -> SourceUploadResponse:
+async def _read_source_upload(file: UploadFile) -> tuple[str, bytes]:
     filename = PurePath(file.filename or "source.csv").name
     if not filename.lower().endswith(".csv"):
         raise HTTPException(status_code=422, detail="Only CSV source files are accepted")
@@ -171,9 +170,26 @@ async def upload_source(
     content = await file.read(settings.max_upload_bytes + 1)
     if len(content) > settings.max_upload_bytes:
         raise HTTPException(status_code=413, detail="CSV source file exceeds the configured limit")
-    parsed = parse_source_csv(content)
+    return filename, content
+
+
+async def _persist_source_upload(
+    *,
+    filename: str,
+    content: bytes,
+    principal: Principal,
+    request: Request,
+) -> SourceUploadResponse:
+    parsed = parse_source_csv(content, filename=filename)
+    if parsed.source_type == "UNRESOLVED":
+        raise HTTPException(
+            status_code=422,
+            detail="CSV schema could not be classified safely; manual mapping is required",
+        )
+    settings = get_settings()
     upload_id = f"UPLOAD_{uuid4().hex[:12].upper()}"
-    object_path = f"tenants/{principal.tenant_id}/uploads/{upload_id}.csv"
+    category = parsed.source_type.lower()
+    object_path = f"tenants/{principal.tenant_id}/uploads/{category}/{upload_id}.csv"
     storage = SupabaseStorage(settings)
     storage_status = "VALIDATED_ONLY"
     persisted_path: str | None = None
@@ -200,7 +216,12 @@ async def upload_source(
                     resource_type="artifact",
                     resource_id=upload_id,
                     outcome="AVAILABLE",
-                    details={"filename": filename, "row_count": parsed.row_count},
+                    details={
+                        "filename": filename,
+                        "row_count": parsed.row_count,
+                        "source_type": parsed.source_type,
+                        "classification_confidence": str(parsed.classification_confidence),
+                    },
                     request_id=request.state.request_id,
                 )
         except Exception:
@@ -218,12 +239,183 @@ async def upload_source(
     return SourceUploadResponse(
         upload_id=upload_id,
         filename=filename,
+        source_type=parsed.source_type,
+        classification_confidence=parsed.classification_confidence,
+        classification_evidence=parsed.classification_evidence,
         row_count=parsed.row_count,
         columns=parsed.columns,
         decimal_values_checked=parsed.decimal_values_checked,
         storage_status=storage_status,
         object_path=persisted_path,
     )
+
+
+@router.post("/sources/upload", response_model=SourceUploadResponse)
+async def upload_source(
+    file: Annotated[UploadFile, File()],
+    principal: Annotated[Principal, Depends(require_roles("analyst"))],
+    request: Request,
+) -> SourceUploadResponse:
+    filename, content = await _read_source_upload(file)
+    return await _persist_source_upload(
+        filename=filename,
+        content=content,
+        principal=principal,
+        request=request,
+    )
+
+
+@router.post("/sources/uploads", response_model=SourceUploadBatchResponse)
+async def upload_sources(
+    files: Annotated[list[UploadFile], File()],
+    principal: Annotated[Principal, Depends(require_roles("analyst"))],
+    request: Request,
+) -> SourceUploadBatchResponse:
+    settings = get_settings()
+    if not files:
+        raise HTTPException(status_code=422, detail="At least one CSV source file is required")
+    if len(files) > settings.max_upload_files:
+        raise HTTPException(
+            status_code=413,
+            detail=f"A batch may contain at most {settings.max_upload_files} CSV files",
+        )
+
+    payloads: list[tuple[str, bytes]] = []
+    total_bytes = 0
+    for file in files:
+        filename, content = await _read_source_upload(file)
+        total_bytes += len(content)
+        if total_bytes > settings.max_upload_batch_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail="CSV upload batch exceeds the configured aggregate limit",
+            )
+        payloads.append((filename, content))
+
+    results: list[SourceUploadResponse] = []
+    for filename, content in payloads:
+        try:
+            result = await _persist_source_upload(
+                filename=filename,
+                content=content,
+                principal=principal,
+                request=request,
+            )
+        except HTTPException as exc:
+            results.append(
+                SourceUploadResponse(
+                    filename=filename,
+                    status="REJECTED",
+                    error=str(exc.detail),
+                )
+            )
+        except ValueError as exc:
+            results.append(
+                SourceUploadResponse(
+                    filename=filename,
+                    status="REJECTED",
+                    error=str(exc),
+                )
+            )
+        except Exception:
+            logger.exception(
+                "Source batch item failed filename=%s tenant_id=%s",
+                filename,
+                principal.tenant_id,
+            )
+            results.append(
+                SourceUploadResponse(
+                    filename=filename,
+                    status="REJECTED",
+                    error="The source file could not be stored safely",
+                )
+            )
+        else:
+            results.append(result)
+
+    accepted_count = sum(item.status == "ACCEPTED" for item in results)
+    return SourceUploadBatchResponse(
+        file_count=len(results),
+        accepted_count=accepted_count,
+        rejected_count=len(results) - accepted_count,
+        files=results,
+    )
+
+
+@router.post("/runs/from-uploads", response_model=SourceRunResponse, status_code=201)
+async def create_run_from_uploads(
+    files: Annotated[list[UploadFile], File()],
+    upload_ids: Annotated[list[str], Form()],
+    principal: Annotated[Principal, Depends(require_roles("analyst"))],
+    request: Request,
+    name: Annotated[str | None, Form(max_length=160)] = None,
+) -> SourceRunResponse:
+    """Create and execute a run from a previously accepted upload bundle.
+
+    The browser resends the selected bytes so the server can verify them against
+    immutable artifact hashes before execution. This prevents a classify-then-swap
+    race and keeps the accepted artifact as the authoritative source.
+    """
+
+    settings = get_settings()
+    if not settings.database_url:
+        raise HTTPException(status_code=503, detail="CSV control runs require DATABASE_URL")
+    if not files or len(files) != len(upload_ids):
+        raise HTTPException(
+            status_code=422,
+            detail="Every source file must have one accepted upload identifier",
+        )
+    if len(files) > settings.max_upload_files:
+        raise HTTPException(status_code=413, detail="Too many source files")
+
+    payloads: list[tuple[str, str, bytes]] = []
+    total_bytes = 0
+    for upload_id, file in zip(upload_ids, files, strict=True):
+        filename, content = await _read_source_upload(file)
+        total_bytes += len(content)
+        if total_bytes > settings.max_upload_batch_bytes:
+            raise HTTPException(
+                status_code=413, detail="CSV run batch exceeds the configured aggregate limit"
+            )
+        payloads.append((upload_id, filename, content))
+
+    with session_scope(tenant_id=principal.tenant_id) as session:
+        for upload_id, filename, content in payloads:
+            artifact = session.get(ArtifactRecord, (principal.tenant_id, upload_id))
+            if artifact is None or not artifact.kind.startswith("SOURCE_"):
+                raise HTTPException(
+                    status_code=404, detail=f"Accepted upload not found: {filename}"
+                )
+            if artifact.sha256 != sha256(content).hexdigest():
+                raise HTTPException(
+                    status_code=409, detail=f"File changed after classification: {filename}"
+                )
+            if artifact.run_id is not None:
+                raise HTTPException(
+                    status_code=409, detail=f"Upload is already attached to run {artifact.run_id}"
+                )
+
+    try:
+        documents = [
+            (upload_id, filename, read_source_csv(content, filename=filename))
+            for upload_id, filename, content in payloads
+        ]
+        result = execute_source_run(
+            documents,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.subject,
+            request_id=request.state.request_id,
+            run_name=name.strip() if name and name.strip() else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    with session_scope(tenant_id=principal.tenant_id) as session:
+        for upload_id, _, _ in payloads:
+            artifact = session.get(ArtifactRecord, (principal.tenant_id, upload_id))
+            if artifact is not None:
+                artifact.run_id = result.run_id
+    return result
 
 
 @router.post("/agreements/upload", response_model=Agreement, status_code=201)
@@ -557,11 +749,15 @@ async def _run_agreement_compilation(
 def agreements(
     principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
 ) -> list[Agreement]:
-    if _seeded_demo_enabled(principal):
-        return [AGREEMENT]
-    if get_settings().database_url:
+    stored: list[Agreement] = []
+    database_configured = bool(get_settings().database_url)
+    if database_configured:
         with session_scope(tenant_id=principal.tenant_id) as session:
-            return AgreementRepository(session).list(tenant_id=principal.tenant_id)
+            stored = AgreementRepository(session).list(tenant_id=principal.tenant_id)
+    if _seeded_demo_enabled(principal):
+        return [*stored, *([] if any(item.id == AGREEMENT.id for item in stored) else [AGREEMENT])]
+    if database_configured:
+        return stored
     _require_seeded_demo(principal)
     return []
 
@@ -571,11 +767,8 @@ def agreement(
     agreement_id: str,
     principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
 ) -> Agreement:
-    if _seeded_demo_enabled(principal):
-        try:
-            return governance.agreement(agreement_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Agreement not found") from exc
+    if _seeded_demo_enabled(principal) and agreement_id == AGREEMENT.id:
+        return governance.agreement(agreement_id)
     if get_settings().database_url:
         with session_scope(tenant_id=principal.tenant_id) as session:
             record = AgreementRepository(session).get(
@@ -588,6 +781,47 @@ def agreement(
 
 
 @router.post(
+    "/agreements/{agreement_id}/clauses",
+    response_model=AgreementClause,
+    status_code=201,
+)
+def add_agreement_clause(
+    agreement_id: str,
+    clause: AgreementClauseCreate,
+    principal: Annotated[Principal, Depends(require_roles("analyst"))],
+    request: Request,
+) -> AgreementClause:
+    if not get_settings().database_url:
+        raise HTTPException(status_code=503, detail="Agreement persistence is not configured")
+    with session_scope(tenant_id=principal.tenant_id) as session:
+        repository = AgreementRepository(session)
+        try:
+            created = repository.add_clause(
+                tenant_id=principal.tenant_id,
+                agreement_id=agreement_id,
+                clause=clause,
+                actor_id=principal.subject,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Agreement not found") from exc
+        RunRepository(session).write_audit(
+            tenant_id=principal.tenant_id,
+            actor_id=principal.subject,
+            action="AGREEMENT_CLAUSE_ADDED",
+            resource_type="agreement_clause",
+            resource_id=created.id,
+            outcome="EXTRACTED",
+            details={
+                "agreement_id": agreement_id,
+                "reference": created.reference,
+                "source_type": created.source_type,
+            },
+            request_id=request.state.request_id,
+        )
+        return created
+
+
+@router.post(
     "/agreements/{agreement_id}/extract-controls",
     response_model=list[ControlProposal],
 )
@@ -596,11 +830,8 @@ async def extract_agreement_controls(
     principal: Annotated[Principal, Depends(require_roles("analyst"))],
     request: Request,
 ) -> list[ControlProposal]:
-    if _seeded_demo_enabled(principal):
-        try:
-            return governance.proposals(agreement_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Agreement not found") from exc
+    if _seeded_demo_enabled(principal) and agreement_id == AGREEMENT.id:
+        return governance.proposals(agreement_id)
     _, proposals = await _run_agreement_compilation(
         agreement_id=agreement_id,
         principal=principal,
@@ -617,11 +848,8 @@ def agreement_control_proposals(
     agreement_id: str,
     principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
 ) -> list[ControlProposal]:
-    if _seeded_demo_enabled(principal):
-        try:
-            return governance.proposals(agreement_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Agreement not found") from exc
+    if _seeded_demo_enabled(principal) and agreement_id == AGREEMENT.id:
+        return governance.proposals(agreement_id)
     if get_settings().database_url:
         with session_scope(tenant_id=principal.tenant_id) as session:
             repository = AgreementRepository(session)
@@ -645,7 +873,9 @@ def create_manual_control_proposal(
     principal: Annotated[Principal, Depends(require_roles("analyst"))],
     request: Request,
 ) -> ControlProposal:
-    if not get_settings().database_url or _seeded_demo_enabled(principal):
+    if not get_settings().database_url or (
+        _seeded_demo_enabled(principal) and agreement_id == AGREEMENT.id
+    ):
         raise HTTPException(status_code=404, detail="Resource not found")
     with session_scope(tenant_id=principal.tenant_id) as session:
         repository = AgreementRepository(session)
@@ -688,7 +918,7 @@ def verify_control_proposal(
     principal: Annotated[Principal, Depends(require_roles("analyst"))],
     request: Request,
 ) -> ControlProposalVerification:
-    if not get_settings().database_url or _seeded_demo_enabled(principal):
+    if not get_settings().database_url:
         raise HTTPException(status_code=404, detail="Resource not found")
     with session_scope(tenant_id=principal.tenant_id) as session:
         repository = AgreementRepository(session)
@@ -728,7 +958,7 @@ def approve_control_proposal(
     principal: Annotated[Principal, Depends(require_roles("approver"))],
     request: Request,
 ) -> Control:
-    if not get_settings().database_url or _seeded_demo_enabled(principal):
+    if not get_settings().database_url:
         raise HTTPException(status_code=404, detail="Resource not found")
     with session_scope(tenant_id=principal.tenant_id) as session:
         repository = AgreementRepository(session)
@@ -942,7 +1172,13 @@ def unresolved_matches(
     principal: Annotated[Principal, Depends(require_roles("analyst", "approver", "viewer"))],
 ) -> list[UnresolvedMatch]:
     if run_id != DEMO_RUN_ID:
-        raise HTTPException(status_code=404, detail="Run not found")
+        if not get_settings().database_url:
+            raise HTTPException(status_code=404, detail="Run not found")
+        with session_scope(tenant_id=principal.tenant_id) as session:
+            return RunRepository(session).list_unresolved_matches(
+                tenant_id=principal.tenant_id,
+                run_id=run_id,
+            )
     _require_seeded_demo(principal)
     return store.unresolved_matches()
 

@@ -69,7 +69,7 @@ def _validate_live_control_registry(controls: list[Control]) -> None:
         )
 
 
-def _live_controls_for_tenant(tenant_id: str) -> list[Control]:
+def live_controls_for_tenant(tenant_id: str) -> list[Control]:
     settings = get_settings()
     if not settings.database_url:
         return list(CONTROLS)
@@ -148,7 +148,7 @@ async def sync_razorpay(
     global last_sync
     started = perf_counter()
     active = client or RazorpayClient()
-    live_controls = _live_controls_for_tenant(tenant_id)
+    live_controls = live_controls_for_tenant(tenant_id)
     start_day = request.day or 1
     end_day = request.day or monthrange(request.year, request.month)[1]
     start = datetime(request.year, request.month, start_day, tzinfo=timezone.utc)

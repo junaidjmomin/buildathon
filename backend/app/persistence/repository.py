@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,6 +18,7 @@ from app.core.money import money
 from app.domain.models import (
     Agreement,
     AgreementClause,
+    AgreementClauseCreate,
     CanonicalEventEdge,
     CaseAuditEntry,
     CaseEvidence,
@@ -25,6 +27,7 @@ from app.domain.models import (
     ControlProposal,
     ControlProposalVerification,
     ControlType,
+    EvaluationStatus,
     ExceptionCase,
     ExceptionCaseStatus,
     FinancialEvent,
@@ -33,6 +36,7 @@ from app.domain.models import (
     RunListItem,
     RunSummary,
     StatusBreakdown,
+    UnresolvedMatch,
     Violation,
 )
 from app.persistence.orm import (
@@ -370,21 +374,38 @@ class RunRepository:
     def save_mutation_test(
         self, result: MutationTestSummary, *, tenant_id: str = "novacart_demo"
     ) -> None:
-        self.session.merge(
-            MutationTestRecord(
-                tenant_id=tenant_id,
-                id=result.id,
-                run_id=result.source_run_id,
-                status=result.status,
-                mutation_count=result.mutation_count,
-                detected_count=result.detected_count,
-                missed_count=result.missed_count,
-                detection_rate=result.mutation_detection_rate,
-                false_positive_count=result.false_positive_count,
-                results=result.model_dump(mode="json"),
-                created_at=result.created_at,
+        values = {
+            "tenant_id": tenant_id,
+            "id": result.id,
+            "run_id": result.source_run_id,
+            "status": result.status,
+            "mutation_count": result.mutation_count,
+            "detected_count": result.detected_count,
+            "missed_count": result.missed_count,
+            "detection_rate": result.mutation_detection_rate,
+            "false_positive_count": result.false_positive_count,
+            "results": result.model_dump(mode="json"),
+            "created_at": result.created_at,
+        }
+        if self.session.get_bind().dialect.name == "postgresql":
+            statement = postgresql_insert(MutationTestRecord).values(**values)
+            self.session.execute(
+                statement.on_conflict_do_update(
+                    index_elements=["tenant_id", "run_id", "id"],
+                    set_={
+                        "status": statement.excluded.status,
+                        "mutation_count": statement.excluded.mutation_count,
+                        "detected_count": statement.excluded.detected_count,
+                        "missed_count": statement.excluded.missed_count,
+                        "detection_rate": statement.excluded.detection_rate,
+                        "false_positive_count": statement.excluded.false_positive_count,
+                        "results": statement.excluded.results,
+                        "created_at": statement.excluded.created_at,
+                    },
+                )
             )
-        )
+            return
+        self.session.merge(MutationTestRecord(**values))
 
     def list_runs(self, *, tenant_id: str, limit: int = 50) -> list[RunListItem]:
         records = self.session.scalars(
@@ -407,7 +428,11 @@ class RunRepository:
                     id=record.id,
                     name=record.name,
                     status=record.status,
-                    source="SEEDED" if record.seed is not None else "RAZORPAY",
+                    source=(
+                        "SEEDED"
+                        if record.seed is not None
+                        else str(manifest.get("source", "RAZORPAY"))
+                    ),
                     transaction_count=int(
                         manifest.get("transaction_count", counts.get("payments", 0))
                     ),
@@ -534,13 +559,16 @@ class RunRepository:
         events: list[FinancialEvent],
         edges: list[CanonicalEventEdge],
         tenant_id: str,
+        run_name: str = "Razorpay read-only sync",
+        source: str = "RAZORPAY",
+        manifest_extra: dict[str, Any] | None = None,
     ) -> None:
         run = self.session.get(RunRecord, (tenant_id, run_id))
         if run is None:
             run = RunRecord(
                 tenant_id=tenant_id,
                 id=run_id,
-                name="Razorpay read-only sync",
+                name=run_name,
                 status="COMPLETE",
                 seed=None,
                 manifest={},
@@ -550,11 +578,14 @@ class RunRepository:
             self.session.add(run)
             self.session.flush()
         run.status = "COMPLETE"
+        run.name = run_name
         run.manifest = {
             "sync_id": sync_id,
+            "source": source,
             "transaction_count": sum(event.event_type == "PAYMENT" for event in events),
             "event_count": len(events),
             "relationship_count": len(edges),
+            **(manifest_extra or {}),
         }
         run.completed_at = synced_at
         for event in events:
@@ -755,6 +786,38 @@ class RunRepository:
             .order_by(RootCauseRecord.verified_impact.desc())
         ).all()
         return [self._root_cause(record) for record in records]
+
+    def list_unresolved_matches(self, *, tenant_id: str, run_id: str) -> list[UnresolvedMatch]:
+        records = self.session.scalars(
+            select(EventRecord)
+            .where(
+                EventRecord.tenant_id == tenant_id,
+                EventRecord.run_id == run_id,
+                EventRecord.event_type == "UNRESOLVED_MATCH",
+            )
+            .order_by(EventRecord.occurred_at, EventRecord.id)
+        ).all()
+        result = []
+        for record in records:
+            payload = record.normalized_payload or {}
+            settlement_id = str(payload.get("settlement_id") or record.external_id)
+            result.append(
+                UnresolvedMatch(
+                    id=record.external_id,
+                    payment_id=settlement_id,
+                    status=EvaluationStatus.UNRESOLVED,
+                    amount=record.amount,
+                    settlement_id=settlement_id,
+                    missing_evidence=(
+                        "No deterministic bank match met the confidence and ambiguity thresholds."
+                    ),
+                    candidate_bank_references=[
+                        str(item) for item in payload.get("candidate_bank_references", [])
+                    ],
+                    safe_conclusion="No EventEdge was created.",
+                )
+            )
+        return result
 
     def get_root_cause(self, *, tenant_id: str, root_cause_id: str) -> RootCause | None:
         record = self.session.scalar(
@@ -1009,6 +1072,8 @@ class AgreementRepository:
                 text=clause.text,
                 effective_from=clause.effective_from,
                 effective_to=clause.effective_to,
+                source_type=clause.source_type,
+                created_by=clause.created_by or actor_id,
                 content_hash=sha256(clause.text.encode("utf-8")).hexdigest(),
                 created_at=now,
             )
@@ -1016,6 +1081,80 @@ class AgreementRepository:
         )
         self.session.flush()
         return agreement
+
+    def add_clause(
+        self,
+        *,
+        tenant_id: str,
+        agreement_id: str,
+        clause: AgreementClauseCreate,
+        actor_id: str,
+    ) -> AgreementClause:
+        statement = select(AgreementRecord).where(
+            AgreementRecord.tenant_id == tenant_id,
+            AgreementRecord.id == agreement_id,
+        )
+        if self.session.bind is not None and self.session.bind.dialect.name == "postgresql":
+            statement = statement.with_for_update()
+        agreement = self.session.scalar(statement)
+        if agreement is None:
+            raise KeyError(agreement_id)
+
+        effective_from = clause.effective_from or agreement.effective_from
+        effective_to = (
+            clause.effective_to if clause.effective_to is not None else agreement.effective_to
+        )
+        if effective_to is not None and effective_to < effective_from:
+            raise ValueError("effective_to must not precede effective_from")
+        if effective_from < agreement.effective_from:
+            raise ValueError("Clause effective_from cannot precede the agreement")
+        if agreement.effective_to is not None and (
+            effective_to is None or effective_to > agreement.effective_to
+        ):
+            raise ValueError("Clause effective period must remain inside the agreement period")
+
+        canonical = json.dumps(
+            {
+                "reference": clause.reference.strip(),
+                "heading": clause.heading.strip(),
+                "text": clause.text.strip(),
+                "effective_from": effective_from.isoformat(),
+                "effective_to": effective_to.isoformat() if effective_to else None,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        content_hash = sha256(canonical.encode("utf-8")).hexdigest()
+        existing = self.session.scalar(
+            select(AgreementClauseRecord).where(
+                AgreementClauseRecord.tenant_id == tenant_id,
+                AgreementClauseRecord.agreement_id == agreement_id,
+                AgreementClauseRecord.content_hash == content_hash,
+            )
+        )
+        if existing is not None:
+            return self._clause(existing)
+
+        created = AgreementClauseRecord(
+            tenant_id=tenant_id,
+            agreement_id=agreement_id,
+            id=f"CLAUSE_MANUAL_{content_hash[:20].upper()}",
+            reference=clause.reference.strip(),
+            page=0,
+            heading=clause.heading.strip(),
+            text=clause.text.strip(),
+            effective_from=effective_from,
+            effective_to=effective_to,
+            source_type="MANUAL_ENTRY",
+            created_by=actor_id,
+            content_hash=content_hash,
+            created_at=datetime.now(timezone.utc),
+        )
+        self.session.add(created)
+        agreement.status = "EXTRACTED"
+        agreement.updated_at = datetime.now(timezone.utc)
+        self.session.flush()
+        return self._clause(created)
 
     def list_proposals(self, *, tenant_id: str, agreement_id: str) -> list[ControlProposal]:
         records = self.session.scalars(
@@ -1283,18 +1422,21 @@ class AgreementRepository:
             effective_to=record.effective_to,
             source_type=record.source_type,
             content_hash=record.content_hash,
-            clauses=[
-                AgreementClause(
-                    id=clause.id,
-                    reference=clause.reference,
-                    page=clause.page,
-                    heading=clause.heading,
-                    text=clause.text,
-                    effective_from=clause.effective_from,
-                    effective_to=clause.effective_to,
-                )
-                for clause in clauses
-            ],
+            clauses=[self._clause(clause) for clause in clauses],
+        )
+
+    @staticmethod
+    def _clause(clause: AgreementClauseRecord) -> AgreementClause:
+        return AgreementClause(
+            id=clause.id,
+            reference=clause.reference,
+            page=clause.page,
+            heading=clause.heading,
+            text=clause.text,
+            effective_from=clause.effective_from,
+            effective_to=clause.effective_to,
+            source_type=clause.source_type,
+            created_by=clause.created_by,
         )
 
     @staticmethod
@@ -1379,6 +1521,91 @@ class SourceSnapshotRepository:
         self.session.add(record)
         self.session.flush()
         return record
+
+    def capture_many(
+        self,
+        *,
+        tenant_id: str,
+        items: list[dict[str, Any]],
+    ) -> list[SourceSnapshotRecord]:
+        """Idempotently capture a batch with one lookup and one write round trip."""
+
+        if not items:
+            return []
+        prepared: list[tuple[tuple[str, str, str], dict[str, Any]]] = []
+        for item in items:
+            payload = item["payload"]
+            canonical = json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+                allow_nan=False,
+            ).encode("utf-8")
+            fingerprint = sha256(canonical).hexdigest()
+            key = (item["resource_type"], item["external_id"], fingerprint)
+            prepared.append(
+                (
+                    key,
+                    {
+                        "tenant_id": tenant_id,
+                        "id": f"SRC_{uuid4().hex.upper()}",
+                        "run_id": item.get("run_id"),
+                        "job_id": item.get("job_id"),
+                        "source_system": item["source_system"],
+                        "resource_type": item["resource_type"],
+                        "external_id": item["external_id"],
+                        "source_version": item.get("source_version"),
+                        "schema_version": item.get("schema_version", 1),
+                        "content_sha256": fingerprint,
+                        "payload": payload,
+                        "provenance": item["provenance"],
+                        "source_created_at": item.get("source_created_at"),
+                        "captured_at": item["captured_at"],
+                        "created_at": datetime.now(timezone.utc),
+                    },
+                )
+            )
+        fingerprints = {key[2] for key, _ in prepared}
+        existing = self.session.scalars(
+            select(SourceSnapshotRecord).where(
+                SourceSnapshotRecord.tenant_id == tenant_id,
+                SourceSnapshotRecord.source_system == items[0]["source_system"],
+                SourceSnapshotRecord.content_sha256.in_(fingerprints),
+            )
+        ).all()
+        record_by_key = {
+            (record.resource_type, record.external_id, record.content_sha256): record
+            for record in existing
+        }
+        missing_by_key = {key: values for key, values in prepared if key not in record_by_key}
+        if missing_by_key:
+            if self.session.bind is not None and self.session.bind.dialect.name == "postgresql":
+                statement = postgresql_insert(SourceSnapshotRecord).values(
+                    list(missing_by_key.values())
+                )
+                self.session.execute(
+                    statement.on_conflict_do_nothing(
+                        constraint="uq_source_snapshots_tenant_fingerprint"
+                    )
+                )
+            else:
+                self.session.add_all(
+                    SourceSnapshotRecord(**values) for values in missing_by_key.values()
+                )
+            self.session.flush()
+            records = self.session.scalars(
+                select(SourceSnapshotRecord).where(
+                    SourceSnapshotRecord.tenant_id == tenant_id,
+                    SourceSnapshotRecord.source_system == items[0]["source_system"],
+                    SourceSnapshotRecord.content_sha256.in_(fingerprints),
+                )
+            ).all()
+            record_by_key = {
+                (record.resource_type, record.external_id, record.content_sha256): record
+                for record in records
+            }
+        return [record_by_key[key] for key, _ in prepared]
 
 
 class ControlEvaluationRepository:
