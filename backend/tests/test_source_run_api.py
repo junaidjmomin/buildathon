@@ -212,8 +212,7 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
         assert summary_body["unresolved_control_count"] == breakdown["unresolved"]
         assert summary_body["unresolved_relationship_count"] == 1
         assert summary_body["metrics_note"] == (
-            "Precision and recall require labeled ground truth and are not scored "
-            "for this run."
+            "Precision and recall require labeled ground truth and are not scored for this run."
         )
 
         coverage = client.get(f"/api/v1/runs/{run_id}/control-coverage")
@@ -241,17 +240,12 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
             for item in root_items
         )
         assert all(isinstance(item["total_attributable_impact"], str) for item in root_items)
-        assert all(
-            item["verification_evidence"]["violation_ids"]
-            for item in root_items
-        )
+        assert all(item["verification_evidence"]["violation_ids"] for item in root_items)
         assert all(
             item["verification_evidence"]["grouping_basis"] == "PRIMARY_VIOLATION_CONTROL_TYPE"
             for item in root_items
         )
-        assert all(
-            item["primary_violation_count"] >= 1 for item in root_items
-        )
+        assert all(item["primary_violation_count"] >= 1 for item in root_items)
         assert all(
             "unaffected_evaluations" in item["verification_evidence"]["unaffected_comparison"]
             for item in root_items

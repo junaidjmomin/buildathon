@@ -115,9 +115,7 @@ def _classify(
         mdr = evaluation_by_key.get((ControlType.MDR_RATE, violation.payment_id))
         parents = [
             candidate
-            for candidate in violations_by_key.get(
-                (violation.payment_id, ControlType.MDR_RATE), []
-            )
+            for candidate in violations_by_key.get((violation.payment_id, ControlType.MDR_RATE), [])
             if candidate.id != violation.id
         ]
         if evaluation is None or mdr is None or mdr.difference_amount is None:
@@ -312,11 +310,7 @@ def attribute_root_causes(
 
     roots: list[RootCause] = []
     for category, root_id in sorted(root_ids.items(), key=lambda item: item[1]):
-        members = [
-            violation
-            for violation in attributed
-            if violation.root_cause_id == root_id
-        ]
+        members = [violation for violation in attributed if violation.root_cause_id == root_id]
         primaries = [
             violation for violation in members if violation.lineage_type == LineageType.PRIMARY
         ]
@@ -326,12 +320,8 @@ def attribute_root_causes(
         if not primaries:
             # Defensive: a root cause always requires at least one primary.
             continue
-        direct_impact = money(
-            sum((item.financial_impact for item in primaries), Decimal("0"))
-        )
-        downstream_impact = money(
-            sum((item.financial_impact for item in downstream), Decimal("0"))
-        )
+        direct_impact = money(sum((item.financial_impact for item in primaries), Decimal("0")))
+        downstream_impact = money(sum((item.financial_impact for item in downstream), Decimal("0")))
         total = money(direct_impact + downstream_impact)
         member_evaluations = [
             evaluation_by_violation_id[item.id]
@@ -339,8 +329,7 @@ def attribute_root_causes(
             if item.id in evaluation_by_violation_id
         ]
         unaffected = sum(
-            evaluation.control.control_type == category
-            and evaluation.violation is None
+            evaluation.control.control_type == category and evaluation.violation is None
             for evaluation in evaluations
         )
         roots.append(

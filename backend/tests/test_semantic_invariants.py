@@ -185,9 +185,7 @@ def test_partially_explained_settlement_keeps_only_the_residual_impact() -> None
     # 72.60 total deviation − 23.60 explained upstream = 49.00 independent.
     assert residual.financial_impact == Decimal("49.00")
 
-    violation_total = sum(
-        (violation.financial_impact for violation in violations), Decimal("0")
-    )
+    violation_total = sum((violation.financial_impact for violation in violations), Decimal("0"))
     root_total = sum((root.total_attributable_impact for root in roots), Decimal("0"))
     assert violation_total == Decimal("72.60")
     # No double counting: every violation is attributed to exactly one root.
@@ -204,9 +202,7 @@ def test_root_cause_attribution_partitions_violations_exactly_once() -> None:
     _evaluations, violations, roots = _lineage(payment, settlement)
 
     assert all(violation.root_cause_id for violation in violations)
-    members_by_root = {
-        root.id: set(root.verification_evidence["violation_ids"]) for root in roots
-    }
+    members_by_root = {root.id: set(root.verification_evidence["violation_ids"]) for root in roots}
     all_members = [vid for members in members_by_root.values() for vid in members]
     # No violation appears under two root causes.
     assert len(all_members) == len(set(all_members))
@@ -216,9 +212,8 @@ def test_root_cause_attribution_partitions_violations_exactly_once() -> None:
         assert root.verification_evidence["grouping_basis"] == "PRIMARY_VIOLATION_CONTROL_TYPE"
         assert root.verification_evidence["lineage_authority"] == "CONTROL_DEPENDENCY_SEMANTICS"
         assert root.primary_violation_count >= 1
-        assert (
-            root.primary_violation_count + root.downstream_effect_count
-            == len(root.verification_evidence["violation_ids"])
+        assert root.primary_violation_count + root.downstream_effect_count == len(
+            root.verification_evidence["violation_ids"]
         )
 
 
@@ -227,9 +222,13 @@ def test_root_cause_attribution_partitions_violations_exactly_once() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _lifecycle(payment_id: str, *, refund: Decimal = Decimal("0"),
-               unsupported: Decimal = Decimal("0"),
-               bank_credit: Decimal | None = Decimal("9_000.00")) -> PaymentLifecycle:
+def _lifecycle(
+    payment_id: str,
+    *,
+    refund: Decimal = Decimal("0"),
+    unsupported: Decimal = Decimal("0"),
+    bank_credit: Decimal | None = Decimal("9_000.00"),
+) -> PaymentLifecycle:
     return PaymentLifecycle(
         payment_id=payment_id,
         order_id=f"order_{payment_id}",
@@ -266,9 +265,7 @@ def test_relationship_types_without_actual_edges_are_absent_from_runtime_coverag
     assert "PAYMENT_METHOD_RECLASSIFICATION" in failure_modes
 
     # Blind spots never inflate runtime edge totals.
-    assert summary.total_material_edges == sum(
-        item.material_edge_count for item in summary.items
-    )
+    assert summary.total_material_edges == sum(item.material_edge_count for item in summary.items)
     assert (
         summary.governed_edges + summary.partially_governed_edges + summary.ungoverned_edges
         == summary.total_material_edges

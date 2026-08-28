@@ -197,9 +197,7 @@ def execute_source_run(
         evaluate_started = datetime.now(timezone.utc)
         evaluations = build_live_control_evaluations(persisted_events, edges, controls)
         base_violations = [
-            evaluation.violation
-            for evaluation in evaluations
-            if evaluation.violation is not None
+            evaluation.violation for evaluation in evaluations if evaluation.violation is not None
         ]
         event_by_id = {event.id: event for event in persisted_events}
         # Root/parent relationships come from control dependency semantics and
@@ -229,8 +227,7 @@ def execute_source_run(
                 financial_impact=violation.financial_impact,
                 evidence={
                     **evaluation.evidence,
-                    "counts_toward_verified_leakage": violation.financial_impact
-                    > Decimal("0"),
+                    "counts_toward_verified_leakage": violation.financial_impact > Decimal("0"),
                     "financial_impact_policy": (
                         "INDEPENDENT_RESIDUAL"
                         if violation.financial_impact > Decimal("0")
@@ -764,8 +761,6 @@ def _match_score(
         "confidence_score": str(score),
         "threshold": str(MATCH_THRESHOLD),
     }
-
-
 
 
 def _id_column(source_type: str) -> str:

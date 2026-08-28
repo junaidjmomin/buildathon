@@ -158,9 +158,7 @@ def control_coverage(session: Session, *, tenant_id: str, run_id: str) -> Contro
                 relationship=relationship,
                 failure_mode=control_type,
                 description=description,
-                reason=(
-                    "MUTATION_DERIVED"
-                ),
+                reason=("MUTATION_DERIVED"),
             )
         )
     descriptions = {

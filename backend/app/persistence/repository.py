@@ -679,8 +679,7 @@ class RunRepository:
             ground_truth_available=False,
             metrics_scope="LIVE_CONTROL_OUTCOMES_NO_GROUND_TRUTH",
             metrics_note=(
-                "Precision and recall require labeled ground truth and are not "
-                "scored for this run."
+                "Precision and recall require labeled ground truth and are not scored for this run."
             ),
         )
 

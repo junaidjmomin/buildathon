@@ -103,8 +103,7 @@ def test_demo_metrics_are_measured_from_separate_ground_truth() -> None:
     assert body["unresolved_relationship_count"] == 0
     assert body["unresolved_match_count"] == 5
     assert body["metrics_note"] == (
-        "Precision and recall are scored against the labeled ground truth "
-        "seeded with this run."
+        "Precision and recall are scored against the labeled ground truth seeded with this run."
     )
 
 
