@@ -151,13 +151,13 @@ function AuthGate({
   onSignIn?: () => Promise<void>;
 }) {
   return (
-    <main className="grid min-h-screen place-items-center bg-[#f3f4ef] px-5 py-12">
+    <main className="grid min-h-screen place-items-center bg-[var(--ink-900)] px-5 py-12">
       <section
         aria-busy={mode === "loading"}
         aria-live="polite"
         className="panel w-full max-w-md rounded-2xl p-8 text-center"
       >
-        <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-[#dff2e8] text-[#174b3b]">
+        <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]">
           {mode === "loading" ? (
             <LoaderCircle aria-hidden="true" className="animate-spin" size={22} />
           ) : mode === "error" ? (
@@ -166,7 +166,7 @@ function AuthGate({
             <KeyRound aria-hidden="true" size={22} />
           )}
         </span>
-        <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.15em] text-[#1e6b51]">
+        <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--evergreen)]">
           Razorpay workspace access
         </p>
         <h1 className="mt-2 text-2xl font-semibold tracking-[-0.035em]">
@@ -176,7 +176,7 @@ function AuthGate({
               ? "Authentication needs attention"
               : "Sign in to sl3dge"}
         </h1>
-        <p className="mt-3 text-sm leading-6 text-[#66716b]">
+        <p className="mt-3 text-sm leading-6 text-[var(--paper-dim)]">
           {mode === "error"
             ? message
             : mode === "loading"
@@ -185,7 +185,7 @@ function AuthGate({
         </p>
         {mode !== "loading" ? (
           <button
-            className="mt-7 inline-flex items-center justify-center rounded-lg bg-[#112a2b] px-4 py-2.5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1e6b51]"
+            className="mt-7 inline-flex items-center justify-center rounded-lg bg-[var(--evergreen)] px-4 py-2.5 text-sm font-semibold text-[#06120c]"
             onClick={() => void onSignIn?.()}
             type="button"
           >

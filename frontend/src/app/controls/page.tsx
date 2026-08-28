@@ -4,63 +4,73 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, LoaderCircle, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
-import { AppShell } from "@/components/app-shell";
+import { Badge, EmptyState, ErrorState, PageHeader } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
 
 export default function ControlsPage() {
   const controls = useQuery({ queryKey: ["controls"], queryFn: api.controls });
 
   return (
-    <AppShell>
-      <main className="mx-auto max-w-[1160px] px-5 py-8 md:px-8 md:py-10">
-        <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1e6b51]">
-          <ShieldCheck size={14} /> Approved control registry
-        </p>
-        <h1 className="text-3xl font-semibold tracking-[-0.035em]">Controls</h1>
-        <p className="mt-2 text-sm text-[#66716b]">
-          Effective-dated rules used by the deterministic engine. Rates and money tolerances remain Decimal strings.
-        </p>
+    <main className="mx-auto max-w-[1160px] px-5 py-8 md:px-8 md:py-10">
+      <PageHeader
+        eyebrow={
+          <>
+            <ShieldCheck size={14} /> Approved control registry
+          </>
+        }
+        title="Controls"
+        subtitle="Effective-dated rules used by the deterministic engine. Rates and money tolerances remain Decimal strings."
+      />
 
-        {controls.isPending ? (
-          <LoaderCircle className="mx-auto mt-20 animate-spin text-[#1e6b51]" />
-        ) : controls.isError ? (
-          <div className="panel mt-7 rounded-2xl p-8 text-sm text-[#a43d32]" role="alert">
-            Controls could not be loaded.{" "}
-            <button type="button" onClick={() => controls.refetch()} className="font-semibold underline">
-              Retry
-            </button>
-          </div>
-        ) : controls.data?.length === 0 ? (
-          <div className="panel mt-7 rounded-2xl p-8 text-sm text-[#66716b]">
-            No controls have been approved yet. Approve proposals on the Agreements page to populate the registry.
-          </div>
-        ) : (
-          <section className="mt-7 space-y-3">
-            {controls.data?.map((control) => (
-              <article key={control.id} className="panel rounded-2xl p-5">
-                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-                  <div>
-                    <p className="font-mono text-[10px] text-[#758079]">{control.id} · v{control.version}</p>
-                    <h2 className="mt-1 text-base font-semibold">
-                      <Link href={`/controls/${control.logical_control_key}`} className="inline-flex items-center gap-1 hover:underline">
-                        {control.name} <ArrowRight size={13} className="text-[#1e6b51]" />
-                      </Link>
-                    </h2>
-                    <p className="mt-2 text-xs text-[#66716b]">{control.scope} · {control.expected}</p>
-                    <p className="mt-2 text-[11px] text-[#78827d]">{control.source} · {control.source_clause}</p>
-                  </div>
-                  <span className={`w-fit rounded-full px-2.5 py-1 text-[9px] font-bold ${control.status === "APPROVED" ? "bg-[#dff2e8] text-[#1e6b51]" : "bg-[#eceeed] text-[#66716b]"}`}>
-                    {control.status}
-                  </span>
+      {controls.isPending ? (
+        <LoaderCircle className="mx-auto mt-20 animate-spin text-[var(--evergreen)]" />
+      ) : controls.isError ? (
+        <div className="mt-7">
+          <ErrorState what="Controls" onRetry={() => void controls.refetch()} />
+        </div>
+      ) : controls.data?.length === 0 ? (
+        <div className="mt-7">
+          <EmptyState
+            title="No controls have been approved yet"
+            body="Approve proposals on the Agreements page to populate the registry."
+          />
+        </div>
+      ) : (
+        <section className="mt-7 space-y-3">
+          {controls.data?.map((control) => (
+            <article key={control.id} className="panel rounded-2xl p-5">
+              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                <div>
+                  <p className="font-mono text-[10px] text-[var(--paper-faint)]">
+                    {control.id} · v{control.version}
+                  </p>
+                  <h2 className="mt-1 text-base font-semibold text-[var(--paper)]">
+                    <Link
+                      href={`/controls/${control.logical_control_key}`}
+                      className="inline-flex items-center gap-1 transition-colors duration-150 hover:underline"
+                    >
+                      {control.name} <ArrowRight size={13} className="text-[var(--evergreen)]" />
+                    </Link>
+                  </h2>
+                  <p className="mt-2 text-xs text-[var(--paper-dim)]">
+                    {control.scope} · {control.expected}
+                  </p>
+                  <p className="mt-2 text-[11px] text-[var(--paper-faint)]">
+                    {control.source} · {control.source_clause}
+                  </p>
                 </div>
-                <pre className="mt-4 overflow-x-auto rounded-xl bg-[#f3f5f1] p-3 text-[10px] leading-5 text-[#52615a]">
-                  {JSON.stringify(control.parameters, null, 2)}
-                </pre>
-              </article>
-            ))}
-          </section>
-        )}
-      </main>
-    </AppShell>
+                <Badge
+                  status={control.status === "APPROVED" ? "PASS" : "DRAFT"}
+                  label={control.status}
+                />
+              </div>
+              <pre className="number-tabular mt-4 overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--ink-700)] p-3 font-mono text-[10px] leading-5 text-[var(--paper-dim)]">
+                {JSON.stringify(control.parameters, null, 2)}
+              </pre>
+            </article>
+          ))}
+        </section>
+      )}
+    </main>
   );
 }

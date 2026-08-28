@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/components/auth-provider";
 import {
@@ -30,65 +30,102 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const isNavigating = pendingHref !== null && pendingHref !== pathname;
   const auth = useAuth();
+  const queryClient = useQueryClient();
   const selectedRunId = useActiveRunId();
   const isOverride = useActiveRunOverride();
   const runs = useQuery({ queryKey: ["runs"], queryFn: api.runs });
   const activeRun = resolveActiveRun(runs.data, selectedRunId, { allowSeeded: isOverride });
   const items = [
     { label: "Overview", icon: LayoutDashboard, href: "/" },
-    {
-      label: "Controls",
-      icon: ShieldCheck,
-      href: "/controls",
-    },
+    { label: "Controls", icon: ShieldCheck, href: "/controls" },
     { label: "Exceptions", icon: TriangleAlert, href: "/exceptions" },
     { label: "Root causes", icon: GitBranch, href: "/root-causes" },
     { label: "Agreements", icon: FileCheck2, href: "/agreements" },
     { label: "Data sources", icon: Boxes, href: "/data" },
   ];
+  // Warm the destination page's primary query when the user signals intent
+  // (hover or keyboard focus) so the first paint of that tab has data.
+  const prefetchTarget = useCallback(
+    (href: string) => {
+      if (!activeRun) return;
+      const runId = activeRun.id;
+      if (href === "/") {
+        void queryClient.prefetchQuery({
+          queryKey: ["run-summary", runId],
+          queryFn: () => api.summary(runId),
+        });
+      } else if (href === "/controls") {
+        void queryClient.prefetchQuery({ queryKey: ["controls"], queryFn: api.controls });
+      } else if (href === "/exceptions") {
+        void queryClient.prefetchQuery({
+          queryKey: ["exception-cases", runId],
+          queryFn: () => api.exceptionCases(runId),
+        });
+      } else if (href === "/root-causes") {
+        void queryClient.prefetchQuery({
+          queryKey: ["root-causes", runId],
+          queryFn: () => api.rootCauses(runId),
+        });
+      } else if (href === "/agreements") {
+        void queryClient.prefetchQuery({ queryKey: ["agreements"], queryFn: api.agreements });
+      }
+    },
+    [activeRun, queryClient],
+  );
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[236px_1fr]">
-      {isNavigating ? <div aria-label="Loading page" className="fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden bg-[#cfe1d6]"><div className="h-full w-2/3 animate-pulse bg-[#1e6b51]" /></div> : null}
-      <aside className="hidden min-h-screen bg-[#112a2b] px-4 py-5 text-white lg:flex lg:flex-col">
+    <div className="min-h-screen lg:grid lg:grid-cols-[248px_1fr]">
+      {isNavigating ? (
+        <div aria-label="Loading page" className="fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden bg-[var(--line-strong)]">
+          <div className="h-full w-2/3 animate-pulse bg-[var(--evergreen)]" />
+        </div>
+      ) : null}
+      <aside className="hidden min-h-screen flex-col border-r border-[var(--line)] bg-[var(--ink-700)] px-4 py-5 lg:flex">
         <Link href="/" className="mb-8 flex items-center gap-3 px-2">
-          <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-[#dff2e8] text-[#174b3b]">
+          <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-[rgba(47,189,127,0.16)] text-[var(--evergreen)]">
             <Gauge size={20} strokeWidth={2.4} />
           </span>
           <span>
-            <span className="block text-[21px] font-semibold leading-5 tracking-[-0.04em]">sl3dge</span>
-            <span className="text-[10px] uppercase tracking-[0.18em] text-white/45">Control engine</span>
+            <span className="block text-[21px] font-semibold leading-5 tracking-[-0.04em] text-[var(--paper)]">sl3dge</span>
+            <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--paper-faint)]">Control engine</span>
           </span>
         </Link>
         <nav className="space-y-1">
           {items.map(({ label, icon: Icon, href }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
             return (
-            <Link
-              key={label}
-              href={href ?? "#"}
-              onClick={() => { if (href !== pathname) setPendingHref(href); }}
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition ${
-                active ? "bg-white/10 font-medium text-white" : "text-white/58 hover:bg-white/5 hover:text-white"
-              }`}
-              aria-current={active ? "page" : undefined}
-            >
-              <Icon size={16} /> {label}
-            </Link>
+              <Link
+                key={label}
+                href={href ?? "#"}
+                onClick={() => { if (href !== pathname) setPendingHref(href); }}
+                onFocus={() => prefetchTarget(href)}
+                onMouseEnter={() => prefetchTarget(href)}
+                className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors duration-150 ${
+                  active
+                    ? "bg-[rgba(47,189,127,0.12)] font-medium text-[var(--paper)]"
+                    : "text-[var(--paper-dim)] hover:bg-white/[0.04] hover:text-[var(--paper)]"
+                }`}
+                aria-current={active ? "page" : undefined}
+              >
+                {active ? (
+                  <span aria-hidden="true" className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-[var(--evergreen)]" />
+                ) : null}
+                <Icon size={16} className={active ? "text-[var(--evergreen)]" : ""} /> {label}
+              </Link>
             );
           })}
         </nav>
-        <div className="mt-auto rounded-xl border border-white/10 bg-white/[0.055] p-3.5">
-          <div className="mb-2 flex items-center gap-2 text-xs font-medium">
-            <Sparkles size={14} className="text-[#95d6b8]" /> Verification principle
+        <div className="mt-auto rounded-xl border border-[var(--line)] bg-[rgba(47,189,127,0.05)] p-3.5">
+          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--paper)]">
+            <Sparkles size={14} className="text-[var(--evergreen)]" /> Verification principle
           </div>
-          <p className="text-[11px] leading-5 text-white/50">AI proposes. Controls calculate. Evidence decides.</p>
+          <p className="text-[11px] leading-5 text-[var(--paper-dim)]">AI proposes. Controls calculate. Evidence decides.</p>
         </div>
       </aside>
       <div className="min-w-0">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#dfe2db] bg-[#f3f4ef]/90 px-5 backdrop-blur-xl md:px-8">
-          <div className="flex items-center gap-2 text-xs text-[#66716b]">
-            <ShieldCheck size={15} className="text-[#1e6b51]" />
-            <span className="font-medium text-[#17211d]">Financial controls</span>
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[var(--line)] bg-[rgba(10,18,16,0.85)] px-5 backdrop-blur-xl md:px-8">
+          <div className="flex items-center gap-2 text-xs text-[var(--paper-dim)]">
+            <ShieldCheck size={15} className="text-[var(--evergreen)]" />
+            <span className="font-medium text-[var(--paper)]">Financial controls</span>
             <span>·</span>
             {runs.data && runs.data.length > 0 ? (
               <label className="sr-only" htmlFor="active-run">Active run</label>
@@ -105,7 +142,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     persist: run?.source_type !== "DEMO",
                   });
                 }}
-                className="max-w-56 bg-transparent font-medium text-[#52615a] outline-none"
+                className="max-w-56 cursor-pointer bg-transparent font-medium text-[var(--paper)] outline-none"
               >
                 <option value="">Select a run</option>
                 {runs.data.map((run) => (
@@ -120,17 +157,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-2">
             {auth.enabled ? (
-              <span className="hidden max-w-44 truncate text-[11px] font-medium text-[#52615a] sm:inline">
+              <span className="hidden max-w-44 truncate text-[11px] font-medium text-[var(--paper-dim)] sm:inline">
                 {auth.displayName}
               </span>
             ) : null}
-            <div className="flex items-center gap-2 rounded-full border border-[#cdd7cf] bg-white px-3 py-1.5 text-[11px] font-medium text-[#1e6b51]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#2a9b6a]" /> Verification-first
+            <div className="flex items-center gap-2 rounded-full border border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.08)] px-3 py-1.5 text-[11px] font-medium text-[var(--evergreen)]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--evergreen)]" /> Verification-first
             </div>
             {auth.enabled ? (
               <button
                 aria-label="Sign out"
-                className="grid h-8 w-8 place-items-center rounded-full border border-[#cdd7cf] bg-white text-[#52615a] hover:text-[#17211d]"
+                className="grid h-8 w-8 place-items-center rounded-full border border-[var(--line-strong)] text-[var(--paper-dim)] transition-colors hover:text-[var(--paper)]"
                 onClick={() => void auth.signOut()}
                 title="Sign out"
                 type="button"
@@ -142,7 +179,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
         <nav
           aria-label="Primary navigation"
-          className="sticky top-16 z-10 flex gap-1 overflow-x-auto border-b border-[#dfe2db] bg-[#f8f9f5] px-3 py-2 lg:hidden"
+          className="sticky top-16 z-10 flex gap-1 overflow-x-auto border-b border-[var(--line)] bg-[var(--ink-800)] px-3 py-2 lg:hidden"
         >
           {items.map(({ label, icon: Icon, href }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -151,9 +188,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={label}
                 href={href}
                 onClick={() => { if (href !== pathname) setPendingHref(href); }}
+                onFocus={() => prefetchTarget(href)}
+                onMouseEnter={() => prefetchTarget(href)}
                 aria-current={active ? "page" : undefined}
                 className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium ${
-                  active ? "bg-[#dfeee6] text-[#174b3b]" : "text-[#52615a]"
+                  active ? "bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]" : "text-[var(--paper-dim)]"
                 }`}
               >
                 <Icon size={14} /> {label}

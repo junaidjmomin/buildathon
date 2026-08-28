@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, CircleAlert, Clock3, FileCheck2, LoaderCircle, Send, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
-import { AppShell } from "@/components/app-shell";
+import { Badge, EmptyState, ErrorState, MoneyText, PageHeader } from "@/components/ui/primitives";
 import { resolveActiveRun, useActiveRunId, useActiveRunOverride } from "@/lib/active-run";
 import { api } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
@@ -24,11 +24,11 @@ export default function ExceptionsPage() {
     onSuccess: (updated) => queryClient.setQueryData<ExceptionCase[]>(["exception-cases", activeRunId], (current) => current?.map((item) => item.id === updated.id ? updated : item) ?? [updated]),
   });
 
-  if (runs.isPending || (Boolean(activeRunId) && (cases.isPending || unresolved.isPending))) return <AppShell><div className="grid min-h-[calc(100vh-64px)] place-items-center"><LoaderCircle className="animate-spin text-[#1e6b51]" /></div></AppShell>;
-  if (!activeRunId) return <AppShell><main className="p-8">No completed tenant run is available. Sync Razorpay from Data sources first.</main></AppShell>;
-  if (cases.isError || unresolved.isError) return <AppShell><main className="mx-auto max-w-4xl p-8"><div className="panel rounded-2xl p-8 text-sm text-[#a43d32]" role="alert">Exception cases could not be loaded.{" "}<button type="button" onClick={() => { void cases.refetch(); void unresolved.refetch(); }} className="font-semibold underline">Retry</button></div></main></AppShell>;
+  if (runs.isPending || (Boolean(activeRunId) && (cases.isPending || unresolved.isPending))) return <div className="grid min-h-[calc(100vh-64px)] place-items-center"><LoaderCircle className="animate-spin text-[var(--evergreen)]" /></div>;
+  if (!activeRunId) return <main className="p-8 text-[var(--paper-dim)]">No completed tenant run is available. Sync Razorpay from Data sources first.</main>;
+  if (cases.isError || unresolved.isError) return <main className="mx-auto max-w-4xl p-8"><ErrorState what="Exception cases" onRetry={() => { void cases.refetch(); void unresolved.refetch(); }} /></main>;
   const active = cases.data?.[0];
-  if (!active) return <AppShell><main className="mx-auto max-w-4xl p-8"><div className="panel rounded-2xl p-8"><h1 className="text-xl font-semibold">No exception cases for this run</h1><p className="mt-2 text-sm text-[#66716b]">The run may have no violations, or case generation has not produced an evidence-backed case yet. Review its outcomes on Overview.</p></div><UnresolvedQueue activeRunId={activeRunId} seeded={activeRun?.source_type === "DEMO"} items={unresolved.data ?? []} /></main></AppShell>;
+  if (!active) return <main className="mx-auto max-w-4xl p-8"><EmptyState title="No exception cases for this run" body="The run may have no violations, or case generation has not produced an evidence-backed case yet. Review its outcomes on Overview." /><UnresolvedQueue activeRunId={activeRunId} seeded={activeRun?.source_type === "DEMO"} items={unresolved.data ?? []} /></main>;
 
   const act = (action: "verify" | "escalate" | "resolve") => {
     const notes = {
@@ -40,37 +40,157 @@ export default function ExceptionsPage() {
   };
 
   return (
-    <AppShell>
-      <main className="mx-auto max-w-[1320px] px-5 py-8 md:px-8 md:py-10">
-        <section className="mb-7"><p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1e6b51]"><FileCheck2 size={14} /> Evidence-backed exceptions</p><h1 className="text-3xl font-semibold tracking-[-0.035em]">Verification becomes an accountable case</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[#66716b]">A case cannot skip deterministic verification. Every transition remains in the audit trail.</p></section>
+    <main className="mx-auto max-w-[1320px] px-5 py-8 md:px-8 md:py-10">
+      <PageHeader
+        eyebrow={
+          <>
+            <FileCheck2 size={14} /> Evidence-backed exceptions
+          </>
+        }
+        title="Verification becomes an accountable case"
+        subtitle="A case cannot skip deterministic verification. Every transition remains in the audit trail."
+      />
 
-        <section className="mb-6 grid gap-4 lg:grid-cols-[0.7fr_1.3fr]">
-          <div className="space-y-4">
-            <div className="panel rounded-2xl p-5"><div className="flex items-start justify-between"><div><p className="font-mono text-[10px] text-[#718079]">{active.id}</p><h2 className="mt-1 text-base font-semibold">{active.title}</h2>{activeRun?.source_type === "DEMO" ? <Link href={`/runs/${activeRunId}/payments/${active.payment_id}`} className="mt-1 flex items-center gap-1 text-xs font-semibold text-[#1e6b51]">{active.payment_id} <ArrowRight size={12} /></Link> : active.root_cause_id ? <Link href={`/root-causes/${active.root_cause_id}`} className="mt-1 flex items-center gap-1 text-xs font-semibold text-[#1e6b51]">{active.payment_id} <ArrowRight size={12} /></Link> : <span className="mt-1 block font-mono text-xs">{active.payment_id}</span>}</div><CaseBadge status={active.status} /></div><div className="mt-5 grid grid-cols-2 gap-3"><div className="rounded-xl bg-[#fff3ec] p-3"><p className="text-[9px] uppercase tracking-[0.11em] text-[#a85a3b]">Verified impact</p><p className="mt-1 text-lg font-semibold text-[#a9431f]">{formatMoney(active.verified_impact)}</p></div><div className="rounded-xl bg-[#eef5f0] p-3"><p className="text-[9px] uppercase tracking-[0.11em] text-[#587064]">Evidence items</p><p className="mt-1 text-lg font-semibold text-[#1e6b51]">{active.evidence.length}</p></div></div><CaseActions status={active.status} pending={transition.isPending} act={act} /></div>
-
-            <div className="panel overflow-hidden rounded-2xl"><div className="border-b border-[#e2e5df] px-5 py-4"><h2 className="text-sm font-semibold">Status audit trail</h2><p className="mt-1 text-xs text-[#78827d]">Append-only reviewer actions</p></div><div className="p-5">{active.audit_trail.map((entry, index) => <div key={`${entry.to_status}-${entry.occurred_at}`} className="flex gap-3"><div className="flex flex-col items-center"><span className="grid h-7 w-7 place-items-center rounded-full bg-[#e5f2eb] text-[#1e6b51]"><Check size={12} /></span>{index < active.audit_trail.length - 1 && <span className="min-h-10 w-px flex-1 bg-[#dce3dd]" />}</div><div className="pb-5"><p className="text-xs font-semibold">{entry.to_status}</p><p className="mt-1 text-[10px] leading-4 text-[#69756e]">{entry.note}</p><p className="mt-1 text-[9px] text-[#8a938e]">{entry.actor} · {new Date(entry.occurred_at).toLocaleString("en-IN")}</p></div></div>)}</div></div>
+      <section className="mb-6 grid gap-4 lg:grid-cols-[0.7fr_1.3fr]">
+        <div className="space-y-4">
+          <div className="panel rounded-2xl p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-mono text-[10px] text-[var(--paper-faint)]">{active.id}</p>
+                <h2 className="mt-1 text-base font-semibold text-[var(--paper)]">{active.title}</h2>
+                {activeRun?.source_type === "DEMO" ? <Link href={`/runs/${activeRunId}/payments/${active.payment_id}`} className="mt-1 flex items-center gap-1 text-xs font-semibold text-[var(--evergreen)] transition-colors duration-150">{active.payment_id} <ArrowRight size={12} /></Link> : active.root_cause_id ? <Link href={`/root-causes/${active.root_cause_id}`} className="mt-1 flex items-center gap-1 text-xs font-semibold text-[var(--evergreen)] transition-colors duration-150">{active.payment_id} <ArrowRight size={12} /></Link> : <span className="number-tabular mt-1 block font-mono text-xs text-[var(--paper-dim)]">{active.payment_id}</span>}
+              </div>
+              <CaseBadge status={active.status} />
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-[rgba(226,96,79,0.35)] bg-[rgba(226,96,79,0.14)] p-3">
+                <p className="text-[9px] uppercase tracking-[0.11em] text-[var(--crimson)]">Verified impact</p>
+                <MoneyText className="mt-1 text-lg" amount={formatMoney(active.verified_impact)} tone="violation" />
+              </div>
+              <div className="rounded-xl border border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.14)] p-3">
+                <p className="text-[9px] uppercase tracking-[0.11em] text-[var(--evergreen)]">Evidence items</p>
+                <p className="number-tabular mt-1 font-mono text-lg font-semibold text-[var(--evergreen)]">{active.evidence.length}</p>
+              </div>
+            </div>
+            <CaseActions status={active.status} pending={transition.isPending} act={act} />
           </div>
 
-          <div className="panel overflow-hidden rounded-2xl"><div className="flex items-center justify-between border-b border-[#e2e5df] px-5 py-4"><div><h2 className="text-sm font-semibold">Deterministic evidence pack</h2><p className="mt-1 text-xs text-[#78827d]">Proof required before VERIFIED</p></div><span className="rounded-full bg-[#dff2e8] px-2.5 py-1 text-[10px] font-bold text-[#1e6b51]">{active.evidence.filter((item) => item.verified).length}/{active.evidence.length} VERIFIED</span></div><div className="grid gap-3 p-5 sm:grid-cols-2">{active.evidence.map((item) => <div key={item.id} className="rounded-xl border border-[#dfe5df] bg-[#fafbf8] p-4"><div className="flex items-start justify-between gap-3"><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#e4f2ea] text-[#1e6b51]"><ShieldCheck size={15} /></span><span className="rounded-full bg-[#dff2e8] px-2 py-1 text-[9px] font-bold text-[#1e6b51]">VERIFIED</span></div><p className="mt-3 text-[9px] font-bold uppercase tracking-[0.12em] text-[#758079]">{item.kind}</p><h3 className="mt-1 text-xs font-semibold">{item.title}</h3><p className="mt-2 text-[11px] leading-5 text-[#69756e]">{item.summary}</p><p className="mt-3 border-t border-[#e3e8e2] pt-3 font-mono text-[9px] text-[#7c8680]">{item.source_id}</p></div>)}</div></div>
-        </section>
+          <div className="panel overflow-hidden rounded-2xl">
+            <div className="border-b border-[var(--line)] px-5 py-4">
+              <h2 className="text-sm font-semibold text-[var(--paper)]">Status audit trail</h2>
+              <p className="mt-1 text-xs text-[var(--paper-faint)]">Append-only reviewer actions</p>
+            </div>
+            <div className="p-5">
+              {active.audit_trail.map((entry, index) => (
+                <div key={`${entry.to_status}-${entry.occurred_at}`} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <span className="grid h-7 w-7 place-items-center rounded-full bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]"><Check size={12} /></span>
+                    {index < active.audit_trail.length - 1 && <span className="min-h-10 w-px flex-1 bg-[var(--line)]" />}
+                  </div>
+                  <div className="pb-5">
+                    <p className="text-xs font-semibold text-[var(--paper)]">{entry.to_status}</p>
+                    <p className="mt-1 text-[10px] leading-4 text-[var(--paper-dim)]">{entry.note}</p>
+                    <p className="mt-1 font-mono text-[9px] text-[var(--paper-faint)]">{entry.actor} · {new Date(entry.occurred_at).toLocaleString("en-IN")}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
 
-          <UnresolvedQueue activeRunId={activeRunId} seeded={activeRun?.source_type === "DEMO"} items={unresolved.data ?? []} />
-      </main>
-    </AppShell>
+        <div className="panel overflow-hidden rounded-2xl">
+          <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--paper)]">Deterministic evidence pack</h2>
+              <p className="mt-1 text-xs text-[var(--paper-faint)]">Proof required before VERIFIED</p>
+            </div>
+            <span className="number-tabular rounded-full border border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.14)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--evergreen)]">{active.evidence.filter((item) => item.verified).length}/{active.evidence.length} VERIFIED</span>
+          </div>
+          <div className="grid gap-3 p-5 sm:grid-cols-2">
+            {active.evidence.map((item) => (
+              <div key={item.id} className="rounded-xl border border-[var(--line)] bg-[var(--ink-700)] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="grid h-8 w-8 place-items-center rounded-lg bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]"><ShieldCheck size={15} /></span>
+                  <Badge status="PASS" label="VERIFIED" />
+                </div>
+                <p className="mt-3 text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--paper-faint)]">{item.kind}</p>
+                <h3 className="mt-1 text-xs font-semibold text-[var(--paper)]">{item.title}</h3>
+                <p className="mt-2 text-[11px] leading-5 text-[var(--paper-dim)]">{item.summary}</p>
+                <p className="number-tabular mt-3 border-t border-[var(--line)] pt-3 font-mono text-[9px] text-[var(--paper-faint)]">{item.source_id}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <UnresolvedQueue activeRunId={activeRunId} seeded={activeRun?.source_type === "DEMO"} items={unresolved.data ?? []} />
+    </main>
   );
 }
 
 function UnresolvedQueue({ activeRunId, seeded, items }: { activeRunId: string; seeded: boolean; items: Awaited<ReturnType<typeof api.unresolvedMatches>> }) {
-  return <section className="panel mt-6 overflow-hidden rounded-2xl"><div className="flex items-center justify-between border-b border-[#e2e5df] px-5 py-4"><div><h2 className="text-sm font-semibold">Honest unresolved queue</h2><p className="mt-1 text-xs text-[#78827d]">Ambiguous records are never forced into a match</p></div><span className="rounded-full bg-[#eceeed] px-2.5 py-1 text-[10px] font-bold text-[#66716b]">{items.length} UNRESOLVED</span></div><div className="divide-y divide-[#e8ebe6]">{items.map((item) => <div key={item.id} className="flex flex-col justify-between gap-3 px-5 py-4 sm:flex-row sm:items-center"><div><div className="flex items-center gap-2"><CircleAlert size={14} className="text-[#68736d]" /><span className="font-mono text-[10px] font-bold text-[#5d6862]">{item.id}</span>{seeded ? <Link href={`/runs/${activeRunId}/payments/${item.payment_id}`} className="font-mono text-xs font-semibold text-[#1e6b51]">{item.payment_id}</Link> : <span className="font-mono text-xs font-semibold text-[#1e6b51]">{item.payment_id}</span>}<span className="text-xs font-semibold">{formatMoney(item.amount)}</span></div><p className="mt-1 text-[10px] text-[#6d7872]">{item.missing_evidence} {item.safe_conclusion}</p></div><div className="flex gap-2">{item.candidate_bank_references.map((candidate) => <span key={candidate} className="rounded-md bg-[#f0f2ef] px-2 py-1 font-mono text-[9px] text-[#66716b]">{candidate}</span>)}</div></div>)}</div></section>;
+  return (
+    <section className="panel mt-6 overflow-hidden rounded-2xl">
+      <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
+        <div>
+          <h2 className="text-sm font-semibold text-[var(--paper)]">Honest unresolved queue</h2>
+          <p className="mt-1 text-xs text-[var(--paper-faint)]">Ambiguous records are never forced into a match</p>
+        </div>
+        <span className="number-tabular rounded-full border border-[rgba(227,179,65,0.35)] bg-[rgba(227,179,65,0.14)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--amber)]">{items.length} UNRESOLVED</span>
+      </div>
+      <div className="divide-y divide-[var(--line)]">
+        {items.map((item) => (
+          <div key={item.id} className="flex flex-col justify-between gap-3 px-5 py-4 transition-colors duration-150 hover:bg-[var(--ink-600)] sm:flex-row sm:items-center">
+            <div>
+              <div className="flex items-center gap-2">
+                <CircleAlert size={14} className="text-[var(--amber)]" />
+                <span className="number-tabular font-mono text-[10px] font-bold text-[var(--paper-faint)]">{item.id}</span>
+                {seeded ? <Link href={`/runs/${activeRunId}/payments/${item.payment_id}`} className="number-tabular font-mono text-xs font-semibold text-[var(--sky)] transition-colors duration-150">{item.payment_id}</Link> : <span className="number-tabular font-mono text-xs font-semibold text-[var(--sky)]">{item.payment_id}</span>}
+                <MoneyText className="text-xs" amount={formatMoney(item.amount)} />
+              </div>
+              <p className="mt-1 text-[10px] text-[var(--paper-dim)]">{item.missing_evidence} {item.safe_conclusion}</p>
+            </div>
+            <div className="flex gap-2">
+              {item.candidate_bank_references.map((candidate) => (
+                <span key={candidate} className="number-tabular rounded-md border border-[var(--line)] bg-[var(--ink-700)] px-2 py-1 font-mono text-[9px] text-[var(--paper-dim)]">{candidate}</span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function CaseActions({ status, pending, act }: { status: ExceptionCaseStatus; pending: boolean; act: (action: "verify" | "escalate" | "resolve") => void }) {
-  if (status === "RESOLVED") return <p className="mt-4 flex items-center gap-2 text-xs font-semibold text-[#1e6b51]"><Check size={14} /> Case resolved; evidence and audit history retained.</p>;
-  return <div className="mt-4 flex flex-wrap gap-2">{status === "OPEN" && <button onClick={() => act("verify")} disabled={pending} className="flex items-center gap-2 rounded-lg bg-[#1e6b51] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60">{pending ? <LoaderCircle size={13} className="animate-spin" /> : <ShieldCheck size={13} />} Verify evidence</button>}{status === "VERIFIED" && <><button onClick={() => act("escalate")} disabled={pending} className="flex items-center gap-2 rounded-lg bg-[#112a2b] px-3 py-2 text-xs font-semibold text-white"><Send size={13} /> Escalate</button><button onClick={() => act("resolve")} disabled={pending} className="rounded-lg border border-[#cfd9d1] bg-white px-3 py-2 text-xs font-semibold">Resolve</button></>}{status === "ESCALATED" && <button onClick={() => act("resolve")} disabled={pending} className="rounded-lg bg-[#1e6b51] px-3 py-2 text-xs font-semibold text-white">Resolve with evidence</button>}</div>;
+  if (status === "RESOLVED") return <p className="mt-4 flex items-center gap-2 text-xs font-semibold text-[var(--evergreen)]"><Check size={14} /> Case resolved; evidence and audit history retained.</p>;
+  return (
+    <div className="mt-4 flex flex-wrap gap-2">
+      {status === "OPEN" && (
+        <button onClick={() => act("verify")} disabled={pending} className="flex items-center gap-2 rounded-lg bg-[var(--evergreen)] px-3 py-2 text-xs font-semibold text-[#06120c] transition-opacity duration-150 disabled:opacity-60">
+          {pending ? <LoaderCircle size={13} className="animate-spin" /> : <ShieldCheck size={13} />} Verify evidence
+        </button>
+      )}
+      {status === "VERIFIED" && (
+        <>
+          <button onClick={() => act("escalate")} disabled={pending} className="flex items-center gap-2 rounded-lg border border-[var(--line-strong)] bg-[var(--ink-700)] px-3 py-2 text-xs font-semibold text-[var(--paper)] transition-colors duration-150 disabled:opacity-60"><Send size={13} /> Escalate</button>
+          <button onClick={() => act("resolve")} disabled={pending} className="rounded-lg border border-[var(--line-strong)] bg-[var(--ink-700)] px-3 py-2 text-xs font-semibold text-[var(--paper)] transition-colors duration-150 disabled:opacity-60">Resolve</button>
+        </>
+      )}
+      {status === "ESCALATED" && (
+        <button onClick={() => act("resolve")} disabled={pending} className="rounded-lg bg-[var(--evergreen)] px-3 py-2 text-xs font-semibold text-[#06120c] transition-opacity duration-150 disabled:opacity-60">Resolve with evidence</button>
+      )}
+    </div>
+  );
 }
 
 function CaseBadge({ status }: { status: ExceptionCaseStatus }) {
-  const colors: Record<ExceptionCaseStatus, string> = { OPEN: "bg-[#fff0e8] text-[#bd4e24]", VERIFIED: "bg-[#dff2e8] text-[#1e6b51]", ESCALATED: "bg-[#e8edf7] text-[#3e5c91]", RESOLVED: "bg-[#e5f3eb] text-[#1e6b51]" };
+  const colors: Record<ExceptionCaseStatus, string> = {
+    OPEN: "border-[rgba(227,179,65,0.35)] bg-[rgba(227,179,65,0.14)] text-[var(--amber)]",
+    VERIFIED: "border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]",
+    ESCALATED: "border-[rgba(95,182,217,0.35)] bg-[rgba(95,182,217,0.14)] text-[var(--sky)]",
+    RESOLVED: "border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]",
+  };
   const Icon = status === "OPEN" ? Clock3 : Check;
-  return <span className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-bold ${colors[status]}`}><Icon size={10} /> {status}</span>;
+  return <span className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-[9px] font-bold ${colors[status]}`}><Icon size={10} /> {status}</span>;
 }

@@ -1,14 +1,54 @@
 @import "tailwindcss";
 
+/*
+ * sl3dge "Control Room" theme — dark, terminal-grade surfaces for reviewing
+ * financial evidence. All component colors come from these tokens; do not
+ * hard-code hex values in components.
+ */
 :root {
-  --ink: #17211d;
-  --paper: #f3f4ef;
-  --line: #dde1d9;
+  /* Surfaces */
+  --ink-900: #0a1210; /* app background */
+  --ink-800: #101b18; /* panels */
+  --ink-700: #182724; /* raised cards, sidebar */
+  --ink-600: #1f312c; /* hover surfaces, table headers */
+  --line: #24352f; /* borders, dividers */
+  --line-strong: #2f453d;
+
+  /* Text */
+  --paper: #e8ede9; /* primary text */
+  --paper-dim: #93a39b; /* secondary text */
+  --paper-faint: #82918a; /* metadata, captions (AA on all surfaces) */
+
+  /* Status & accents */
+  --evergreen: #2fbd7f; /* verify / pass / primary action */
+  --evergreen-deep: #174b3b;
+  --amber: #e3b341; /* pending, unresolved */
+  --crimson: #e2604f; /* violations, errors */
+  --crimson-deep: #5a241d;
+  --sky: #5fb6d9; /* informational, links */
+
+  /* Motion */
+  --motion-fast: 150ms;
+  --motion-content: 200ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @theme inline {
-  --color-background: var(--paper);
-  --color-foreground: var(--ink);
+  --color-background: var(--ink-900);
+  --color-foreground: var(--paper);
+  --color-surface: var(--ink-800);
+  --color-surface-raised: var(--ink-700);
+  --color-surface-hover: var(--ink-600);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--paper);
+  --color-ink-dim: var(--paper-dim);
+  --color-ink-faint: var(--paper-faint);
+  --color-evergreen: var(--evergreen);
+  --color-evergreen-deep: var(--evergreen-deep);
+  --color-amber: var(--amber);
+  --color-crimson: var(--crimson);
+  --color-sky: var(--sky);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -20,29 +60,55 @@
 body {
   margin: 0;
   background:
-    radial-gradient(circle at 75% 0%, rgba(214, 234, 221, 0.55), transparent 27rem),
-    var(--paper);
-  color: var(--ink);
+    radial-gradient(ellipse 60rem 40rem at 85% -10%, rgba(47, 189, 127, 0.06), transparent),
+    var(--ink-900);
+  color: var(--paper);
   font-family: var(--font-geist-sans), Arial, sans-serif;
 }
 
 ::selection {
-  background: #c6ead9;
+  background: rgba(47, 189, 127, 0.32);
 }
 
 /* Inputs restyle focus via focus:border-*; everything else (buttons, links,
    selects) relies on this keyboard-only indicator. */
 :focus-visible {
-  outline: 2px solid #1e6b51;
+  outline: 2px solid var(--evergreen);
   outline-offset: 2px;
+}
+
+/* Transitions are limited to transform/opacity/color so they never trigger
+   layout; users who prefer reduced motion get none. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .panel {
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 1px 0 rgba(17, 42, 43, 0.04), 0 10px 35px rgba(17, 42, 43, 0.045);
+  background: var(--ink-800);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 0 12px 40px rgba(0, 0, 0, 0.25);
 }
 
 .number-tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* Skeleton shimmer for pending states; sits on the darkest surface. */
+.skeleton {
+  border-radius: 0.5rem;
+  background: linear-gradient(100deg, var(--ink-700) 40%, var(--ink-600) 50%, var(--ink-700) 60%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  to {
+    background-position: -200% 0;
+  }
 }

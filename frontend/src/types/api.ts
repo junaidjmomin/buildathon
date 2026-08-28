@@ -19,6 +19,10 @@ export interface SourceUploadResponse {
   row_count: number;
   columns: string[];
   decimal_values_checked: number;
+  row_errors?: Array<{ row_number: number; column: string; message: string }>;
+  row_error_count?: number;
+  schema_drift: boolean;
+  drift_columns: string[];
   storage_status: "VALIDATED_ONLY" | "PRIVATE_STORAGE";
   object_path: string | null;
 }
@@ -76,6 +80,17 @@ export interface RunSummary {
   metrics_available: { ground_truth: boolean; precision: boolean; recall: boolean; false_positive_rate: boolean; control_coverage: boolean };
   ground_truth_available: boolean;
   metrics_scope: string;
+}
+
+export interface RunOperationalMetrics {
+  run_id: string;
+  stage_count: number;
+  completed_stage_count: number;
+  failed_stage_count: number;
+  stage_durations_ms: Record<string, number>;
+  total_processing_ms: number;
+  events_created: number;
+  evaluations_created: number;
 }
 
 export interface RunListItem {
@@ -142,6 +157,9 @@ export interface ExpectedActualResponse {
     difference: string | null;
     source: string;
     source_clause: string;
+    evaluation_id?: string | null;
+    control_version?: number | null;
+    source_snapshot_ids?: string[];
   }>;
 }
 
@@ -221,6 +239,24 @@ export interface TemporalReplayResponse {
   baseline_violation_count: number;
   replay_violation_count: number;
   evidence: Array<Record<string, unknown>>;
+  monthly_series: Array<{
+    period: string;
+    transaction_count: number;
+    baseline_expected_amount: string;
+    replay_expected_amount: string;
+    difference_amount: string;
+  }>;
+}
+
+export interface EvidenceExportResponse {
+  artifact_id: string;
+  run_id: string;
+  bucket: string;
+  object_path: string;
+  content_type: string;
+  byte_size: number;
+  sha256: string;
+  created_at: string;
 }
 
 export interface ViolationLineageResponse {

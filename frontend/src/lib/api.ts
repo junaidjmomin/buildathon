@@ -10,6 +10,7 @@ import type {
   ControlProposalVerification,
   CounterfactualSettlement,
   DemoLoadResponse,
+  EvidenceExportResponse,
   ExceptionCase,
   ExpectedActualResponse,
   HypothesisResponse,
@@ -23,6 +24,7 @@ import type {
   RazorpayConnectionStatus,
   RazorpaySyncSummary,
   RunSummary,
+  RunOperationalMetrics,
   RunListItem,
   SourceUploadResponse,
   SourceUploadBatchResponse,
@@ -101,6 +103,7 @@ export const api = {
   loadDemo: () => request<DemoLoadResponse>("/demo/load", { method: "POST" }, 60_000),
   runs: () => request<RunListItem[]>("/runs"),
   summary: (runId: string) => request<RunSummary>(`/runs/${segment(runId)}/summary`),
+  operationalMetrics: (runId: string) => request<RunOperationalMetrics>(`/runs/${segment(runId)}/operational-metrics`),
   violations: (runId: string) => request<Violation[]>(`/runs/${segment(runId)}/violations`),
   rootCauses: (runId: string) => request<RootCause[]>(`/runs/${segment(runId)}/root-causes`),
   expectedActual: (runId: string, paymentId: string) =>
@@ -119,6 +122,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ control_id: controlId }),
     }),
+  exportEvidence: (runId: string) =>
+    request<EvidenceExportResponse>(`/runs/${segment(runId)}/evidence-export`, { method: "POST" }),
   approveControl: (controlId: string) =>
     request<{ id: string; status: string }>(`/controls/${segment(controlId)}/approve`, { method: "POST" }),
   controls: () => request<Control[]>("/controls"),

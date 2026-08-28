@@ -9,7 +9,17 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
     () =>
       new QueryClient({
-        defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
+        defaultOptions: {
+          queries: {
+            // Cached data renders instantly on tab switches; a minute-old
+            // dataset is fresh enough for analyst review, and background
+            // refetches never block the UI.
+            staleTime: 60_000,
+            gcTime: 10 * 60_000,
+            refetchOnWindowFocus: false,
+            retry: 1,
+          },
+        },
       }),
   );
 

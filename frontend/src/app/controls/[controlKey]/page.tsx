@@ -5,7 +5,7 @@ import { ArrowLeft, CalendarRange, LoaderCircle, ShieldCheck } from "lucide-reac
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import { AppShell } from "@/components/app-shell";
+import { Badge, ErrorState, PageHeader } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
 import type { Control } from "@/types/api";
 
@@ -19,11 +19,9 @@ export default function ControlDetailPage() {
 
   if (controls.isPending || versions.isPending) {
     return (
-      <AppShell>
-        <div className="grid min-h-[calc(100vh-64px)] place-items-center">
-          <LoaderCircle className="animate-spin text-[#1e6b51]" />
-        </div>
-      </AppShell>
+      <div className="grid min-h-[calc(100vh-64px)] place-items-center">
+        <LoaderCircle className="animate-spin text-[var(--evergreen)]" />
+      </div>
     );
   }
 
@@ -35,192 +33,180 @@ export default function ControlDetailPage() {
 
   if (!current) {
     return (
-      <AppShell>
-        <main className="mx-auto max-w-3xl px-5 py-10 md:px-8">
-          <Link
-            href="/controls"
-            className="mb-6 inline-flex items-center gap-1.5 text-xs font-semibold text-[#1e6b51] hover:underline"
+      <main className="mx-auto max-w-3xl px-5 py-10 md:px-8">
+        <Link
+          href="/controls"
+          className="mb-6 inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--evergreen)] transition-colors duration-150 hover:underline"
+        >
+          <ArrowLeft size={13} /> All controls
+        </Link>
+        <div className="panel rounded-2xl p-8 text-sm text-[var(--paper-dim)]" role="alert">
+          No control was found for <span className="font-mono">{controlKey}</span>.{" "}
+          <button
+            type="button"
+            onClick={() => {
+              controls.refetch();
+              versions.refetch();
+            }}
+            className="font-semibold underline underline-offset-2"
           >
-            <ArrowLeft size={13} /> All controls
-          </Link>
-          <div className="panel rounded-2xl p-8 text-sm text-[#66716b]" role="alert">
-            No control was found for <span className="font-mono">{controlKey}</span>.{" "}
-            <button
-              type="button"
-              onClick={() => {
-                controls.refetch();
-                versions.refetch();
-              }}
-              className="font-semibold underline"
-            >
-              Retry
-            </button>
-          </div>
-        </main>
-      </AppShell>
+            Retry
+          </button>
+        </div>
+      </main>
     );
   }
 
   return (
-    <AppShell>
-      <main className="mx-auto max-w-[1160px] px-5 py-8 md:px-8 md:py-10">
-        <Link
-          href="/controls"
-          className="mb-6 inline-flex items-center gap-1.5 text-xs font-semibold text-[#1e6b51] hover:underline"
-        >
-          <ArrowLeft size={13} /> All controls
-        </Link>
+    <main className="mx-auto max-w-[1160px] px-5 py-8 md:px-8 md:py-10">
+      <PageHeader
+        back={{ href: "/controls", label: "All controls" }}
+        eyebrow={
+          <>
+            <ShieldCheck size={14} /> Control provenance
+          </>
+        }
+        title={current.name}
+        subtitle={
+          <span className="font-mono text-[var(--paper-faint)]">
+            {current.logical_control_key} · v{current.version} · {current.id}
+          </span>
+        }
+      />
 
-        <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1e6b51]">
-          <ShieldCheck size={14} /> Control provenance
-        </p>
-        <h1 className="text-3xl font-semibold tracking-[-0.035em]">{current.name}</h1>
-        <p className="mt-2 font-mono text-xs text-[#758079]">
-          {current.logical_control_key} · v{current.version} · {current.id}
-        </p>
-
-        <section className="panel mt-7 rounded-2xl p-5">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-            <div>
-              <p className="text-xs text-[#66716b]">
-                {current.control_type} · {current.scope} · {current.expected}
-              </p>
-            </div>
-            <span
-              className={`w-fit rounded-full px-2.5 py-1 text-[9px] font-bold ${
-                current.status === "APPROVED"
-                  ? "bg-[#dff2e8] text-[#1e6b51]"
-                  : "bg-[#eceeed] text-[#66716b]"
-              }`}
-            >
-              {current.status}
-            </span>
+      <section className="panel rounded-2xl p-5">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+          <div>
+            <p className="text-xs text-[var(--paper-dim)]">
+              {current.control_type} · {current.scope} · {current.expected}
+            </p>
           </div>
-          <div className="mt-4 grid gap-3 border-t border-[#e4e8e2] pt-4 text-[10px] text-[#6d7872] sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <span className="block uppercase tracking-[0.1em]">Effective window</span>
-              <strong className="mt-1 block text-xs text-[#202b26]">
-                {current.effective_from} → {current.effective_to ?? "open"}
-              </strong>
-            </div>
-            <div>
-              <span className="block uppercase tracking-[0.1em]">Extraction method</span>
-              <strong className="mt-1 block text-xs text-[#202b26]">{current.extraction_method}</strong>
-            </div>
-            <div>
-              <span className="block uppercase tracking-[0.1em]">Approved at</span>
-              <strong className="mt-1 block text-xs text-[#202b26]">
-                {current.approved_at ?? "not approved"}
-              </strong>
-            </div>
-            <div>
-              <span className="block uppercase tracking-[0.1em]">Supersedes</span>
-              <strong className="mt-1 block font-mono text-xs text-[#202b26]">
-                {current.supersedes_control_id ?? "none"}
-              </strong>
-            </div>
+          <Badge
+            status={current.status === "APPROVED" ? "PASS" : "DRAFT"}
+            label={current.status}
+          />
+        </div>
+        <div className="mt-4 grid gap-3 border-t border-[var(--line)] pt-4 text-[10px] text-[var(--paper-faint)] sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <span className="block uppercase tracking-[0.1em]">Effective window</span>
+            <strong className="mt-1 block text-xs text-[var(--paper)]">
+              {current.effective_from} → {current.effective_to ?? "open"}
+            </strong>
           </div>
-        </section>
-
-        <section className="mt-6 grid gap-5 lg:grid-cols-2">
-          <div className="panel overflow-hidden rounded-2xl">
-            <div className="border-b border-[#e2e5df] px-5 py-4">
-              <h2 className="text-sm font-semibold">Typed parameters</h2>
-              <p className="mt-1 text-xs text-[#78827d]">
-                Rates and tolerances remain decimal strings
-              </p>
-            </div>
-            <pre className="overflow-x-auto p-5 text-[10px] leading-5 text-[#52615a]">
-              {JSON.stringify(current.parameters, null, 2)}
-            </pre>
-            <div className="border-t border-[#e2e5df] px-5 py-4">
-              <p className="text-[10px] uppercase tracking-[0.1em] text-[#6d7872]">Applicability conditions</p>
-              <p className="mt-1 font-mono text-[10px] text-[#52615a]">
-                {current.conditions.join(" · ") || "none"}
-              </p>
-            </div>
+          <div>
+            <span className="block uppercase tracking-[0.1em]">Extraction method</span>
+            <strong className="mt-1 block text-xs text-[var(--paper)]">{current.extraction_method}</strong>
           </div>
+          <div>
+            <span className="block uppercase tracking-[0.1em]">Approved at</span>
+            <strong className="mt-1 block text-xs text-[var(--paper)]">
+              {current.approved_at ?? "not approved"}
+            </strong>
+          </div>
+          <div>
+            <span className="block uppercase tracking-[0.1em]">Supersedes</span>
+            <strong className="mt-1 block font-mono text-xs text-[var(--paper)]">
+              {current.supersedes_control_id ?? "none"}
+            </strong>
+          </div>
+        </div>
+      </section>
 
-          <div className="panel overflow-hidden rounded-2xl">
-            <div className="border-b border-[#e2e5df] px-5 py-4">
-              <h2 className="text-sm font-semibold">Contract provenance</h2>
-              <p className="mt-1 text-xs text-[#78827d]">
-                Where this control came from, clause by clause
-              </p>
+      <section className="mt-6 grid gap-5 lg:grid-cols-2">
+        <div className="panel overflow-hidden rounded-2xl">
+          <div className="border-b border-[var(--line)] px-5 py-4">
+            <h2 className="text-sm font-semibold text-[var(--paper)]">Typed parameters</h2>
+            <p className="mt-1 text-xs text-[var(--paper-dim)]">
+              Rates and tolerances remain decimal strings
+            </p>
+          </div>
+          <pre className="number-tabular overflow-x-auto p-5 font-mono text-[10px] leading-5 text-[var(--paper-dim)]">
+            {JSON.stringify(current.parameters, null, 2)}
+          </pre>
+          <div className="border-t border-[var(--line)] px-5 py-4">
+            <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--paper-faint)]">Applicability conditions</p>
+            <p className="mt-1 font-mono text-[10px] text-[var(--paper-dim)]">
+              {current.conditions.join(" · ") || "none"}
+            </p>
+          </div>
+        </div>
+
+        <div className="panel overflow-hidden rounded-2xl">
+          <div className="border-b border-[var(--line)] px-5 py-4">
+            <h2 className="text-sm font-semibold text-[var(--paper)]">Contract provenance</h2>
+            <p className="mt-1 text-xs text-[var(--paper-dim)]">
+              Where this control came from, clause by clause
+            </p>
+          </div>
+          <div className="divide-y divide-[var(--line)]">
+            <div className="p-4">
+              <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--paper-faint)]">Source</p>
+              <p className="mt-1 text-xs text-[var(--paper)]">{current.source}</p>
             </div>
-            <div className="divide-y divide-[#e8ebe6]">
-              <div className="p-4">
-                <p className="text-[10px] uppercase tracking-[0.1em] text-[#6d7872]">Source</p>
-                <p className="mt-1 text-xs text-[#202b26]">{current.source}</p>
-              </div>
-              <div className="p-4">
-                <p className="text-[10px] uppercase tracking-[0.1em] text-[#6d7872]">Source clause</p>
-                <p className="mt-1 text-xs text-[#202b26]">{current.source_clause}</p>
-              </div>
-              <div className="p-4">
-                <p className="text-[10px] uppercase tracking-[0.1em] text-[#6d7872]">Agreement</p>
-                {current.agreement_id ? (
-                  <Link
-                    href={`/agreements/${current.agreement_id}`}
-                    className="mt-1 inline-flex items-center gap-1 font-mono text-xs font-semibold text-[#1e6b51] hover:underline"
-                  >
-                    {current.agreement_id}
-                  </Link>
-                ) : (
-                  <p className="mt-1 text-xs text-[#202b26]">not linked to an agreement</p>
-                )}
-              </div>
+            <div className="p-4">
+              <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--paper-faint)]">Source clause</p>
+              <p className="mt-1 text-xs text-[var(--paper)]">{current.source_clause}</p>
+            </div>
+            <div className="p-4">
+              <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--paper-faint)]">Agreement</p>
+              {current.agreement_id ? (
+                <Link
+                  href={`/agreements/${current.agreement_id}`}
+                  className="mt-1 inline-flex items-center gap-1 font-mono text-xs font-semibold text-[var(--evergreen)] transition-colors duration-150 hover:underline"
+                >
+                  {current.agreement_id}
+                </Link>
+              ) : (
+                <p className="mt-1 text-xs text-[var(--paper)]">not linked to an agreement</p>
+              )}
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="mt-6 rounded-2xl bg-[#112a2b] p-5 text-white">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <CalendarRange size={16} className="text-[#9bd0b7]" /> Immutable version timeline
+      <section className="panel mt-6 rounded-2xl p-5">
+        <div className="flex items-center gap-2 text-sm font-semibold text-[var(--paper)]">
+          <CalendarRange size={16} className="text-[var(--evergreen)]" /> Immutable version timeline
+        </div>
+        {versions.isError ? (
+          <div className="mt-4">
+            <ErrorState what="Version history" onRetry={() => versions.refetch()} />
           </div>
-          {versions.isError ? (
-            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.06] p-4 text-xs text-white/70" role="alert">
-              Version history could not be loaded.{" "}
-              <button type="button" onClick={() => versions.refetch()} className="font-semibold underline">
-                Retry
-              </button>
-            </div>
-          ) : (
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {history.map((version) => (
-                <ControlVersionCard key={version.id} version={version} isCurrent={version.id === current.id} />
-              ))}
-            </div>
-          )}
-        </section>
-      </main>
-    </AppShell>
+        ) : (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {history.map((version) => (
+              <ControlVersionCard key={version.id} version={version} isCurrent={version.id === current.id} />
+            ))}
+          </div>
+        )}
+      </section>
+    </main>
   );
 }
 
 function ControlVersionCard({ version, isCurrent }: { version: Control; isCurrent: boolean }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.06] p-4">
+    <div className="rounded-xl border border-[var(--line)] bg-[var(--ink-700)] p-4">
       <div className="flex justify-between gap-3">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.12em] text-white/45">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--paper-faint)]">
             Version {version.version}
             {isCurrent ? " · current" : ""}
           </p>
-          <p className="mt-1 text-lg font-semibold">{version.expected}</p>
+          <p className="number-tabular mt-1 font-mono text-lg font-semibold text-[var(--paper)]">{version.expected}</p>
         </div>
         {version.status === "APPROVED" ? (
-          <ShieldCheck size={16} className="text-[#95d6b8]" />
+          <ShieldCheck size={16} className="text-[var(--evergreen)]" />
         ) : (
-          <span className="text-[9px] font-bold text-white/50">{version.status}</span>
+          <Badge status="DRAFT" label={version.status} />
         )}
       </div>
-      <p className="mt-3 text-xs text-white/58">
+      <p className="mt-3 text-xs text-[var(--paper-dim)]">
         {version.effective_from} → {version.effective_to ?? "open"}
       </p>
-      <p className="mt-1 text-[10px] text-white/38">{version.source_clause}</p>
+      <p className="mt-1 text-[10px] text-[var(--paper-faint)]">{version.source_clause}</p>
       {version.supersedes_control_id ? (
-        <p className="mt-2 font-mono text-[9px] text-white/38">
+        <p className="mt-2 font-mono text-[9px] text-[var(--paper-faint)]">
           supersedes {version.supersedes_control_id}
         </p>
       ) : null}
