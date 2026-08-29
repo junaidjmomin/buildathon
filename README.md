@@ -188,7 +188,7 @@ frontend/
 data/
   demo/                seeded 500-payment canonical demo (novacart_canonical_demo_v1)
   stress/              1,000-payment labeled stress pack (novacart_prod_stress_v1)
-docs/                  handoff documents + API/frontend contracts + screenshots
+docs/                  sample upload CSVs, demo agreement PDF + screenshots
 ```
 
 ## Production deployment
@@ -198,19 +198,13 @@ pooler URL for `MIGRATION_DATABASE_URL`, and keep prepared statements disabled
 for pooler compatibility. Build the frontend with its final public API and
 OIDC values; `NEXT_PUBLIC_*` settings are compiled into the bundle. Production
 startup validates TLS, OIDC, explicit HTTPS CORS, forced HTTPS, Supabase
-Storage credentials, and both DSNs — it fails closed. The full release
-procedure is in [docs/operations.md](docs/operations.md).
+Storage credentials, and both DSNs — it fails closed.
 
 Razorpay live/sandbox behavior cannot be certified until project credentials
 are provided; the deterministic pipeline works without Razorpay or an LLM.
 
 ## Documentation
 
-- [Product scope and novelty](docs/features.md) — what defines sl3dge
-- [Operations and deployment](docs/operations.md)
-- [Backend contract](docs/backend.md)
-- [Frontend contract and demo flow](docs/frontend.md)
-- [Engineering stack](docs/techstack.md)
-- [Task register](docs/PENDING_TASKS.md)
-- Engagement log ([log.txt](log.txt)) — the full diagnosis and verification
-  history behind the stress-evaluation numbers above
+- [Seeded acceptance manifest](data/demo/manifest.json)
+- [Stress evaluation report](backend/test-results/prod_stress_evaluation.json)
+- API reference: `http://localhost:8000/docs` (non-production environments)
