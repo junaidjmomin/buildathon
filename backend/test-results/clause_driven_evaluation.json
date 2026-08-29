@@ -1,0 +1,2508 @@
+{
+  "dataset": {
+    "dataset_id": "novacart_clause_driven_test_v1",
+    "dataset_type": "LABELED_CLAUSE_TEST",
+    "run_id": "RUN_CSV_09931F5AAEC52E898107",
+    "labeled_rows": 750,
+    "expected_status_counts": {
+      "PASS": 146,
+      "VIOLATION": 604
+    },
+    "manifest_counts": {
+      "orders": 750,
+      "payments": 750,
+      "captured_payments": 700,
+      "failed_payments": 50,
+      "settlement_rows": 704,
+      "unique_settlements": 80,
+      "bank_rows": 77,
+      "refunds": 75,
+      "chargebacks": 24
+    },
+    "ground_truth_read_only_after_execution": true,
+    "agreement_id": "MPT-NC-2026-041"
+  },
+  "payment_primary_detection": {
+    "true_positive": 591,
+    "false_positive": 0,
+    "false_negative": 0,
+    "predicted_positive": 591,
+    "expected_positive": 591,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "true_negative": 159,
+    "universe": 750,
+    "false_positive_rate": 0.0,
+    "scope": "One row per labeled payment. Positive means at least one payment-native deterministic violation; settlement, chargeback and relationship findings are scored in their own scopes.",
+    "payment_native_types": [
+      "DUPLICATE_REFUND_DEDUCTION",
+      "GST_ON_FEE",
+      "MDR_RATE",
+      "REFUND_EXCEEDS_PAYMENT",
+      "SETTLEMENT_SLA",
+      "UNDECLARED_REFUND",
+      "UNSUPPORTED_REFUND_FEE"
+    ],
+    "predictions_outside_labeled_universe": 0,
+    "false_positive_samples": [],
+    "false_negative_samples": []
+  },
+  "approved_control_execution": {
+    "scope": "Instance-level (native entity, canonical violation type) over the failure modes an APPROVED control claims. Draft-governed and unregistered modes are excluded \u2014 they are blind spots, not execution failures.",
+    "claimed_by_approved_controls": [
+      "DUPLICATE_REFUND_DEDUCTION",
+      "GST_ON_FEE",
+      "MDR_RATE",
+      "MISSING_BANK_SETTLEMENT",
+      "REFUND_EXCEEDS_PAYMENT",
+      "SETTLEMENT_ARITHMETIC",
+      "SETTLEMENT_SLA",
+      "UNDECLARED_REFUND",
+      "UNSUPPORTED_REFUND_FEE"
+    ],
+    "approved_control_ids": [
+      "CTRL_GST_FEE",
+      "CTRL_MDR_DOMESTIC",
+      "CTRL_MDR_DOMESTIC_V2",
+      "CTRL_REFUND",
+      "CTRL_SETTLEMENT_ARITHMETIC",
+      "CTRL_SETTLEMENT_SLA"
+    ],
+    "excluded_draft_only_modes": [
+      "UNSUPPORTED_FEE"
+    ],
+    "strict": {
+      "true_positive": 644,
+      "false_positive": 49,
+      "false_negative": 0,
+      "predicted_positive": 693,
+      "expected_positive": 644,
+      "precision": 0.929293,
+      "recall": 1.0,
+      "f1": 0.963351
+    },
+    "adjusted": {
+      "true_positive": 644,
+      "false_positive": 22,
+      "false_negative": 0,
+      "predicted_positive": 666,
+      "expected_positive": 644,
+      "precision": 0.966967,
+      "recall": 1.0,
+      "f1": 0.983206
+    },
+    "adjustments": {
+      "basis": "Strict counts exact name matches only. Adjusted additionally credits findings the engine reports under an equivalent approved name and discounts downstream effects of confirmed findings; every adjustment is itemized below.",
+      "lineage_explained_false_positives": 27,
+      "taxonomy_alias_false_positives": 7,
+      "alias_credited_false_negatives": 0
+    },
+    "unexplained_false_positives": [
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0002",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0003",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0005",
+        "violation_type": "MISSING_BANK_SETTLEMENT"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0013",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0016",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0019",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0022",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0028",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0035",
+        "violation_type": "MISSING_BANK_SETTLEMENT"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0037",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0038",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0045",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0047",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0048",
+        "violation_type": "MISSING_BANK_SETTLEMENT"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0048",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0054",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0055",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0057",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0063",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0072",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0073",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0074",
+        "violation_type": "SETTLEMENT_ARITHMETIC"
+      }
+    ],
+    "unexplained_false_negatives": []
+  },
+  "planted_anomaly_coverage": {
+    "scope": "All clause-driven planted instances at their native entity; explicit aliases are reported separately.",
+    "planted_instances": 659,
+    "detected_exact": 644,
+    "detected_under_explicit_alias": 0,
+    "undetected": 15,
+    "approved_governed_scope": {
+      "types": [
+        "SETTLEMENT_SLA",
+        "MISSING_BANK_SETTLEMENT",
+        "GST_ON_FEE",
+        "MDR_RATE",
+        "DUPLICATE_REFUND_DEDUCTION",
+        "REFUND_EXCEEDS_PAYMENT"
+      ],
+      "detected_exact": 644
+    }
+  },
+  "violation_types": [
+    {
+      "violation_type": "MDR_RATE",
+      "native_entity": "PAYMENT",
+      "canonical_mapping": {
+        "canonical_type": "MDR_RATE",
+        "native_entity": "PAYMENT",
+        "engine_type": "MDR_RATE"
+      },
+      "true_positive": 15,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 15,
+      "expected_positive": 15,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "violation_type": "GST_ON_FEE",
+      "native_entity": "PAYMENT",
+      "canonical_mapping": {
+        "canonical_type": "GST_ON_FEE",
+        "native_entity": "PAYMENT",
+        "engine_type": "GST_ON_FEE"
+      },
+      "true_positive": 29,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 29,
+      "expected_positive": 29,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "violation_type": "UNSUPPORTED_FEE",
+      "native_entity": "SETTLEMENT",
+      "canonical_mapping": {
+        "canonical_type": "UNSUPPORTED_FEE",
+        "native_entity": "SETTLEMENT",
+        "engine_type": "UNSUPPORTED_FEE (draft candidate)",
+        "observed_alias": "SETTLEMENT_ARITHMETIC"
+      },
+      "true_positive": 0,
+      "false_positive": 0,
+      "false_negative": 8,
+      "predicted_positive": 0,
+      "expected_positive": 8,
+      "precision": null,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "violation_type": "CHARGEBACK_FEE_OVERCHARGE",
+      "native_entity": "CHARGEBACK",
+      "canonical_mapping": {
+        "canonical_type": "CHARGEBACK_FEE_OVERCHARGE",
+        "native_entity": "CHARGEBACK",
+        "engine_type": "NOT_IMPLEMENTED"
+      },
+      "true_positive": 0,
+      "false_positive": 0,
+      "false_negative": 6,
+      "predicted_positive": 0,
+      "expected_positive": 6,
+      "precision": null,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "violation_type": "SETTLEMENT_SLA",
+      "native_entity": "PAYMENT",
+      "canonical_mapping": {
+        "canonical_type": "SETTLEMENT_SLA",
+        "native_entity": "PAYMENT",
+        "engine_type": "SETTLEMENT_SLA"
+      },
+      "true_positive": 585,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 585,
+      "expected_positive": 585,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "violation_type": "SETTLEMENT_BANK_ARITHMETIC",
+      "native_entity": "UNKNOWN",
+      "canonical_mapping": {
+        "canonical_type": "SETTLEMENT_BANK_ARITHMETIC",
+        "native_entity": "UNKNOWN",
+        "engine_type": "SETTLEMENT_BANK_ARITHMETIC"
+      },
+      "true_positive": 0,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 0,
+      "expected_positive": 0,
+      "precision": null,
+      "recall": null,
+      "f1": null
+    },
+    {
+      "violation_type": "MISSING_BANK_SETTLEMENT",
+      "native_entity": "SETTLEMENT",
+      "canonical_mapping": {
+        "canonical_type": "MISSING_BANK_SETTLEMENT",
+        "native_entity": "SETTLEMENT",
+        "engine_type": "MISSING_BANK_SETTLEMENT"
+      },
+      "true_positive": 3,
+      "false_positive": 3,
+      "false_negative": 0,
+      "predicted_positive": 6,
+      "expected_positive": 3,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.666667
+    },
+    {
+      "violation_type": "DUPLICATE_REFUND_DEDUCTION",
+      "native_entity": "PAYMENT",
+      "canonical_mapping": {
+        "canonical_type": "DUPLICATE_REFUND_DEDUCTION",
+        "native_entity": "PAYMENT",
+        "engine_type": "DUPLICATE_REFUND_DEDUCTION"
+      },
+      "true_positive": 7,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 7,
+      "expected_positive": 7,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "violation_type": "REFUND_EXCEEDS_PAYMENT",
+      "native_entity": "PAYMENT",
+      "canonical_mapping": {
+        "canonical_type": "REFUND_EXCEEDS_PAYMENT",
+        "native_entity": "PAYMENT",
+        "engine_type": "REFUND_EXCEEDS_PAYMENT"
+      },
+      "true_positive": 5,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 5,
+      "expected_positive": 5,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "violation_type": "FAILED_PAYMENT_IN_SETTLEMENT",
+      "native_entity": "SETTLEMENT",
+      "canonical_mapping": {
+        "canonical_type": "FAILED_PAYMENT_IN_SETTLEMENT",
+        "native_entity": "SETTLEMENT",
+        "engine_type": "NOT_IMPLEMENTED"
+      },
+      "true_positive": 0,
+      "false_positive": 0,
+      "false_negative": 1,
+      "predicted_positive": 0,
+      "expected_positive": 1,
+      "precision": null,
+      "recall": 0.0,
+      "f1": 0.0
+    }
+  ],
+  "entity_level": {
+    "payment": {
+      "true_positive": 641,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 641,
+      "expected_positive": 641,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0,
+      "violation_types": [
+        "DUPLICATE_REFUND_DEDUCTION",
+        "GST_ON_FEE",
+        "MDR_RATE",
+        "REFUND_EXCEEDS_PAYMENT",
+        "SETTLEMENT_SLA"
+      ]
+    },
+    "settlement": {
+      "true_positive": 3,
+      "false_positive": 49,
+      "false_negative": 8,
+      "predicted_positive": 52,
+      "expected_positive": 11,
+      "precision": 0.057692,
+      "recall": 0.272727,
+      "f1": 0.095238,
+      "unexplained_false_positives": 22,
+      "unexplained_false_negatives": 0,
+      "violation_types": [
+        "MISSING_BANK_SETTLEMENT",
+        "SETTLEMENT_ARITHMETIC",
+        "UNSUPPORTED_FEE"
+      ]
+    },
+    "chargeback": {
+      "true_positive": 0,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 0,
+      "expected_positive": 0,
+      "precision": null,
+      "recall": null,
+      "f1": null,
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0,
+      "violation_types": []
+    },
+    "refund": {
+      "native_findings": 0,
+      "scored_under": "payment",
+      "evidence_entity_for": [
+        "DUPLICATE_REFUND_DEDUCTION",
+        "REFUND_EXCEEDS_PAYMENT",
+        "UNDECLARED_REFUND",
+        "UNSUPPORTED_REFUND_FEE"
+      ],
+      "refund_records": 75,
+      "note": "Clause 7.2 obliges the payment's settlement to deduct the refunded principal once, so the obligation is payment-native and the refund is the evidence record. Refund findings are scored under `payment`; no separate refund-native type exists."
+    },
+    "relationship": {
+      "true_positive": 0,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 0,
+      "expected_positive": 0,
+      "precision": null,
+      "recall": null,
+      "f1": null,
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0,
+      "violation_types": []
+    }
+  },
+  "relationship_resolution": {
+    "scope": "Settlement-to-bank relationship ground truth; UNRESOLVED is a correct result.",
+    "expected_ambiguous_relationships": 2,
+    "correctly_unresolved": 2,
+    "missed_unresolved": 0,
+    "false_unresolved": 0,
+    "forced_incorrect_matches": 0,
+    "expected_ids": [
+      "SET_AMB_CLAUSE_A",
+      "SET_AMB_CLAUSE_B"
+    ],
+    "unresolved_ids": [
+      "SET_AMB_CLAUSE_A",
+      "SET_AMB_CLAUSE_B"
+    ],
+    "forced_ids": [],
+    "accuracy": 1.0
+  },
+  "lineage": {
+    "scope": "Persisted production lineage (violations.lineage_type, parent_violation_id, root_violation_id) against the labeled primary/downstream split. Payment-native types only; settlement downstream effects are consequences the label file does not record.",
+    "primary_correct": 626,
+    "primary_incorrect": 0,
+    "downstream_correct": 15,
+    "downstream_incorrect": 0,
+    "missing_causal_edges": 0,
+    "extra_causal_edges": 0,
+    "missing_causal_edge_samples": [],
+    "extra_causal_edge_samples": [],
+    "mdr_rate_to_gst_on_fee": {
+      "downstream_gst_violations": 15,
+      "with_mdr_rate_parent_on_same_payment": 15,
+      "chain_intact": true
+    },
+    "persisted_lineage_integrity": {
+      "downstream_violations": 35,
+      "violations_with_root": 693,
+      "all_violations_rooted": true
+    },
+    "accuracy": 1.0,
+    "mdr_rate_to_gst_by_period": {
+      "v1_pre_amendment": {
+        "downstream_gst": 8,
+        "valid_mdr_parent": 8
+      },
+      "v2_post_amendment": {
+        "downstream_gst": 7,
+        "valid_mdr_parent": 7
+      }
+    },
+    "all_mdr_to_gst_edges_intact": true
+  },
+  "financial_impact": {
+    "scope": "Raw supplied expected_verified_loss compared with runtime attributable leakage; SLA cash delay is reported separately.",
+    "expected_verified_loss": "17821.84",
+    "predicted_attributable_loss": "23663.17",
+    "absolute_error": "5841.33",
+    "percentage_error": "32.7762",
+    "largest_per_entity_discrepancies": [
+      {
+        "entity_id": "PAY_CLAUSE_000646",
+        "expected": "250.00",
+        "predicted": "0.00",
+        "absolute_error": "250.00"
+      },
+      {
+        "entity_id": "PAY_CLAUSE_000539",
+        "expected": "250.00",
+        "predicted": "0.00",
+        "absolute_error": "250.00"
+      },
+      {
+        "entity_id": "PAY_CLAUSE_000428",
+        "expected": "250.00",
+        "predicted": "0.00",
+        "absolute_error": "250.00"
+      },
+      {
+        "entity_id": "PAY_CLAUSE_000346",
+        "expected": "250.00",
+        "predicted": "0.00",
+        "absolute_error": "250.00"
+      },
+      {
+        "entity_id": "PAY_CLAUSE_000184",
+        "expected": "250.00",
+        "predicted": "0.00",
+        "absolute_error": "250.00"
+      },
+      {
+        "entity_id": "PAY_CLAUSE_000032",
+        "expected": "250.00",
+        "predicted": "0.00",
+        "absolute_error": "250.00"
+      },
+      {
+        "entity_id": "PAY_CLAUSE_000640",
+        "expected": "149.00",
+        "predicted": "0.00",
+        "absolute_error": "149.00"
+      },
+      {
+        "entity_id": "PAY_CLAUSE_000628",
+        "expected": "149.00",
+        "predicted": "0.00",
+        "absolute_error": "149.00"
+      },
+      {
+        "entity_id": "PAY_CLAUSE_000321",
+        "expected": "149.00",
+        "predicted": "0.00",
+        "absolute_error": "149.00"
+      },
+      {
+        "entity_id": "PAY_CLAUSE_000579",
+        "expected": "99.00",
+        "predicted": "0.00",
+        "absolute_error": "99.00"
+      }
+    ],
+    "cash_delayed_not_leakage": "3228140.96",
+    "double_counting_checks": {
+      "sum_violation_impact": "23663.17",
+      "sum_root_cause_attributable_impact": "23663.17",
+      "run_summary_verified_leakage": "23663.17",
+      "violations_equal_summary": true,
+      "root_causes_equal_violations": true,
+      "direct_plus_downstream_equals_total": true,
+      "every_violation_attributed_once": true
+    },
+    "reconciles_without_scope_adjustment": false,
+    "scope_warning": "The fixture's expected_verified_loss includes payment-level SLA/cash-delay exposure and settlement-level labels, while runtime verified_leakage counts only attributable leakage. The difference is retained instead of being silently normalized."
+  },
+  "control_versioning": {
+    "scope": "Every control evaluation must select its version from the target's own transaction timestamp against effective_from/effective_to, never from 'latest approved'.",
+    "applied_controls": [
+      {
+        "control_id": "CTRL_GST_FEE",
+        "control_version": 1,
+        "logical_control_key": "GST_ON_VALID_FEE",
+        "expected": "18% of approved fee",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "evaluations": 700,
+        "selection_basis_recorded": 700,
+        "selection_inside_window": 700,
+        "corroborated_by_source_timestamp": 700
+      },
+      {
+        "control_id": "CTRL_MDR_DOMESTIC",
+        "control_version": 1,
+        "logical_control_key": "DOMESTIC_CARD_MDR",
+        "expected": "1.55%",
+        "effective_from": "2026-01-01",
+        "effective_to": "2026-08-31",
+        "evaluations": 356,
+        "selection_basis_recorded": 356,
+        "selection_inside_window": 356,
+        "corroborated_by_source_timestamp": 356
+      },
+      {
+        "control_id": "CTRL_MDR_DOMESTIC_V2",
+        "control_version": 2,
+        "logical_control_key": "DOMESTIC_CARD_MDR",
+        "expected": "1.65%",
+        "effective_from": "2026-09-01",
+        "effective_to": null,
+        "evaluations": 344,
+        "selection_basis_recorded": 344,
+        "selection_inside_window": 344,
+        "corroborated_by_source_timestamp": 344
+      },
+      {
+        "control_id": "CTRL_REFUND",
+        "control_version": 1,
+        "logical_control_key": "REFUND_PRINCIPAL_INTEGRITY",
+        "expected": "Deduct once \u00b7 fee \u20b90",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "evaluations": 700,
+        "selection_basis_recorded": 700,
+        "selection_inside_window": 700,
+        "corroborated_by_source_timestamp": 700
+      },
+      {
+        "control_id": "CTRL_SETTLEMENT_ARITHMETIC",
+        "control_version": 1,
+        "logical_control_key": "SETTLEMENT_BANK_ARITHMETIC",
+        "expected": "Gross less approved deductions",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "evaluations": 88,
+        "selection_basis_recorded": 88,
+        "selection_inside_window": 88,
+        "corroborated_by_source_timestamp": 0
+      },
+      {
+        "control_id": "CTRL_SETTLEMENT_SLA",
+        "control_version": 1,
+        "logical_control_key": "CAPTURE_TO_SETTLEMENT_SLA",
+        "expected": "T+2 business days",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "evaluations": 700,
+        "selection_basis_recorded": 700,
+        "selection_inside_window": 700,
+        "corroborated_by_source_timestamp": 700
+      }
+    ],
+    "logical_keys_with_multiple_versions_applied": [
+      "DOMESTIC_CARD_MDR"
+    ],
+    "evaluations_outside_control_window": 0,
+    "outside_window_samples": [],
+    "evaluations_without_recorded_selection_basis": 0,
+    "unrecorded_selection_samples": [],
+    "evaluations_disagreeing_with_source_timestamp": 0,
+    "disagreeing_samples": [],
+    "effective_date_selection_correct": true,
+    "captured_pre_amendment": 356,
+    "captured_post_amendment": 344,
+    "v1_control_id": "CTRL_MDR_DOMESTIC",
+    "v2_control_id": "CTRL_MDR_DOMESTIC_V2",
+    "pre_amendment_v1_evaluations": 356,
+    "post_amendment_v2_evaluations": 344,
+    "no_pre_amendment_v2": true,
+    "no_post_amendment_v1": true,
+    "stale_old_rate_cases": 3,
+    "stale_old_rate_cases_detected": 3,
+    "post_amendment_overcharge_cases": 4,
+    "post_amendment_overcharge_detected": 4
+  },
+  "run_summary_invariant": {
+    "breakdown": {
+      "passed": 2192,
+      "violation": 693,
+      "warning": 0,
+      "unresolved": 3
+    },
+    "control_evaluation_count": 2888,
+    "breakdown_sums_to_evaluation_count": true,
+    "unresolved_control_count": 3,
+    "unresolved_relationship_count": 2,
+    "unresolved_quantities_are_separate_fields": true,
+    "ground_truth_available": false,
+    "metrics_scope": "LIVE_CONTROL_OUTCOMES_NO_GROUND_TRUTH"
+  },
+  "false_positive_dispositions": [
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0002",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "0.59"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0003",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "500.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0005",
+      "violation_type": "MISSING_BANK_SETTLEMENT",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0005",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000050",
+          "violation_type": "DUPLICATE_REFUND_DEDUCTION"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0007",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0007",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": null,
+      "actual_amount": "49.01",
+      "amounts_agree": false,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0011",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000095",
+          "violation_type": "GST_ON_FEE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0012",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000104",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0013",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "190.30"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0014",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000130",
+          "violation_type": "REFUND_EXCEEDS_PAYMENT"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0016",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "250.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0018",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000174",
+          "violation_type": "DUPLICATE_REFUND_DEDUCTION"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0019",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "750.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0021",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000200",
+          "violation_type": "GST_ON_FEE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0022",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "499.06"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0025",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000231",
+          "violation_type": "REFUND_EXCEEDS_PAYMENT"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0026",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000247",
+          "violation_type": "GST_ON_FEE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0028",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "0.35"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0029",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000271",
+          "violation_type": "DUPLICATE_REFUND_DEDUCTION"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0032",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000299",
+          "violation_type": "DUPLICATE_REFUND_DEDUCTION"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0034",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000317",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0035",
+      "violation_type": "MISSING_BANK_SETTLEMENT",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0035",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0035",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": null,
+      "actual_amount": "248.00",
+      "amounts_agree": false,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0036",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000331",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0037",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "250.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0038",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "500.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0045",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "250.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0046",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000420",
+          "violation_type": "DUPLICATE_REFUND_DEDUCTION"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0047",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "500.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0048",
+      "violation_type": "MISSING_BANK_SETTLEMENT",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0048",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "250.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0049",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000446",
+          "violation_type": "GST_ON_FEE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0052",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000470",
+          "violation_type": "DUPLICATE_REFUND_DEDUCTION"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0053",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000482",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0054",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "250.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0055",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "250.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0056",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000505",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0057",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "250.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0058",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0058",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": null,
+      "actual_amount": "349.01",
+      "amounts_agree": false,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0060",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0060",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": null,
+      "actual_amount": "599.00",
+      "amounts_agree": false,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0061",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000553",
+          "violation_type": "DUPLICATE_REFUND_DEDUCTION"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0063",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "250.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0064",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0064",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": null,
+      "actual_amount": "349.00",
+      "amounts_agree": false,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0070",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0070",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": null,
+      "actual_amount": "149.00",
+      "amounts_agree": false,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0071",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_CLAUSE_0071",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": null,
+      "actual_amount": "649.01",
+      "amounts_agree": false,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0072",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "500.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0073",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "250.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0074",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "UNEXPLAINED",
+      "lineage_types": [
+        "PRIMARY"
+      ],
+      "financial_impact": "250.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0075",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000684",
+          "violation_type": "REFUND_EXCEEDS_PAYMENT"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0077",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_CLAUSE_000697",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    }
+  ],
+  "false_negative_dispositions": [
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0007",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0029",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0035",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 2
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0058",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0060",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0064",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0070",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_CLAUSE_0071",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    }
+  ],
+  "performance": {
+    "transactions": 750,
+    "events": 1764,
+    "relationships": 1625,
+    "control_evaluations": 2888,
+    "deterministic_processing_ms": 701,
+    "persistence_ms": 903,
+    "total_processing_ms": 1604,
+    "evaluations_per_second": 4119
+  },
+  "manifest_integrity": {
+    "expected": {
+      "orders": 750,
+      "payments": 750,
+      "captured_payments": 700,
+      "failed_payments": 50,
+      "settlement_rows": 704,
+      "unique_settlements": 80,
+      "bank_rows": 77,
+      "refunds": 75,
+      "chargebacks": 24
+    },
+    "actual": {
+      "orders": 750,
+      "payments": 750,
+      "captured_payments": 700,
+      "failed_payments": 50,
+      "settlement_rows": 704,
+      "unique_settlements": 80,
+      "bank_rows": 77,
+      "refunds": 75,
+      "chargebacks": 24
+    },
+    "all_counts_match": true,
+    "identity": {
+      "dataset_id": "novacart_clause_driven_test_v1",
+      "dataset_type": "LABELED_CLAUSE_TEST",
+      "agreement_id": "MPT-NC-2026-041",
+      "dataset_id_matches_fixture": true,
+      "dataset_type_matches_fixture": true
+    },
+    "engine_input_files": [
+      "bank",
+      "chargebacks",
+      "orders",
+      "payments",
+      "refunds",
+      "settlements"
+    ],
+    "evaluation_only_files": [
+      "clause_coverage.csv",
+      "ground_truth.csv",
+      "relationship_ground_truth.csv",
+      "settlement_ground_truth.csv"
+    ],
+    "evaluation_files_excluded_from_engine": true,
+    "manifest_is_metadata_only": true
+  },
+  "clause_extraction": {
+    "pdf_sha256": "f5556c5fa854514235c94ce76221dd7ff8dd2366c4ee01591ee5c585b39b0cc3",
+    "pages_with_text": 10,
+    "records_detected": 40,
+    "numbered_clauses": 38,
+    "unnumbered_source_sections": [
+      "UNNUMBERED_1",
+      "UNNUMBERED_10"
+    ],
+    "controls_proposed": 9,
+    "proposals": [
+      {
+        "logical_control_key": "DOMESTIC_CARD_MDR",
+        "version": 1,
+        "clause": "4.2",
+        "page": 4,
+        "title": "Domestic Card MDR",
+        "effective_from": "2026-01-01",
+        "effective_to": "2026-08-31",
+        "parameters": {
+          "rate": "0.0155",
+          "tolerance": "0.01",
+          "currency": "INR"
+        },
+        "source_offsets": {
+          "page_number": 4,
+          "start_offset": 197,
+          "end_offset": 565,
+          "offset_basis": "normalized_page_text"
+        },
+        "source_excerpt": "4.2  Domestic Card MDR\nFor domestic Visa, Mastercard and RuPay card payments captured from 1 January 2026 through 31\nAugust 2026, the Merchant Discount Rate is 1.55% of captured payment principal.\n\uf0b7   Rate: 1.55% (0.0155).\n\uf0b7   Scope: domestic card payments only.\n\uf0b7   Fee base: captured payment principal.\n\uf0b7   Currency: INR.\n\uf0b7   Monetary comparison tolerance: INR 0.01."
+      },
+      {
+        "logical_control_key": "GST_ON_VALID_FEE",
+        "version": 1,
+        "clause": "4.3",
+        "page": 4,
+        "title": "GST on Processing Fee",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "parameters": {
+          "rate": "0.18",
+          "tolerance": "0.01",
+          "base": "approved_processing_fee"
+        },
+        "source_offsets": {
+          "page_number": 4,
+          "start_offset": 566,
+          "end_offset": 899,
+          "offset_basis": "normalized_page_text"
+        },
+        "source_excerpt": "4.3  GST on Processing Fee\nGST is charged at 18% of the Approved Processing Fee actually permitted under the effective\ncommercial term. GST must not be calculated on an unsupported or contractually excessive\nprocessing fee.\n\uf0b7   GST rate: 18% (0.18).\n\uf0b7   GST base: approved processing fee.\n\uf0b7   Monetary comparison tolerance: INR 0.01."
+      },
+      {
+        "logical_control_key": "UNSUPPORTED_SETTLEMENT_FEE",
+        "version": 1,
+        "clause": "4.6",
+        "page": 5,
+        "title": "Unlisted Settlement Fees",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "parameters": {
+          "expected_amount": "0.00",
+          "tolerance": "0.01",
+          "currency": "INR"
+        },
+        "source_offsets": {
+          "page_number": 5,
+          "start_offset": 393,
+          "end_offset": 884,
+          "offset_basis": "normalized_page_text"
+        },
+        "source_excerpt": "4.6  Unlisted Settlement Fees\nAny settlement deduction not expressly listed in this Agreement or a valid written amendment is\nprohibited. The expected amount for an unlisted settlement fee is INR 0.00.\n\n\uf0b7   No miscellaneous platform fee is permitted by default.\n\uf0b7   No convenience fee is permitted unless expressly agreed in writing.\n\uf0b7   No operational or manual-adjustment fee is permitted merely because it appears in a settlement\n    file.\n\uf0b7   Tolerance for unlisted fee checks: INR 0.01."
+      },
+      {
+        "logical_control_key": "CHARGEBACK_ADMIN_FEE",
+        "version": 1,
+        "clause": "4.7",
+        "page": 5,
+        "title": "Chargeback Administration Fee",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "parameters": {
+          "fee": "250.00",
+          "maximum_deductions": 1,
+          "native_entity": "CHARGEBACK",
+          "tolerance": "0.01",
+          "currency": "INR"
+        },
+        "source_offsets": {
+          "page_number": 5,
+          "start_offset": 886,
+          "end_offset": 1327,
+          "offset_basis": "normalized_page_text"
+        },
+        "source_excerpt": "4.7  Chargeback Administration Fee\nFor each valid chargeback formally raised against a captured payment, the Provider may deduct one\nchargeback administration fee of INR 250.00. The fee may be deducted no more than once for the\nsame chargeback identifier.\n\n\uf0b7   Allowed fee: INR 250.00 per valid chargeback.\n\uf0b7   Maximum deductions: one per chargeback identifier.\n\uf0b7   Any duplicate chargeback administration fee is not contractually permitted."
+      },
+      {
+        "logical_control_key": "CAPTURE_TO_SETTLEMENT_SLA",
+        "version": 1,
+        "clause": "6.1",
+        "page": 6,
+        "title": "Standard Settlement SLA",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "parameters": {
+          "business_days": 2
+        },
+        "source_offsets": {
+          "page_number": 6,
+          "start_offset": 29,
+          "end_offset": 442,
+          "offset_basis": "normalized_page_text"
+        },
+        "source_excerpt": "6.1  Standard Settlement SLA\nEach Captured Payment must be included in a settlement no later than T+2 Business Days after its\ncapture date, unless the payment is subject to a documented hold permitted under this Agreement.\n\uf0b7   Clock starts on the capture date.\n\uf0b7   Only Business Days are counted.\n\uf0b7   The SLA is evaluated at the payment level even when multiple payments are grouped into one\n    settlement batch."
+      },
+      {
+        "logical_control_key": "SETTLEMENT_BANK_ARITHMETIC",
+        "version": 1,
+        "clause": "6.2",
+        "page": 6,
+        "title": "Settlement and Bank Arithmetic",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "parameters": {
+          "tolerance": "0.01",
+          "currency": "INR"
+        },
+        "source_offsets": {
+          "page_number": 6,
+          "start_offset": 443,
+          "end_offset": 1016,
+          "offset_basis": "normalized_page_text"
+        },
+        "source_excerpt": "6.2  Settlement and Bank Arithmetic\nFor each settlement batch, the expected net settlement amount is the Gross Settlement Amount less\nonly approved deductions attributable to the batch.\n\uf0b7   Expected Net Settlement = Gross Captured Principal - Approved Processing Fees - GST on\n    Approved Processing Fees - Successful Refund Principal - Approved Chargeback Administration\n    Fees.\n\uf0b7   Unlisted settlement deductions are excluded from the expected calculation.\n\uf0b7   The bank credit corresponding to the settlement must equal the expected net settlement within\n    INR 0.01."
+      },
+      {
+        "logical_control_key": "REFUND_PRINCIPAL_INTEGRITY",
+        "version": 1,
+        "clause": "7.2",
+        "page": 7,
+        "title": "Refund Principal Integrity",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "parameters": {
+          "maximum_deductions": 1,
+          "refund_fee": "0.00",
+          "tolerance": "0.01",
+          "currency": "INR"
+        },
+        "source_offsets": {
+          "page_number": 7,
+          "start_offset": 170,
+          "end_offset": 483,
+          "offset_basis": "normalized_page_text"
+        },
+        "source_excerpt": "7.2  Refund Principal Integrity\nFor each successful refund, the Provider may deduct the refund principal exactly once from a\nsettlement. No separate refund processing fee is permitted under this Agreement.\n\uf0b7   Maximum refund-principal deductions: one.\n\uf0b7   Refund processing fee: INR 0.00.\n\uf0b7   Tolerance: INR 0.01."
+      },
+      {
+        "logical_control_key": "REFUND_AMOUNT_LIMIT",
+        "version": 1,
+        "clause": "7.3",
+        "page": 7,
+        "title": "Refund Amount Limit",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "parameters": {
+          "maximum_cumulative_refund": "captured_payment_principal",
+          "currency": "INR"
+        },
+        "source_offsets": {
+          "page_number": 7,
+          "start_offset": 484,
+          "end_offset": 677,
+          "offset_basis": "normalized_page_text"
+        },
+        "source_excerpt": "7.3  Refund Amount Limit\nThe cumulative successful refund principal associated with a payment must not exceed the captured\npayment principal unless a separate approved credit adjustment exists."
+      },
+      {
+        "logical_control_key": "DOMESTIC_CARD_MDR",
+        "version": 2,
+        "clause": "A1.2",
+        "page": 9,
+        "title": "Replacement of Clause 4.2",
+        "effective_from": "2026-09-01",
+        "effective_to": null,
+        "parameters": {
+          "rate": "0.0165",
+          "tolerance": "0.01",
+          "currency": "INR"
+        },
+        "source_offsets": {
+          "page_number": 9,
+          "start_offset": 202,
+          "end_offset": 591,
+          "offset_basis": "normalized_page_text"
+        },
+        "source_excerpt": "A1.2  Replacement of Clause 4.2\nFor domestic Visa, Mastercard and RuPay card payments captured on or after 1 September 2026, the\nMerchant Discount Rate is revised from 1.55% to 1.65% of captured payment principal.\n\uf0b7   New rate: 1.65% (0.0165).\n\uf0b7   Scope: domestic card payments only.\n\uf0b7   Fee base: captured payment principal.\n\uf0b7   Currency: INR.\n\uf0b7   Monetary comparison tolerance: INR 0.01."
+      }
+    ],
+    "validation_warnings": [],
+    "execution_status": "AWAITING_HUMAN_APPROVAL",
+    "needs_review_label": "Needs review",
+    "confidence_is_not_presented_as_model_confidence": true,
+    "unnumbered_sections_not_controls": true,
+    "expected_proposals": [
+      {
+        "control": "DOMESTIC_CARD_MDR#1",
+        "expected": {
+          "clause": "4.2",
+          "page": 4,
+          "rate": "0.0155",
+          "effective_from": "2026-01-01",
+          "effective_to": "2026-08-31"
+        },
+        "actual": {
+          "logical_control_key": "DOMESTIC_CARD_MDR",
+          "version": 1,
+          "clause": "4.2",
+          "page": 4,
+          "title": "Domestic Card MDR",
+          "effective_from": "2026-01-01",
+          "effective_to": "2026-08-31",
+          "parameters": {
+            "rate": "0.0155",
+            "tolerance": "0.01",
+            "currency": "INR"
+          },
+          "source_offsets": {
+            "page_number": 4,
+            "start_offset": 197,
+            "end_offset": 565,
+            "offset_basis": "normalized_page_text"
+          },
+          "source_excerpt": "4.2  Domestic Card MDR\nFor domestic Visa, Mastercard and RuPay card payments captured from 1 January 2026 through 31\nAugust 2026, the Merchant Discount Rate is 1.55% of captured payment principal.\n\uf0b7   Rate: 1.55% (0.0155).\n\uf0b7   Scope: domestic card payments only.\n\uf0b7   Fee base: captured payment principal.\n\uf0b7   Currency: INR.\n\uf0b7   Monetary comparison tolerance: INR 0.01."
+        },
+        "all_checks_pass": true,
+        "checks": {
+          "rate": true,
+          "effective_from": true,
+          "effective_to": true,
+          "clause": true,
+          "page": true,
+          "source_excerpt_nonempty": true,
+          "source_offsets_present": true
+        }
+      },
+      {
+        "control": "DOMESTIC_CARD_MDR#2",
+        "expected": {
+          "clause": "A1.2",
+          "page": 9,
+          "rate": "0.0165",
+          "effective_from": "2026-09-01",
+          "effective_to": null
+        },
+        "actual": {
+          "logical_control_key": "DOMESTIC_CARD_MDR",
+          "version": 2,
+          "clause": "A1.2",
+          "page": 9,
+          "title": "Replacement of Clause 4.2",
+          "effective_from": "2026-09-01",
+          "effective_to": null,
+          "parameters": {
+            "rate": "0.0165",
+            "tolerance": "0.01",
+            "currency": "INR"
+          },
+          "source_offsets": {
+            "page_number": 9,
+            "start_offset": 202,
+            "end_offset": 591,
+            "offset_basis": "normalized_page_text"
+          },
+          "source_excerpt": "A1.2  Replacement of Clause 4.2\nFor domestic Visa, Mastercard and RuPay card payments captured on or after 1 September 2026, the\nMerchant Discount Rate is revised from 1.55% to 1.65% of captured payment principal.\n\uf0b7   New rate: 1.65% (0.0165).\n\uf0b7   Scope: domestic card payments only.\n\uf0b7   Fee base: captured payment principal.\n\uf0b7   Currency: INR.\n\uf0b7   Monetary comparison tolerance: INR 0.01."
+        },
+        "all_checks_pass": true,
+        "checks": {
+          "rate": true,
+          "effective_from": true,
+          "effective_to": true,
+          "clause": true,
+          "page": true,
+          "source_excerpt_nonempty": true,
+          "source_offsets_present": true
+        }
+      },
+      {
+        "control": "GST_ON_VALID_FEE#1",
+        "expected": {
+          "clause": "4.3",
+          "page": 4,
+          "rate": "0.18"
+        },
+        "actual": {
+          "logical_control_key": "GST_ON_VALID_FEE",
+          "version": 1,
+          "clause": "4.3",
+          "page": 4,
+          "title": "GST on Processing Fee",
+          "effective_from": "2026-01-01",
+          "effective_to": null,
+          "parameters": {
+            "rate": "0.18",
+            "tolerance": "0.01",
+            "base": "approved_processing_fee"
+          },
+          "source_offsets": {
+            "page_number": 4,
+            "start_offset": 566,
+            "end_offset": 899,
+            "offset_basis": "normalized_page_text"
+          },
+          "source_excerpt": "4.3  GST on Processing Fee\nGST is charged at 18% of the Approved Processing Fee actually permitted under the effective\ncommercial term. GST must not be calculated on an unsupported or contractually excessive\nprocessing fee.\n\uf0b7   GST rate: 18% (0.18).\n\uf0b7   GST base: approved processing fee.\n\uf0b7   Monetary comparison tolerance: INR 0.01."
+        },
+        "all_checks_pass": true,
+        "checks": {
+          "rate": true,
+          "clause": true,
+          "page": true,
+          "source_excerpt_nonempty": true,
+          "source_offsets_present": true
+        }
+      },
+      {
+        "control": "UNSUPPORTED_SETTLEMENT_FEE#1",
+        "expected": {
+          "clause": "4.6",
+          "page": 5,
+          "expected_amount": "0.00"
+        },
+        "actual": {
+          "logical_control_key": "UNSUPPORTED_SETTLEMENT_FEE",
+          "version": 1,
+          "clause": "4.6",
+          "page": 5,
+          "title": "Unlisted Settlement Fees",
+          "effective_from": "2026-01-01",
+          "effective_to": null,
+          "parameters": {
+            "expected_amount": "0.00",
+            "tolerance": "0.01",
+            "currency": "INR"
+          },
+          "source_offsets": {
+            "page_number": 5,
+            "start_offset": 393,
+            "end_offset": 884,
+            "offset_basis": "normalized_page_text"
+          },
+          "source_excerpt": "4.6  Unlisted Settlement Fees\nAny settlement deduction not expressly listed in this Agreement or a valid written amendment is\nprohibited. The expected amount for an unlisted settlement fee is INR 0.00.\n\n\uf0b7   No miscellaneous platform fee is permitted by default.\n\uf0b7   No convenience fee is permitted unless expressly agreed in writing.\n\uf0b7   No operational or manual-adjustment fee is permitted merely because it appears in a settlement\n    file.\n\uf0b7   Tolerance for unlisted fee checks: INR 0.01."
+        },
+        "all_checks_pass": true,
+        "checks": {
+          "expected_amount": true,
+          "clause": true,
+          "page": true,
+          "source_excerpt_nonempty": true,
+          "source_offsets_present": true
+        }
+      },
+      {
+        "control": "CHARGEBACK_ADMIN_FEE#1",
+        "expected": {
+          "clause": "4.7",
+          "page": 5,
+          "fee": "250.00",
+          "maximum_deductions": 1,
+          "native_entity": "CHARGEBACK"
+        },
+        "actual": {
+          "logical_control_key": "CHARGEBACK_ADMIN_FEE",
+          "version": 1,
+          "clause": "4.7",
+          "page": 5,
+          "title": "Chargeback Administration Fee",
+          "effective_from": "2026-01-01",
+          "effective_to": null,
+          "parameters": {
+            "fee": "250.00",
+            "maximum_deductions": 1,
+            "native_entity": "CHARGEBACK",
+            "tolerance": "0.01",
+            "currency": "INR"
+          },
+          "source_offsets": {
+            "page_number": 5,
+            "start_offset": 886,
+            "end_offset": 1327,
+            "offset_basis": "normalized_page_text"
+          },
+          "source_excerpt": "4.7  Chargeback Administration Fee\nFor each valid chargeback formally raised against a captured payment, the Provider may deduct one\nchargeback administration fee of INR 250.00. The fee may be deducted no more than once for the\nsame chargeback identifier.\n\n\uf0b7   Allowed fee: INR 250.00 per valid chargeback.\n\uf0b7   Maximum deductions: one per chargeback identifier.\n\uf0b7   Any duplicate chargeback administration fee is not contractually permitted."
+        },
+        "all_checks_pass": true,
+        "checks": {
+          "fee": true,
+          "maximum_deductions": true,
+          "native_entity": true,
+          "clause": true,
+          "page": true,
+          "source_excerpt_nonempty": true,
+          "source_offsets_present": true
+        }
+      },
+      {
+        "control": "CAPTURE_TO_SETTLEMENT_SLA#1",
+        "expected": {
+          "clause": "6.1",
+          "page": 6
+        },
+        "actual": {
+          "logical_control_key": "CAPTURE_TO_SETTLEMENT_SLA",
+          "version": 1,
+          "clause": "6.1",
+          "page": 6,
+          "title": "Standard Settlement SLA",
+          "effective_from": "2026-01-01",
+          "effective_to": null,
+          "parameters": {
+            "business_days": 2
+          },
+          "source_offsets": {
+            "page_number": 6,
+            "start_offset": 29,
+            "end_offset": 442,
+            "offset_basis": "normalized_page_text"
+          },
+          "source_excerpt": "6.1  Standard Settlement SLA\nEach Captured Payment must be included in a settlement no later than T+2 Business Days after its\ncapture date, unless the payment is subject to a documented hold permitted under this Agreement.\n\uf0b7   Clock starts on the capture date.\n\uf0b7   Only Business Days are counted.\n\uf0b7   The SLA is evaluated at the payment level even when multiple payments are grouped into one\n    settlement batch."
+        },
+        "all_checks_pass": true,
+        "checks": {
+          "clause": true,
+          "page": true,
+          "source_excerpt_nonempty": true,
+          "source_offsets_present": true
+        }
+      },
+      {
+        "control": "SETTLEMENT_BANK_ARITHMETIC#1",
+        "expected": {
+          "clause": "6.2",
+          "page": 6
+        },
+        "actual": {
+          "logical_control_key": "SETTLEMENT_BANK_ARITHMETIC",
+          "version": 1,
+          "clause": "6.2",
+          "page": 6,
+          "title": "Settlement and Bank Arithmetic",
+          "effective_from": "2026-01-01",
+          "effective_to": null,
+          "parameters": {
+            "tolerance": "0.01",
+            "currency": "INR"
+          },
+          "source_offsets": {
+            "page_number": 6,
+            "start_offset": 443,
+            "end_offset": 1016,
+            "offset_basis": "normalized_page_text"
+          },
+          "source_excerpt": "6.2  Settlement and Bank Arithmetic\nFor each settlement batch, the expected net settlement amount is the Gross Settlement Amount less\nonly approved deductions attributable to the batch.\n\uf0b7   Expected Net Settlement = Gross Captured Principal - Approved Processing Fees - GST on\n    Approved Processing Fees - Successful Refund Principal - Approved Chargeback Administration\n    Fees.\n\uf0b7   Unlisted settlement deductions are excluded from the expected calculation.\n\uf0b7   The bank credit corresponding to the settlement must equal the expected net settlement within\n    INR 0.01."
+        },
+        "all_checks_pass": true,
+        "checks": {
+          "clause": true,
+          "page": true,
+          "source_excerpt_nonempty": true,
+          "source_offsets_present": true
+        }
+      },
+      {
+        "control": "REFUND_PRINCIPAL_INTEGRITY#1",
+        "expected": {
+          "clause": "7.2",
+          "page": 7,
+          "maximum_deductions": 1,
+          "refund_fee": "0.00",
+          "tolerance": "0.01"
+        },
+        "actual": {
+          "logical_control_key": "REFUND_PRINCIPAL_INTEGRITY",
+          "version": 1,
+          "clause": "7.2",
+          "page": 7,
+          "title": "Refund Principal Integrity",
+          "effective_from": "2026-01-01",
+          "effective_to": null,
+          "parameters": {
+            "maximum_deductions": 1,
+            "refund_fee": "0.00",
+            "tolerance": "0.01",
+            "currency": "INR"
+          },
+          "source_offsets": {
+            "page_number": 7,
+            "start_offset": 170,
+            "end_offset": 483,
+            "offset_basis": "normalized_page_text"
+          },
+          "source_excerpt": "7.2  Refund Principal Integrity\nFor each successful refund, the Provider may deduct the refund principal exactly once from a\nsettlement. No separate refund processing fee is permitted under this Agreement.\n\uf0b7   Maximum refund-principal deductions: one.\n\uf0b7   Refund processing fee: INR 0.00.\n\uf0b7   Tolerance: INR 0.01."
+        },
+        "all_checks_pass": true,
+        "checks": {
+          "maximum_deductions": true,
+          "refund_fee": true,
+          "tolerance": true,
+          "clause": true,
+          "page": true,
+          "source_excerpt_nonempty": true,
+          "source_offsets_present": true
+        }
+      },
+      {
+        "control": "REFUND_AMOUNT_LIMIT#1",
+        "expected": {
+          "clause": "7.3",
+          "page": 7
+        },
+        "actual": {
+          "logical_control_key": "REFUND_AMOUNT_LIMIT",
+          "version": 1,
+          "clause": "7.3",
+          "page": 7,
+          "title": "Refund Amount Limit",
+          "effective_from": "2026-01-01",
+          "effective_to": null,
+          "parameters": {
+            "maximum_cumulative_refund": "captured_payment_principal",
+            "currency": "INR"
+          },
+          "source_offsets": {
+            "page_number": 7,
+            "start_offset": 484,
+            "end_offset": 677,
+            "offset_basis": "normalized_page_text"
+          },
+          "source_excerpt": "7.3  Refund Amount Limit\nThe cumulative successful refund principal associated with a payment must not exceed the captured\npayment principal unless a separate approved credit adjustment exists."
+        },
+        "all_checks_pass": true,
+        "checks": {
+          "clause": true,
+          "page": true,
+          "source_excerpt_nonempty": true,
+          "source_offsets_present": true
+        }
+      }
+    ],
+    "all_expected_proposals_present_and_aligned": true,
+    "cover_page_provenance_rejected": true,
+    "clause_samples": {
+      "4.2": {
+        "title": "Domestic Card MDR",
+        "page": 4,
+        "text": "4.2  Domestic Card MDR\nFor domestic Visa, Mastercard and RuPay card payments captured from 1 January 2026 through 31\nAugust 2026, the Merchant Discount Rate is 1.55% of captured payment principal.\n\uf0b7   Rate: 1.55% (0.0155).\n\uf0b7   Scope: domestic card payments only.\n\uf0b7   Fee base: captured payment principal.\n\uf0b7   Currency: INR.\n\uf0b7   Monetary comparison tolerance: INR 0.01.",
+        "source_offsets": {
+          "page_number": 4,
+          "start_offset": 197,
+          "end_offset": 565,
+          "offset_basis": "normalized_page_text"
+        }
+      },
+      "4.3": {
+        "title": "GST on Processing Fee",
+        "page": 4,
+        "text": "4.3  GST on Processing Fee\nGST is charged at 18% of the Approved Processing Fee actually permitted under the effective\ncommercial term. GST must not be calculated on an unsupported or contractually excessive\nprocessing fee.\n\uf0b7   GST rate: 18% (0.18).\n\uf0b7   GST base: approved processing fee.\n\uf0b7   Monetary comparison tolerance: INR 0.01.",
+        "source_offsets": {
+          "page_number": 4,
+          "start_offset": 566,
+          "end_offset": 899,
+          "offset_basis": "normalized_page_text"
+        }
+      },
+      "4.6": {
+        "title": "Unlisted Settlement Fees",
+        "page": 5,
+        "text": "4.6  Unlisted Settlement Fees\nAny settlement deduction not expressly listed in this Agreement or a valid written amendment is\nprohibited. The expected amount for an unlisted settlement fee is INR 0.00.\n\n\uf0b7   No miscellaneous platform fee is permitted by default.\n\uf0b7   No convenience fee is permitted unless expressly agreed in writing.\n\uf0b7   No operational or manual-adjustment fee is permitted merely because it appears in a settlement\n    file.\n\uf0b7   Tolerance for unlisted fee checks: INR 0.01.",
+        "source_offsets": {
+          "page_number": 5,
+          "start_offset": 393,
+          "end_offset": 884,
+          "offset_basis": "normalized_page_text"
+        }
+      },
+      "4.7": {
+        "title": "Chargeback Administration Fee",
+        "page": 5,
+        "text": "4.7  Chargeback Administration Fee\nFor each valid chargeback formally raised against a captured payment, the Provider may deduct one\nchargeback administration fee of INR 250.00. The fee may be deducted no more than once for the\nsame chargeback identifier.\n\n\uf0b7   Allowed fee: INR 250.00 per valid chargeback.\n\uf0b7   Maximum deductions: one per chargeback identifier.\n\uf0b7   Any duplicate chargeback administration fee is not contractually permitted.",
+        "source_offsets": {
+          "page_number": 5,
+          "start_offset": 886,
+          "end_offset": 1327,
+          "offset_basis": "normalized_page_text"
+        }
+      },
+      "6.1": {
+        "title": "Standard Settlement SLA",
+        "page": 6,
+        "text": "6.1  Standard Settlement SLA\nEach Captured Payment must be included in a settlement no later than T+2 Business Days after its\ncapture date, unless the payment is subject to a documented hold permitted under this Agreement.\n\uf0b7   Clock starts on the capture date.\n\uf0b7   Only Business Days are counted.\n\uf0b7   The SLA is evaluated at the payment level even when multiple payments are grouped into one\n    settlement batch.",
+        "source_offsets": {
+          "page_number": 6,
+          "start_offset": 29,
+          "end_offset": 442,
+          "offset_basis": "normalized_page_text"
+        }
+      },
+      "6.2": {
+        "title": "Settlement and Bank Arithmetic",
+        "page": 6,
+        "text": "6.2  Settlement and Bank Arithmetic\nFor each settlement batch, the expected net settlement amount is the Gross Settlement Amount less\nonly approved deductions attributable to the batch.\n\uf0b7   Expected Net Settlement = Gross Captured Principal - Approved Processing Fees - GST on\n    Approved Processing Fees - Successful Refund Principal - Approved Chargeback Administration\n    Fees.\n\uf0b7   Unlisted settlement deductions are excluded from the expected calculation.\n\uf0b7   The bank credit corresponding to the settlement must equal the expected net settlement within\n    INR 0.01.",
+        "source_offsets": {
+          "page_number": 6,
+          "start_offset": 443,
+          "end_offset": 1016,
+          "offset_basis": "normalized_page_text"
+        }
+      },
+      "7.2": {
+        "title": "Refund Principal Integrity",
+        "page": 7,
+        "text": "7.2  Refund Principal Integrity\nFor each successful refund, the Provider may deduct the refund principal exactly once from a\nsettlement. No separate refund processing fee is permitted under this Agreement.\n\uf0b7   Maximum refund-principal deductions: one.\n\uf0b7   Refund processing fee: INR 0.00.\n\uf0b7   Tolerance: INR 0.01.",
+        "source_offsets": {
+          "page_number": 7,
+          "start_offset": 170,
+          "end_offset": 483,
+          "offset_basis": "normalized_page_text"
+        }
+      },
+      "7.3": {
+        "title": "Refund Amount Limit",
+        "page": 7,
+        "text": "7.3  Refund Amount Limit\nThe cumulative successful refund principal associated with a payment must not exceed the captured\npayment principal unless a separate approved credit adjustment exists.",
+        "source_offsets": {
+          "page_number": 7,
+          "start_offset": 484,
+          "end_offset": 677,
+          "offset_basis": "normalized_page_text"
+        }
+      },
+      "A1.2": {
+        "title": "Replacement of Clause 4.2",
+        "page": 9,
+        "text": "A1.2  Replacement of Clause 4.2\nFor domestic Visa, Mastercard and RuPay card payments captured on or after 1 September 2026, the\nMerchant Discount Rate is revised from 1.55% to 1.65% of captured payment principal.\n\uf0b7   New rate: 1.65% (0.0165).\n\uf0b7   Scope: domestic card payments only.\n\uf0b7   Fee base: captured payment principal.\n\uf0b7   Currency: INR.\n\uf0b7   Monetary comparison tolerance: INR 0.01.",
+        "source_offsets": {
+          "page_number": 9,
+          "start_offset": 202,
+          "end_offset": 591,
+          "offset_basis": "normalized_page_text"
+        }
+      }
+    }
+  },
+  "clause_coverage": [
+    {
+      "clause": "3.3",
+      "scenario": "Rounding tolerance",
+      "expected_behavior": "PASS at INR 0.01 tolerance",
+      "declared_count": 12,
+      "expected_count_native_scope": 12,
+      "observed_behavior": "MDR evaluation PASS within INR 0.01 tolerance",
+      "detected": 12,
+      "missed": 0,
+      "false_positives": 0,
+      "applicable_approved_control": "CTRL_MDR_DOMESTIC / CTRL_MDR_DOMESTIC_V2",
+      "native_entity": "PAYMENT",
+      "result": "PASS",
+      "scope_note": ""
+    },
+    {
+      "clause": "4.2",
+      "scenario": "Pre-amendment MDR overcharge",
+      "expected_behavior": "VIOLATION",
+      "declared_count": 18,
+      "expected_count_native_scope": 8,
+      "observed_behavior": "MDR_RATE on payment-native entity",
+      "detected": 8,
+      "missed": 0,
+      "false_positives": 0,
+      "applicable_approved_control": "CTRL_MDR_DOMESTIC",
+      "native_entity": "PAYMENT",
+      "result": "PASS",
+      "scope_note": ""
+    },
+    {
+      "clause": "A1.2",
+      "scenario": "Post-amendment stale old MDR",
+      "expected_behavior": "VIOLATION",
+      "declared_count": 10,
+      "expected_count_native_scope": 3,
+      "observed_behavior": "MDR_RATE on payment-native entity",
+      "detected": 3,
+      "missed": 0,
+      "false_positives": 0,
+      "applicable_approved_control": "CTRL_MDR_DOMESTIC_V2",
+      "native_entity": "PAYMENT",
+      "result": "PASS",
+      "scope_note": ""
+    },
+    {
+      "clause": "A1.2",
+      "scenario": "Post-amendment MDR overcharge",
+      "expected_behavior": "VIOLATION",
+      "declared_count": 12,
+      "expected_count_native_scope": 4,
+      "observed_behavior": "MDR_RATE on payment-native entity",
+      "detected": 4,
+      "missed": 0,
+      "false_positives": 0,
+      "applicable_approved_control": "CTRL_MDR_DOMESTIC_V2",
+      "native_entity": "PAYMENT",
+      "result": "PASS",
+      "scope_note": ""
+    },
+    {
+      "clause": "4.3",
+      "scenario": "Independent GST error",
+      "expected_behavior": "VIOLATION",
+      "declared_count": 14,
+      "expected_count_native_scope": 14,
+      "observed_behavior": "GST_ON_FEE on payment-native entity",
+      "detected": 14,
+      "missed": 0,
+      "false_positives": 0,
+      "applicable_approved_control": "CTRL_GST_FEE",
+      "native_entity": "PAYMENT",
+      "result": "PASS",
+      "scope_note": ""
+    },
+    {
+      "clause": "4.6",
+      "scenario": "Unlisted settlement fee",
+      "expected_behavior": "VIOLATION / blind spot if control remains DRAFT",
+      "declared_count": 9,
+      "expected_count_native_scope": 8,
+      "observed_behavior": "Exact UNSUPPORTED_FEE=0; SETTLEMENT_ARITHMETIC alias=0",
+      "detected": 0,
+      "missed": 8,
+      "false_positives": 0,
+      "applicable_approved_control": "CTRL_UNSUPPORTED_FEE_CANDIDATE (DRAFT)",
+      "native_entity": "SETTLEMENT",
+      "result": "BLIND_SPOT",
+      "scope_note": "coverage file declares 9 payment rows; native settlement scope contains 8 settlements"
+    },
+    {
+      "clause": "4.7/7.4",
+      "scenario": "Chargeback fee overcharge",
+      "expected_behavior": "VIOLATION",
+      "declared_count": 6,
+      "expected_count_native_scope": 6,
+      "observed_behavior": "No CHARGEBACK_FEE_OVERCHARGE violation emitted",
+      "detected": 0,
+      "missed": 6,
+      "false_positives": 0,
+      "applicable_approved_control": "No approved runtime control",
+      "native_entity": "CHARGEBACK",
+      "result": "BLIND_SPOT",
+      "scope_note": ""
+    },
+    {
+      "clause": "6.1",
+      "scenario": "Late settlement",
+      "expected_behavior": "Payment-level SLA violation",
+      "declared_count": 12,
+      "expected_count_native_scope": 585,
+      "observed_behavior": "SETTLEMENT_SLA on payment-native entity",
+      "detected": 585,
+      "missed": 0,
+      "false_positives": 0,
+      "applicable_approved_control": "CTRL_SETTLEMENT_SLA",
+      "native_entity": "PAYMENT",
+      "result": "PASS",
+      "scope_note": ""
+    },
+    {
+      "clause": "6.2",
+      "scenario": "Bank arithmetic mismatch",
+      "expected_behavior": "Settlement-level violation",
+      "declared_count": 3,
+      "expected_count_native_scope": 3,
+      "observed_behavior": "Settlement-level SETTLEMENT_BANK_ARITHMETIC (engine alias: SETTLEMENT_ARITHMETIC)",
+      "detected": 3,
+      "missed": 0,
+      "false_positives": 43,
+      "canonical_violation_type": "SETTLEMENT_BANK_ARITHMETIC",
+      "engine_type_used": "SETTLEMENT_ARITHMETIC",
+      "applicable_approved_control": "CTRL_SETTLEMENT_ARITHMETIC",
+      "native_entity": "SETTLEMENT",
+      "result": "PASS",
+      "scope_note": ""
+    },
+    {
+      "clause": "6.3",
+      "scenario": "Ambiguous bank relationship",
+      "expected_behavior": "UNRESOLVED",
+      "declared_count": 2,
+      "expected_count_native_scope": 2,
+      "observed_behavior": "UNRESOLVED with no EventEdge",
+      "detected": 2,
+      "missed": 0,
+      "false_positives": 0,
+      "applicable_approved_control": "Deterministic relationship matcher",
+      "native_entity": "RELATIONSHIP",
+      "result": "PASS",
+      "scope_note": ""
+    },
+    {
+      "clause": "6.4",
+      "scenario": "Missing bank credit",
+      "expected_behavior": "Settlement/relationship exception",
+      "declared_count": 3,
+      "expected_count_native_scope": 3,
+      "observed_behavior": "Settlement-level missing bank credit",
+      "detected": 3,
+      "missed": 0,
+      "false_positives": 3,
+      "applicable_approved_control": "CTRL_SETTLEMENT_ARITHMETIC",
+      "native_entity": "SETTLEMENT",
+      "result": "PASS",
+      "scope_note": ""
+    },
+    {
+      "clause": "7.2",
+      "scenario": "Duplicate refund principal deduction",
+      "expected_behavior": "VIOLATION",
+      "declared_count": 7,
+      "expected_count_native_scope": 7,
+      "observed_behavior": "DUPLICATE_REFUND_DEDUCTION on payment-native entity",
+      "detected": 7,
+      "missed": 0,
+      "false_positives": 0,
+      "applicable_approved_control": "CTRL_REFUND",
+      "native_entity": "PAYMENT",
+      "result": "PASS",
+      "scope_note": ""
+    },
+    {
+      "clause": "7.3",
+      "scenario": "Cumulative refund exceeds payment",
+      "expected_behavior": "VIOLATION",
+      "declared_count": 5,
+      "expected_count_native_scope": 5,
+      "observed_behavior": "REFUND_EXCEEDS_PAYMENT on payment-native entity",
+      "detected": 5,
+      "missed": 0,
+      "false_positives": 0,
+      "applicable_approved_control": "CTRL_REFUND",
+      "native_entity": "PAYMENT",
+      "result": "PASS",
+      "scope_note": ""
+    },
+    {
+      "clause": "1.3/6.2",
+      "scenario": "Failed payment included in settlement",
+      "expected_behavior": "VIOLATION / coverage test",
+      "declared_count": 4,
+      "expected_count_native_scope": 1,
+      "observed_behavior": "No FAILED_PAYMENT_IN_SETTLEMENT violation emitted",
+      "detected": 0,
+      "missed": 1,
+      "false_positives": 0,
+      "applicable_approved_control": "No registered runtime control",
+      "native_entity": "SETTLEMENT",
+      "result": "BLIND_SPOT",
+      "scope_note": "coverage file declares 4 payment rows"
+    }
+  ],
+  "settlement_level": {
+    "scope": "Native settlement findings only; not projected into payment precision.",
+    "by_type": [
+      {
+        "violation_type": "SETTLEMENT_BANK_ARITHMETIC",
+        "expected": 3,
+        "detected": 3,
+        "missed": 0,
+        "false_positives": 43,
+        "expected_ids": [
+          "SET_CLAUSE_0005",
+          "SET_CLAUSE_0035",
+          "SET_CLAUSE_0048"
+        ],
+        "detected_ids": [
+          "SET_CLAUSE_0005",
+          "SET_CLAUSE_0035",
+          "SET_CLAUSE_0048"
+        ],
+        "false_positive_samples": [
+          "SET_CLAUSE_0002",
+          "SET_CLAUSE_0003",
+          "SET_CLAUSE_0007",
+          "SET_CLAUSE_0011",
+          "SET_CLAUSE_0012",
+          "SET_CLAUSE_0013",
+          "SET_CLAUSE_0014",
+          "SET_CLAUSE_0016",
+          "SET_CLAUSE_0018",
+          "SET_CLAUSE_0019"
+        ],
+        "engine_type_used": "SETTLEMENT_ARITHMETIC"
+      },
+      {
+        "violation_type": "MISSING_BANK_SETTLEMENT",
+        "expected": 3,
+        "detected": 3,
+        "missed": 0,
+        "false_positives": 3,
+        "expected_ids": [
+          "SET_CLAUSE_0002",
+          "SET_CLAUSE_0018",
+          "SET_CLAUSE_0029"
+        ],
+        "detected_ids": [
+          "SET_CLAUSE_0002",
+          "SET_CLAUSE_0018",
+          "SET_CLAUSE_0029"
+        ],
+        "false_positive_samples": [
+          "SET_CLAUSE_0005",
+          "SET_CLAUSE_0035",
+          "SET_CLAUSE_0048"
+        ],
+        "engine_type_used": "MISSING_BANK_SETTLEMENT"
+      }
+    ]
+  },
+  "blind_spots": [
+    {
+      "scenario": "UNSUPPORTED_FEE",
+      "clause": "4.6",
+      "missed_native_instances": 8,
+      "financial_impact_labeled_rows": "991.00",
+      "reason": "Draft-only control; exact violation type is not in the approved runtime registry.",
+      "candidate_control": "CTRL_UNSUPPORTED_FEE_CANDIDATE"
+    },
+    {
+      "scenario": "CHARGEBACK_FEE_OVERCHARGE",
+      "clause": "4.7/7.4",
+      "missed_native_instances": 6,
+      "financial_impact_labeled_rows": "1500.00",
+      "reason": "No registered runtime control emits this canonical chargeback type.",
+      "candidate_control": null
+    },
+    {
+      "scenario": "FAILED_PAYMENT_IN_SETTLEMENT",
+      "clause": "1.3/6.2",
+      "missed_native_instances": 1,
+      "financial_impact_labeled_rows": "0.00",
+      "reason": "No registered runtime control emits this eligibility type.",
+      "candidate_control": null
+    }
+  ],
+  "invariance": {
+    "id_rename": {
+      "identifiers_renamed": 2041,
+      "equivalent": true
+    },
+    "row_order": {
+      "seed": 20260829,
+      "equivalent": true
+    },
+    "dataset_metadata": {
+      "equivalent": true,
+      "metadata_changed_to": {
+        "dataset_id": "independent_dataset_identity_v2",
+        "dataset_type": "OTHER_LABELED_FIXTURE"
+      }
+    },
+    "all_pass": true
+  },
+  "ground_truth_evaluation": {
+    "engine_inputs_excluded": [
+      "clause_coverage.csv",
+      "ground_truth.csv",
+      "relationship_ground_truth.csv",
+      "settlement_ground_truth.csv"
+    ],
+    "evaluation_files_opened_after_run": true,
+    "ground_truth_in_runtime_observation": false
+  },
+  "report_contract": {
+    "money_fields_are_decimal_strings": true,
+    "ground_truth_evaluation_is_post_run_only": true,
+    "source_bundle_is_six_files_only": true
+  }
+}

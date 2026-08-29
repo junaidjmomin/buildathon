@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "dataset_id": "novacart_clause_driven_test_v1",
+  "dataset_type": "LABELED_CLAUSE_TEST",
+  "profile": "agreement_clause_coverage",
+  "agreement_id": "MPT-NC-2026-041",
+  "source_files": [
+    "orders.csv",
+    "payments.csv",
+    "settlements.csv",
+    "bank.csv",
+    "refunds.csv",
+    "chargebacks.csv"
+  ],
+  "counts": {
+    "orders": 750,
+    "payments": 750,
+    "captured_payments": 700,
+    "failed_payments": 50,
+    "settlement_rows": 704,
+    "unique_settlements": 80,
+    "bank_rows": 77,
+    "refunds": 75,
+    "chargebacks": 24
+  },
+  "evaluation_only_files": [
+    "ground_truth.csv",
+    "relationship_ground_truth.csv",
+    "settlement_ground_truth.csv",
+    "clause_coverage.csv"
+  ],
+  "notes": [
+    "Evaluation-only files are read only after the deterministic run completes.",
+    "Manifest values identify the fixture and do not manufacture runtime findings.",
+    "The fixture spans the pre-amendment 1.55% MDR period and post-amendment 1.65% period."
+  ]
+}

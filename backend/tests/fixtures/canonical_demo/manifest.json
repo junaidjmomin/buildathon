@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "dataset_id": "novacart_canonical_demo_fixture_v1",
+  "dataset_type": "CANONICAL_DEMO",
+  "profile": "stable_proof_fixture",
+  "counts": {
+    "orders": 60,
+    "payments": 60,
+    "captured_payments": 60,
+    "failed_payments": 0,
+    "settlement_rows": 60,
+    "unique_settlements": 10,
+    "bank_rows": 11,
+    "refunds": 1,
+    "chargebacks": 2
+  },
+  "known_demo_ids": {
+    "mdr_violation": "PAY_82HD9",
+    "duplicate_refund": "REF_91",
+    "sla_violation": "SET_1042",
+    "root_cause": "RC_MDR_01",
+    "unresolved": "UNR_003"
+  }
+}

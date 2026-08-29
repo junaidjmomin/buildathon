@@ -15,7 +15,6 @@ import os
 from decimal import Decimal
 from hashlib import sha256
 from importlib import import_module
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -25,10 +24,11 @@ from app.main import app
 from app.persistence.database import get_engine, get_session_factory, session_scope
 from app.persistence.orm import AuditLogRecord, Base
 from app.storage.supabase import StoredObject
+from tests.fixtures.datasets import load_dataset_fixture
 
 api_router = import_module("app.api.router")
 
-DOCS_ROOT = Path(__file__).parents[2] / "docs"
+CANONICAL = load_dataset_fixture("canonical_demo")
 FILE_STEMS = ("orders", "payments", "refunds", "settlements", "chargebacks", "bank")
 
 
@@ -68,7 +68,8 @@ class _Storage:
 
 def _docs_files() -> list[tuple[str, bytes, str]]:
     return [
-        (f"{stem}.csv", (DOCS_ROOT / f"{stem}.csv").read_bytes(), "text/csv") for stem in FILE_STEMS
+        (f"{stem}.csv", CANONICAL.source_paths[stem].read_bytes(), "text/csv")
+        for stem in FILE_STEMS
     ]
 
 
@@ -393,7 +394,7 @@ def test_payment_drill_downs_serve_live_runs(tmp_path, monkeypatch) -> None:
 def test_row_level_errors_are_reported_without_blocking_valid_rows(tmp_path, monkeypatch) -> None:
     client = _setup(tmp_path, monkeypatch)
     try:
-        lines = (DOCS_ROOT / "payments.csv").read_text().splitlines()
+        lines = CANONICAL.source_paths["payments"].read_text().splitlines()
         # CSV row 3 gets an unparsable fee; CSV row 4 loses its payment_id.
         payment_fields = lines[2].split(",")
         payment_fields[8] = "not-a-decimal"
@@ -417,7 +418,7 @@ def test_row_level_errors_are_reported_without_blocking_valid_rows(tmp_path, mon
 
         settlements = (
             "settlements.csv",
-            (DOCS_ROOT / "settlements.csv").read_bytes(),
+            CANONICAL.source_paths["settlements"].read_bytes(),
             "text/csv",
         )
         bundle = _upload_bundle(client, [("payments.csv", bad_payments, "text/csv"), settlements])

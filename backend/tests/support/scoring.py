@@ -38,6 +38,7 @@ neither number can be mistaken for the other.
 from __future__ import annotations
 
 import csv
+import json
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -49,6 +50,13 @@ from app.controls.live import CLAIMED_VIOLATION_TYPES, VIOLATION_TYPES
 from app.core.money import money
 
 ZERO = Decimal("0.00")
+
+
+def _stable_dict_sort_key(item: dict[str, Any]) -> str:
+    """Provide a deterministic ordering for JSON-shaped evidence dictionaries."""
+
+    return json.dumps(item, sort_keys=True, separators=(",", ":"), default=str)
+
 
 #: Label-vocabulary entries with no engine counterpart. Their native entity is
 #: the financial record that carries the deviation: an unlisted deduction is a
@@ -637,14 +645,22 @@ def approved_control_execution(
             "alias_credited_false_negatives": len(aliased_fn),
         },
         "unexplained_false_positives": sorted(
-            instance.as_dict()
-            for instance in fp
-            if dispositions.false_positive.get(instance, {}).get("disposition") == FP_UNEXPLAINED
+            (
+                instance.as_dict()
+                for instance in fp
+                if dispositions.false_positive.get(instance, {}).get("disposition")
+                == FP_UNEXPLAINED
+            ),
+            key=_stable_dict_sort_key,
         ),
         "unexplained_false_negatives": sorted(
-            instance.as_dict()
-            for instance in fn
-            if dispositions.false_negative.get(instance, {}).get("disposition") == FN_UNEXPLAINED
+            (
+                instance.as_dict()
+                for instance in fn
+                if dispositions.false_negative.get(instance, {}).get("disposition")
+                == FN_UNEXPLAINED
+            ),
+            key=_stable_dict_sort_key,
         ),
     }
 

@@ -285,7 +285,15 @@ def test_bulk_upsert_bypasses_orm_session_insert_grouping() -> None:
     session.execute.assert_not_called()
 
 
-def test_source_upload_validates_locally_without_storage_credentials() -> None:
+def test_source_upload_validates_locally_without_storage_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The developer shell may have real Supabase credentials configured.  This
+    # test explicitly exercises the documented no-storage fallback instead of
+    # relying on whichever .env happens to be present on the machine.
+    monkeypatch.setenv("SUPABASE_URL", "")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    get_settings.cache_clear()
     response = TestClient(app).post(
         "/api/v1/sources/upload",
         files={"file": ("payments.csv", b"payment_id,amount\nPAY_1,100.00\n", "text/csv")},
@@ -295,6 +303,7 @@ def test_source_upload_validates_locally_without_storage_credentials() -> None:
     assert response.json()["decimal_values_checked"] == 1
     assert response.json()["storage_status"] == "VALIDATED_ONLY"
     assert response.json()["object_path"] is None
+    get_settings.cache_clear()
 
 
 @pytest.mark.parametrize(

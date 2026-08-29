@@ -66,6 +66,8 @@ def execute_source_run(
     actor_id: str,
     request_id: str | None,
     run_name: str | None = None,
+    dataset_id: str | None = None,
+    dataset_type: str | None = None,
 ) -> SourceRunResponse:
     """Execute the deterministic pipeline for an already validated CSV bundle.
 
@@ -180,8 +182,8 @@ def execute_source_run(
             manifest_extra={
                 # Uploaded bundles are independent datasets. Identity is
                 # content-derived, never inferred from payment IDs.
-                "dataset_id": f"uploaded_csv_{fingerprint[:20].lower()}",
-                "dataset_type": "UPLOADED",
+                "dataset_id": dataset_id or f"uploaded_csv_{fingerprint[:20].lower()}",
+                "dataset_type": dataset_type or "UPLOADED",
                 "artifact_ids": [artifact_id for artifact_id, _, _ in documents],
                 "source_types": sorted(
                     document.metadata.source_type for _, _, document in documents

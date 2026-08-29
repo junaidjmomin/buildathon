@@ -44,6 +44,26 @@ _PAGE_FOOTER = re.compile(
 )
 
 
+def infer_agreement_effective_from(pages: list[ExtractedAgreementPage], *, fallback: date) -> date:
+    """Read the agreement's stated effective date, falling back to intake metadata."""
+
+    text = "\n".join(page.text for page in pages)
+    match = re.search(
+        r"effective\s+date\s+(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        try:
+            return datetime.strptime(
+                f"{match.group(1)} {match.group(2)} {match.group(3)}",
+                "%d %B %Y",
+            ).date()
+        except ValueError:
+            pass
+    return fallback
+
+
 def segment_agreement_clauses(
     pages: list[ExtractedAgreementPage], *, agreement_effective_from: date
 ) -> list[ExtractedAgreementClause]:
@@ -99,7 +119,8 @@ def segment_agreement_clauses(
             clause_number = match.group("number").upper()
             effective_from = agreement_effective_from
             date_match = re.search(
-                r"(?:effective\s+(?:date|from)|captured\s+on\s+or\s+after)\s+(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})",
+                r"(?:effective\s+(?:date|from)|captured\s+(?:from|on\s+or\s+after))\s+"
+                r"(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})",
                 chunk,
                 re.IGNORECASE,
             )

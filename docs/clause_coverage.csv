@@ -1,0 +1,15 @@
+clause,scenario,expected,count
+3.3,Rounding tolerance,PASS at INR 0.01 tolerance,12
+4.2,Pre-amendment MDR overcharge,VIOLATION,18
+A1.2,Post-amendment stale old MDR,VIOLATION,10
+A1.2,Post-amendment MDR overcharge,VIOLATION,12
+4.3,Independent GST error,VIOLATION,14
+4.6,Unlisted settlement fee,VIOLATION / blind spot if control remains DRAFT,9
+4.7/7.4,Chargeback fee overcharge,VIOLATION,6
+6.1,Late settlement,Payment-level SLA violation,12
+6.2,Bank arithmetic mismatch,Settlement-level violation,3
+6.3,Ambiguous bank relationship,UNRESOLVED,2
+6.4,Missing bank credit,Settlement/relationship exception,3
+7.2,Duplicate refund principal deduction,VIOLATION,7
+7.3,Cumulative refund exceeds payment,VIOLATION,5
+1.3/6.2,Failed payment included in settlement,VIOLATION / coverage test,4

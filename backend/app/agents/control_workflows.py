@@ -116,8 +116,10 @@ def validate_candidate_evidence(
         ControlType.GST_ON_FEE: (("gst",), ("%",), ("approved processing fee",)),
         ControlType.SETTLEMENT_SLA: (
             ("captured payment",),
+            ("t+2",),
             ("business day",),
-            ("capture date", "capture"),
+            ("capture date",),
+            ("must be included", "no later than"),
         ),
         ControlType.SETTLEMENT_ARITHMETIC: (
             ("gross",),
@@ -156,6 +158,60 @@ def validate_candidate_evidence(
                 f"{candidate.logical_control_key}: required parameter {parameter} is missing"
             )
     return warnings
+
+
+def select_operative_clause(
+    candidate: TypedControlCandidate, clauses: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Choose the strongest clause by required operative terms, not page mentions."""
+
+    candidates = [
+        clause
+        for clause in clauses
+        if not str(clause.get("reference", "")).upper().startswith("PAGE_")
+        and not str(clause.get("reference", "")).upper().startswith("UNNUMBERED_")
+    ]
+    if candidate.logical_control_key == "CHARGEBACK_ADMIN_FEE":
+        groups = (
+            ("chargeback",),
+            ("administration fee",),
+            ("for each valid chargeback", "allowed fee"),
+        )
+    else:
+        groups = {
+            ControlType.MDR_RATE: (("mdr", "merchant discount"), ("%",), ("domestic card",)),
+            ControlType.GST_ON_FEE: (("gst",), ("%",), ("approved processing fee",)),
+            ControlType.SETTLEMENT_SLA: (
+                ("captured payment",),
+                ("t+2",),
+                ("business day",),
+                ("capture date",),
+                ("must be included", "no later than"),
+            ),
+            ControlType.SETTLEMENT_ARITHMETIC: (("gross",), ("approved",), ("bank credit",)),
+            ControlType.UNSUPPORTED_FEE: (("unlisted",), ("fee", "deduction")),
+            ControlType.REFUND_INTEGRITY: (("refund",), ("once",), ("fee", "tolerance")),
+            ControlType.LIFECYCLE_VALIDITY: (
+                ("cumulative",),
+                ("refund",),
+                ("captured payment principal",),
+            ),
+        }.get(candidate.control_type, ())
+    if not groups:
+        return None
+    best: tuple[int, dict[str, Any]] | None = None
+    for clause in candidates:
+        text = re.sub(r"\s+", " ", str(clause.get("text", "")).lower()).strip()
+        score = sum(1 for group in groups if any(term in text for term in group))
+        if score != len(groups):
+            continue
+        # Prefer the candidate's current clause on a genuine tie, otherwise
+        # keep the first operative occurrence in document order.
+        tie_break = 1 if str(clause.get("id")) == candidate.clause_id else 0
+        rank = score * 10 + tie_break
+        if best is None or rank > best[0]:
+            best = (rank, clause)
+    return best[1] if best else None
 
 
 def _deterministic_candidates(clauses: list[dict[str, Any]]) -> list[TypedControlCandidate]:
@@ -685,9 +741,19 @@ class AgreementControlCompiler:
         warnings: list[str] = []
         try:
             batch = ControlCandidateBatch.model_validate({"candidates": state["proposals"]})
-            clauses = {str(clause.get("id")): clause for clause in state["clauses"]}
+            clauses_list = state["clauses"]
+            clauses = {str(clause.get("id")): clause for clause in clauses_list}
             valid = bool(batch.candidates)
+            aligned_candidates: list[TypedControlCandidate] = []
             for candidate in batch.candidates:
+                operative_clause = select_operative_clause(candidate, clauses_list)
+                if (
+                    operative_clause is not None
+                    and str(operative_clause.get("id")) != candidate.clause_id
+                ):
+                    candidate = candidate.model_copy(
+                        update={"clause_id": str(operative_clause.get("id"))}
+                    )
                 clause = clauses.get(candidate.clause_id)
                 if clause is None:
                     valid = False
@@ -704,10 +770,16 @@ class AgreementControlCompiler:
                 ):
                     valid = False
                     break
+                aligned_candidates.append(candidate)
+            if valid:
+                batch = ControlCandidateBatch(candidates=aligned_candidates)
         except ValidationError:
             valid = False
         return {
             "schema_valid": valid,
+            "proposals": [item.model_dump(mode="json") for item in batch.candidates]
+            if valid
+            else state.get("proposals", []),
             "validation_warnings": warnings,
             "trace": [
                 _step(

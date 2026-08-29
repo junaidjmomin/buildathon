@@ -71,6 +71,11 @@ def api_client(database_path: Path) -> Iterator[TestClient]:
 
     patch = pytest.MonkeyPatch()
     patch.setenv("DATABASE_URL", f"sqlite:///{database_path.as_posix()}")
+    # Keep the evaluation hermetic and deterministic.  Production uses OIDC,
+    # but these tests intentionally exercise the domain through the API without
+    # requiring a live identity provider.
+    patch.setenv("AUTH_MODE", "disabled")
+    patch.setenv("ENVIRONMENT", "test")
     get_settings.cache_clear()
     get_engine.cache_clear()
     get_session_factory.cache_clear()
@@ -79,7 +84,12 @@ def api_client(database_path: Path) -> Iterator[TestClient]:
     Base.metadata.create_all(engine)
     patch.setattr(api_router, "SupabaseStorage", _Storage)
     try:
-        yield TestClient(app)
+        # The repository's development environment intentionally allows
+        # localhost/127.0.0.1 only.  Starlette's TestClient defaults to the
+        # synthetic ``testserver`` host, which is rejected by the same trusted
+        # host middleware used in production.  Exercise the public API through
+        # an allowed local origin so these tests match browser behaviour.
+        yield TestClient(app, base_url="http://localhost")
     finally:
         patch.undo()
         get_session_factory.cache_clear()
@@ -91,7 +101,14 @@ def read_bundle(paths: dict[str, Path]) -> list[SourceFile]:
     return [(path.name, path.read_bytes(), "text/csv") for path in paths.values()]
 
 
-def execute_bundle(client: TestClient, files: list[SourceFile], *, name: str) -> str:
+def execute_bundle(
+    client: TestClient,
+    files: list[SourceFile],
+    *,
+    name: str,
+    dataset_id: str | None = None,
+    dataset_type: str | None = None,
+) -> str:
     """Upload, then execute — the same two calls the browser makes."""
 
     uploaded = client.post(
@@ -103,6 +120,10 @@ def execute_bundle(client: TestClient, files: list[SourceFile], *, name: str) ->
     # Plain form fields ride alongside file parts as (None, value, None) entries;
     # httpx 0.27 cannot mix list-form `data` with `files`.
     parts: list[tuple[str, Any]] = [("name", (None, name, None))]
+    if dataset_id is not None:
+        parts.append(("dataset_id", (None, dataset_id, None)))
+    if dataset_type is not None:
+        parts.append(("dataset_type", (None, dataset_type, None)))
     parts.extend(("upload_ids", (None, upload_id, None)) for upload_id in upload_ids)
     parts.extend(("files", item) for item in files)
     created = client.post("/api/v1/runs/from-uploads", files=parts)
@@ -123,6 +144,12 @@ def _persisted(run_id: str) -> tuple[list[dict[str, Any]], frozenset[str]]:
                 "target_id": record.target_id,
                 "check_name": record.check_name,
                 "outcome": record.outcome,
+                "expected_amount": record.expected_amount,
+                "actual_amount": record.actual_amount,
+                "tolerance_amount": record.tolerance_amount,
+                "difference_amount": record.difference_amount,
+                "financial_impact": record.financial_impact,
+                "confidence": record.confidence,
                 "evidence": record.evidence,
             }
             for record in session.scalars(

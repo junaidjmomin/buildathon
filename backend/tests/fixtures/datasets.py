@@ -15,6 +15,7 @@ class DatasetFixture:
     root: Path
     manifest: dict[str, Any]
     ground_truth: Path | None
+    evaluation_files: dict[str, Path]
 
     @property
     def source_paths(self) -> dict[str, Path]:
@@ -30,17 +31,32 @@ class DatasetFixture:
 
 def load_dataset_fixture(name: str) -> DatasetFixture:
     roots = {
-        "canonical_demo": ROOT / "data" / "demo",
+        # Keep the stable 60-row proof fixture beside the tests.  The generated
+        # 500-row demo dataset remains an application/demo asset, while these
+        # source files are the explicit fixture for exact canonical assertions.
+        "canonical_demo": ROOT / "backend" / "tests" / "fixtures" / "canonical_demo",
         "prod_stress": ROOT / "data" / "stress",
+        "clause_driven": ROOT / "docs",
     }
     if name not in roots:
         raise ValueError(f"Unknown dataset fixture: {name}")
     root = roots[name]
     manifest = json.loads((root / "manifest.json").read_text())
+    evaluation_files = {
+        name: root / name
+        for name in (
+            "ground_truth.csv",
+            "relationship_ground_truth.csv",
+            "settlement_ground_truth.csv",
+            "clause_coverage.csv",
+        )
+        if (root / name).exists()
+    }
     return DatasetFixture(
         dataset_id=manifest["dataset_id"],
         dataset_type=manifest["dataset_type"],
         root=root,
         manifest=manifest,
         ground_truth=(root / "ground_truth.csv") if (root / "ground_truth.csv").exists() else None,
+        evaluation_files=evaluation_files,
     )

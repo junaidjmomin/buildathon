@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 from decimal import Decimal
-from pathlib import Path
 
 from app.domain.models import FinancialEvent
 from app.ingestion.csv import read_source_csv
@@ -10,6 +9,7 @@ from app.ingestion.pipeline import (
     _drop_invalid_rows,
     _match_score,
 )
+from tests.fixtures.datasets import load_dataset_fixture
 
 
 def _document(name: str, content: bytes):
@@ -17,10 +17,10 @@ def _document(name: str, content: bytes):
 
 
 def test_documented_six_file_bundle_builds_deterministic_graph() -> None:
-    docs_root = Path(__file__).parents[2] / "docs"
+    fixture = load_dataset_fixture("canonical_demo")
     documents = []
     for stem in ("orders", "payments", "refunds", "settlements", "chargebacks", "bank"):
-        path = docs_root / f"{stem}.csv"
+        path = fixture.source_paths[stem]
         documents.append(_document(path.name, path.read_bytes()))
 
     events, edges, unresolved = _canonicalize(

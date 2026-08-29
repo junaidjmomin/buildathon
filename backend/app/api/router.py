@@ -78,7 +78,12 @@ from app.domain.models import (
     ViolationLineageResponse,
 )
 from app.ingestion.csv import parse_source_csv, read_source_csv
-from app.ingestion.pdf import extract_agreement_pages, segment_agreement_clauses
+from app.ingestion.pdf import (
+    ExtractedAgreementPage,
+    extract_agreement_pages,
+    infer_agreement_effective_from,
+    segment_agreement_clauses,
+)
 from app.ingestion.pipeline import execute_source_run
 from app.integrations.razorpay.client import RazorpayNotConfiguredError
 from app.integrations.razorpay.mcp_evidence import capability as mcp_evidence_capability
@@ -114,6 +119,27 @@ def _require_seeded_demo(principal: Principal) -> None:
     settings = get_settings()
     if settings.environment not in {"development", "test"} or principal.tenant_id != DEMO_TENANT_ID:
         raise HTTPException(status_code=404, detail="Resource not found")
+
+
+def _validate_dataset_metadata(value: str | None, *, field: str) -> str | None:
+    """Validate optional dataset provenance supplied with an uploaded run."""
+
+    if value is None:
+        return None
+    normalized = value.strip()
+    if (
+        not normalized
+        or len(normalized) > 160
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", normalized)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{field} must be 1-160 characters and contain only letters, "
+                "numbers, '.', '_' or '-'."
+            ),
+        )
+    return normalized
 
 
 def _seeded_demo_enabled(principal: Principal) -> bool:
@@ -384,6 +410,8 @@ async def create_run_from_uploads(
     principal: Annotated[Principal, Depends(require_roles("analyst"))],
     request: Request,
     name: Annotated[str | None, Form(max_length=160)] = None,
+    dataset_id: Annotated[str | None, Form(max_length=160)] = None,
+    dataset_type: Annotated[str | None, Form(max_length=160)] = None,
 ) -> SourceRunResponse:
     """Create and execute a run from a previously accepted upload bundle.
 
@@ -393,6 +421,8 @@ async def create_run_from_uploads(
     """
 
     settings = get_settings()
+    dataset_id = _validate_dataset_metadata(dataset_id, field="dataset_id")
+    dataset_type = _validate_dataset_metadata(dataset_type, field="dataset_type")
     if not settings.database_url:
         raise HTTPException(status_code=503, detail="CSV control runs require DATABASE_URL")
     if not files or len(files) != len(upload_ids):
@@ -441,6 +471,8 @@ async def create_run_from_uploads(
             actor_id=principal.subject,
             request_id=request.state.request_id,
             run_name=name.strip() if name and name.strip() else None,
+            dataset_id=dataset_id,
+            dataset_type=dataset_type,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -491,7 +523,10 @@ async def upload_agreement(
     )
     extracted_clauses = segment_agreement_clauses(
         pages,
-        agreement_effective_from=effective_from,
+        agreement_effective_from=infer_agreement_effective_from(
+            pages,
+            fallback=effective_from,
+        ),
     )
     if not extracted_clauses:
         raise HTTPException(
@@ -602,6 +637,38 @@ async def upload_agreement(
                 principal.tenant_id,
             )
         raise
+
+
+def _clause_models_from_pages(
+    *, agreement: Agreement, pages: list[ExtractedAgreementPage], content_hash: str
+) -> list[AgreementClause]:
+    segmented = segment_agreement_clauses(
+        pages,
+        agreement_effective_from=infer_agreement_effective_from(
+            pages,
+            fallback=agreement.effective_from,
+        ),
+    )
+    return [
+        AgreementClause(
+            id=(f"CLAUSE_{content_hash[:12].upper()}_{clause.clause_number.replace('.', '_')}"),
+            reference=clause.clause_number,
+            page=clause.page_number,
+            heading=clause.clause_title[:240],
+            text=clause.text,
+            effective_from=clause.effective_from,
+            effective_to=agreement.effective_to,
+            clause_number=clause.clause_number,
+            clause_title=clause.clause_title,
+            source_offsets={
+                "page_number": clause.page_number,
+                "start_offset": clause.start_offset,
+                "end_offset": clause.end_offset,
+                "offset_basis": "normalized_page_text",
+            },
+        )
+        for clause in segmented
+    ]
 
 
 @router.post("/demo/load", response_model=DemoLoadResponse)
@@ -737,6 +804,37 @@ async def _run_agreement_compilation(
                 tenant_id=principal.tenant_id,
                 agreement_id=agreement_id,
             )
+            pages = [
+                ExtractedAgreementPage(page_number=clause.page, text=clause.text)
+                for clause in agreement_record.clauses
+            ]
+            pdf_effective_from = infer_agreement_effective_from(
+                pages,
+                fallback=agreement_record.effective_from,
+            )
+            needs_resegmentation = any(
+                clause.reference.upper().startswith("PAGE_") for clause in agreement_record.clauses
+            ) or (
+                pdf_effective_from != agreement_record.effective_from
+                and any(
+                    clause.effective_from == agreement_record.effective_from
+                    for clause in agreement_record.clauses
+                )
+            )
+            if needs_resegmentation:
+                segmented = _clause_models_from_pages(
+                    agreement=agreement_record,
+                    pages=pages,
+                    content_hash=agreement_record.content_hash,
+                )
+                if segmented:
+                    agreement_record = repository.replace_extracted_clauses(
+                        tenant_id=principal.tenant_id,
+                        agreement_id=agreement_id,
+                        clauses=segmented,
+                        actor_id=principal.subject,
+                    )
+                    existing_proposals = []
     else:
         raise HTTPException(status_code=404, detail="Agreement not found")
 
