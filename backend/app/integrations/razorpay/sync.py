@@ -320,6 +320,7 @@ async def sync_razorpay(
                     control_version=evaluation.control.version,
                     target_type=evaluation.target_type,
                     target_id=evaluation.target_id,
+                    check_name=evaluation.check_name,
                     outcome=evaluation.outcome.value,
                     expected_amount=evaluation.expected_amount,
                     actual_amount=evaluation.actual_amount,

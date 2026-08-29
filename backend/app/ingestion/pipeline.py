@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -178,6 +178,10 @@ def execute_source_run(
             run_name=run_name or f"Uploaded CSV control run · {completed_at:%d %b %Y %H:%M UTC}",
             source="CSV_UPLOAD",
             manifest_extra={
+                # Uploaded bundles are independent datasets. Identity is
+                # content-derived, never inferred from payment IDs.
+                "dataset_id": f"uploaded_csv_{fingerprint[:20].lower()}",
+                "dataset_type": "UPLOADED",
                 "artifact_ids": [artifact_id for artifact_id, _, _ in documents],
                 "source_types": sorted(
                     document.metadata.source_type for _, _, document in documents
@@ -292,6 +296,7 @@ def execute_source_run(
                     "control_version": evaluation.control.version,
                     "target_type": evaluation.target_type,
                     "target_id": evaluation.target_id,
+                    "check_name": evaluation.check_name,
                     "outcome": evaluation.outcome.value,
                     "expected_amount": evaluation.expected_amount,
                     "actual_amount": evaluation.actual_amount,
@@ -587,6 +592,31 @@ def _canonicalize(
         timestamp = max(
             _row_timestamp(row, "SETTLEMENTS", row_number) for row_number, row in numbered_rows
         )
+        # Per-payment settlement-row components: the source itemizes each
+        # contributing payment's gross/fee/tax/refund/other/net values. These
+        # declared values feed the refund-deduction and residual-attribution
+        # checks; they are evidence, never inferred arithmetic.
+        payment_components: dict[str, dict[str, str]] = {}
+        for row in [item[1] for item in numbered_rows]:
+            payment_id = (row.get("payment_id") or "").strip()
+            if not payment_id:
+                continue
+            payment_components[payment_id] = {
+                key: value
+                for key, value in (
+                    (key, row.get(key))
+                    for key in (
+                        "gross_amount",
+                        "fee",
+                        "tax",
+                        "refund_adjustment",
+                        "other_adjustment",
+                        "net_amount",
+                        "settled_at",
+                    )
+                )
+                if value is not None
+            }
         settlement = add_event(
             "SETTLEMENTS",
             settlement_id,
@@ -597,6 +627,7 @@ def _canonicalize(
             normalized={
                 "payment_ids": [row.get("payment_id") for _, row in numbered_rows],
                 "row_count": len(numbered_rows),
+                "payment_components": payment_components,
             },
             row_number=numbered_rows[0][0],
         )
@@ -644,7 +675,7 @@ def _canonicalize(
 
     settlements = [event for event in events.values() if event.event_type == "SETTLEMENT"]
     matched_banks: set[str] = set()
-    unresolved = 0
+    candidate_debug: dict[str, dict[str, Any]] = {}
     for settlement in settlements:
         candidates = [
             (_match_score(settlement, bank), bank)
@@ -654,6 +685,13 @@ def _canonicalize(
         candidates.sort(key=lambda item: (item[0][0], item[1].id), reverse=True)
         best = candidates[0] if candidates else None
         runner_up_score = candidates[1][0][0] if len(candidates) > 1 else Decimal("0")
+        if best is not None:
+            candidate_debug[settlement.id] = {
+                "best_score": str(best[0][0]),
+                "runner_up_score": str(runner_up_score),
+                "candidate_bank_references": [item[1].external_id for item in candidates[:3]],
+                "matching_evidence": best[0][1],
+            }
         if (
             best
             and best[0][0] >= MATCH_THRESHOLD
@@ -673,32 +711,137 @@ def _canonicalize(
                 method="EXACT" if exact else "FUZZY",
                 evidence=evidence,
             )
-        else:
-            unresolved += 1
-            digest = sha256(f"{run_id}:{settlement.id}:unresolved".encode()).hexdigest()[:20]
-            events[f"csv:unresolved:{digest}"] = FinancialEvent(
-                id=f"csv:unresolved:{digest}",
-                run_id=run_id,
-                source="CSV_UPLOAD",
-                external_id=f"UNR_{digest[:8].upper()}",
-                event_type="UNRESOLVED_MATCH",
-                amount=settlement.amount,
-                currency=settlement.currency,
-                timestamp=completed_at,
-                status="unresolved",
-                raw_payload={},
-                normalized_payload={
-                    "settlement_id": settlement.external_id,
-                    "threshold": str(MATCH_THRESHOLD),
-                    "best_score": str(best[0][0]) if best else "0",
-                    "runner_up_score": str(runner_up_score),
-                    "candidate_bank_references": [item[1].external_id for item in candidates[:3]],
-                    "matching_evidence": best[0][1] if best else {},
-                    "decision": "UNRESOLVED",
-                    "authority": "DETERMINISTIC",
-                },
+        elif (
+            best
+            and best[0][1].get("reference_exact")
+            and best[0][1].get("amount_within_tolerance")
+            and sum(
+                1
+                for item in candidates
+                if item[0][1].get("reference_exact") and item[0][1].get("amount_within_tolerance")
             )
+            == 1
+        ):
+            # Deterministic exact-reference fallback: exactly one bank row
+            # identifies the settlement unambiguously and the amount
+            # reconciles, but the composite fuzzy score stayed below
+            # threshold (e.g. a bare reference with no supporting
+            # description text). Two rows identifying the same settlement
+            # stay ambiguous by design.
+            score, evidence = best[0]
+            bank = best[1]
+            matched_banks.add(bank.id)
+            evidence = {**evidence, "match_rule": "EXACT_REFERENCE_AMOUNT"}
+            _add_edge(
+                edges,
+                run_id,
+                settlement,
+                bank,
+                "CREDITED_AS",
+                confidence=score,
+                method="EXACT",
+                evidence=evidence,
+            )
+
+    # Deterministic amount-unique fallback for settlements whose bank credit
+    # carries no textual link at all (blank reference, generic description):
+    # when exactly one unmatched bank credit and exactly one unmatched
+    # settlement share the same amount within tolerance, the pairing is
+    # unique among all remaining candidates on both sides. Two rows sharing
+    # an amount never resolve this way — they stay ambiguous by design.
+    credited = _credited_settlements(edges)
+    unmatched_settlements = [
+        settlement for settlement in settlements if settlement.id not in credited
+    ]
+    unmatched_banks = [bank for bank in bank_events if bank.id not in matched_banks]
+    if unmatched_settlements and unmatched_banks:
+        bank_amounts = Counter(bank.amount for bank in unmatched_banks)
+        settlement_amounts = Counter(settlement.amount for settlement in unmatched_settlements)
+        for settlement in unmatched_settlements:
+            amount = settlement.amount
+            if bank_amounts.get(amount, 0) != 1 or settlement_amounts.get(amount, 0) != 1:
+                continue
+            bank = next(bank for bank in unmatched_banks if bank.amount == amount)
+            matched_banks.add(bank.id)
+            evidence = {
+                "authority": "DETERMINISTIC",
+                "match_rule": "AMOUNT_UNIQUE",
+                "reasoning": (
+                    "Exactly one unmatched bank credit and exactly one unmatched "
+                    "settlement share this amount within tolerance; no textual "
+                    "link exists."
+                ),
+                "amount_difference": str(money(bank.amount - settlement.amount)),
+                "amount_tolerance": str(AMOUNT_TOLERANCE),
+                "reference_exact": False,
+                "reference_token_overlap": "0",
+                "normalized_string_similarity": "0",
+                "amount_within_tolerance": abs(bank.amount - settlement.amount) <= AMOUNT_TOLERANCE,
+                "timestamp_distance_days": str(
+                    Decimal(
+                        str(abs((bank.timestamp - settlement.timestamp).total_seconds()) / 86400)
+                    ).quantize(Decimal("0.01"))
+                ),
+                "confidence_score": "0.45",
+                "threshold": str(MATCH_THRESHOLD),
+                "matched_on": "unique_amount",
+            }
+            _add_edge(
+                edges,
+                run_id,
+                settlement,
+                bank,
+                "CREDITED_AS",
+                confidence=Decimal("0.45"),
+                method="AMOUNT_UNIQUE",
+                evidence=evidence,
+            )
+
+    # The unresolved count is derived from final edge state: settlements with
+    # no CREDITED_AS edge are the true unresolved relationships — but only
+    # when an unmatched bank credit with a compatible amount exists, meaning
+    # the pairing is ambiguous. A settlement with no amount-compatible
+    # unmatched credit anywhere is a missing bank credit, not an unresolved
+    # match: absence is a deterministic conclusion, not a matching failure.
+    final_unmatched_banks = [bank for bank in bank_events if bank.id not in matched_banks]
+    unresolved = 0
+    for settlement in settlements:
+        if settlement.id in _credited_settlements(edges):
+            continue
+        compatible = [
+            bank
+            for bank in final_unmatched_banks
+            if abs(bank.amount - settlement.amount) <= AMOUNT_TOLERANCE
+        ]
+        missing = not compatible
+        digest = sha256(f"{run_id}:{settlement.id}:unresolved".encode()).hexdigest()[:20]
+        sentinel_type = "MISSING_BANK_CREDIT" if missing else "UNRESOLVED_MATCH"
+        events[f"csv:unresolved:{digest}"] = FinancialEvent(
+            id=f"csv:unresolved:{digest}",
+            run_id=run_id,
+            source="CSV_UPLOAD",
+            external_id=f"UNR_{digest[:8].upper()}",
+            event_type=sentinel_type,
+            amount=settlement.amount,
+            currency=settlement.currency,
+            timestamp=completed_at,
+            status="unresolved",
+            raw_payload={},
+            normalized_payload={
+                "settlement_id": settlement.external_id,
+                "threshold": str(MATCH_THRESHOLD),
+                "decision": "MISSING" if missing else "UNRESOLVED",
+                "authority": "DETERMINISTIC",
+                **candidate_debug.get(settlement.id, {}),
+            },
+        )
+        if not missing:
+            unresolved += 1
     return list(events.values()), list(edges.values()), unresolved
+
+
+def _credited_settlements(edges: dict[str, CanonicalEventEdge]) -> set[str]:
+    return {edge.from_event_id for edge in edges.values() if edge.relationship == "CREDITED_AS"}
 
 
 def _add_edge(
@@ -725,16 +868,53 @@ def _add_edge(
     )
 
 
+#: Characters that delimit fields inside bank narration text. ``_`` is
+#: deliberately absent: it occurs *inside* identifiers, so splitting on it
+#: would destroy the very reference the matcher is looking for.
+_NARRATION_DELIMITERS = "/\\|,;:()[]{}<>\t\r\n-"
+
+
+def _narration_tokens(text: str) -> set[str]:
+    """Whole tokens of a narration, with identifiers left intact.
+
+    A bank narration embeds references inside delimited strings
+    (``RZP/<SETTLEMENT>/SETTLEMENT``). Splitting on the structural delimiters
+    exposes the reference as its own token while keeping ``_``-joined
+    identifiers whole, so a verbatim reference is recognised as exact
+    identification rather than a fuzzy resemblance. Case-folded; empty
+    tokens dropped.
+    """
+
+    normalized = text.lower()
+    for delimiter in _NARRATION_DELIMITERS:
+        normalized = normalized.replace(delimiter, " ")
+    return {token for token in (piece.strip() for piece in normalized.split()) if token}
+
+
+def _tokens(text: str) -> set[str]:
+    """Comparison tokens for the fuzzy overlap signal.
+
+    Narration tokens are split further on ``_`` so that partially matching
+    identifiers still contribute a graded overlap score. This feeds the
+    confidence score only — never the exact-identification decision.
+    """
+
+    return {piece for token in _narration_tokens(text) for piece in token.split("_") if piece}
+
+
 def _match_score(
     settlement: FinancialEvent, bank: FinancialEvent
 ) -> tuple[Decimal, dict[str, Any]]:
     reference = str(bank.normalized_payload.get("reference") or "").strip().lower()
     description = str(bank.normalized_payload.get("description") or "").strip().lower()
     needle = settlement.external_id.lower()
-    reference_exact = needle == reference or needle in description.split()
-    similarity = Decimal(str(SequenceMatcher(None, needle, f"{reference} {description}").ratio()))
-    settlement_tokens = set(needle.replace("_", " ").split())
-    bank_tokens = set(f"{reference} {description}".replace("_", " ").split())
+    narration = f"{reference} {description}"
+    bank_tokens = _tokens(narration)
+    settlement_tokens = _tokens(needle)
+    # Exact identification: the settlement reference appears verbatim as the
+    # bank reference, or as a whole token of the narration.
+    reference_exact = needle == reference or needle in _narration_tokens(narration)
+    similarity = Decimal(str(SequenceMatcher(None, needle, narration).ratio()))
     overlap = Decimal(len(settlement_tokens & bank_tokens)) / Decimal(
         max(len(settlement_tokens), 1)
     )

@@ -62,6 +62,22 @@ def _by_control(evaluations):
     return {evaluation.control.control_type: evaluation for evaluation in evaluations}
 
 
+def _by_violation_type(evaluations, violation_type):
+    """Select the evaluation of a specific deterministic check.
+
+    One control can execute several checks on the same target (settlement
+    arithmetic and missing-bank evidence), so control type alone is not a
+    unique key.
+    """
+
+    return next(
+        evaluation
+        for evaluation in evaluations
+        if evaluation.violation is not None
+        and evaluation.violation.violation_type == violation_type
+    )
+
+
 def test_live_suite_evaluates_mdr_gst_and_marks_missing_settlement_unresolved() -> None:
     evaluations = build_live_control_evaluations([_payment()], [], CONTROLS)
     by_control = _by_control(evaluations)
@@ -185,7 +201,7 @@ def test_settlement_arithmetic_is_downstream_and_does_not_double_count_leakage()
     )
 
     evaluations = build_live_control_evaluations([payment, settlement], [edge], CONTROLS)
-    arithmetic = _by_control(evaluations)[ControlType.SETTLEMENT_ARITHMETIC]
+    arithmetic = _by_violation_type(evaluations, "SETTLEMENT_ARITHMETIC")
     assert arithmetic.outcome == EvaluationStatus.VIOLATION
     assert arithmetic.expected_amount == Decimal("981.71")
     assert arithmetic.actual_amount == Decimal("979.35")

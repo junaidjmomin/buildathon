@@ -347,6 +347,8 @@ class ViolationRecord(Base):
     lineage_type: Mapped[str] = mapped_column(String(32), default="PRIMARY")
     causal_evidence: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, default=dict)
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT)
+    violation_type: Mapped[str] = mapped_column(String(64), default="")
+    target_type: Mapped[str] = mapped_column(String(32), default="PAYMENT")
 
 
 class RootCauseRecord(Base):
@@ -570,6 +572,7 @@ class ControlEvaluationRecord(Base):
             "control_id",
             "target_type",
             "target_id",
+            "check_name",
             name="uq_control_evaluations_target",
         ),
         CheckConstraint(
@@ -612,6 +615,9 @@ class ControlEvaluationRecord(Base):
     control_version: Mapped[int] = mapped_column(Integer)
     target_type: Mapped[str] = mapped_column(String(64))
     target_id: Mapped[str] = mapped_column(String(160))
+    #: Discriminates distinct deterministic checks executed by the same control
+    #: on the same target (e.g. settlement arithmetic vs missing-bank evidence).
+    check_name: Mapped[str] = mapped_column(String(64), default="")
     outcome: Mapped[str] = mapped_column(String(32))
     expected_amount: Mapped[Decimal | None] = mapped_column(MONEY)
     actual_amount: Mapped[Decimal | None] = mapped_column(MONEY)

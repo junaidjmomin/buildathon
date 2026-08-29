@@ -668,6 +668,7 @@ _KIND_LABELS = {
     "BANK_CREDIT": "Bank credit",
     "BANK_DEBIT": "Bank debit",
     "UNRESOLVED_MATCH": "Unresolved match",
+    "MISSING_BANK_CREDIT": "Missing bank credit",
 }
 
 

@@ -31,12 +31,114 @@ def test_documented_six_file_bundle_builds_deterministic_graph() -> None:
 
     assert len(events) == 145
     assert len(edges) == 132
-    assert unresolved == 1
+    # Every settlement in the documented bundle either carries a bank credit or
+    # has no amount-compatible credit anywhere. Absence is a deterministic
+    # conclusion (MISSING_BANK_CREDIT), not an unresolved relationship, so no
+    # settlement here is genuinely ambiguous.
+    assert unresolved == 0
     assert sum(event.event_type == "PAYMENT" for event in events) == 60
     assert sum(event.event_type == "SETTLEMENT" for event in events) == 10
-    assert sum(event.event_type == "UNRESOLVED_MATCH" for event in events) == 1
+    assert sum(event.event_type == "UNRESOLVED_MATCH" for event in events) == unresolved
+    assert sum(event.event_type == "MISSING_BANK_CREDIT" for event in events) == 1
     assert sum(edge.relationship == "INCLUDED_IN" for edge in edges) == 60
-    assert all(edge.method in {"EXACT", "FUZZY"} for edge in edges)
+    assert sum(edge.relationship == "CREDITED_AS" for edge in edges) == 9
+    # Deterministic matching methods: exact reference, fuzzy composite, or
+    # the unique-amount fallback. Every bank edge records its authority.
+    assert all(edge.method in {"EXACT", "FUZZY", "AMOUNT_UNIQUE"} for edge in edges)
+    for edge in edges:
+        if edge.relationship == "CREDITED_AS":
+            assert edge.evidence.get("authority") == "DETERMINISTIC"
+
+
+def test_embedded_settlement_reference_in_narration_is_matched() -> None:
+    """A bank narration carrying the settlement id inside a delimited string.
+
+    Tokenization must split on ``/`` so the settlement reference is a real
+    token rather than being swallowed into one opaque blob.
+    """
+
+    payments = (
+        b"payment_id,amount,captured_at,payment_method,card_scope,fee,tax,status\n"
+        b"PAY_TOKEN_1,100.00,2026-08-01T10:00:00,card,domestic,1.55,0.28,captured\n"
+    )
+    settlements = (
+        b"settlement_id,payment_id,net_amount,settled_at\n"
+        b"SET_TOKEN_1,PAY_TOKEN_1,98.17,2026-08-03T10:00:00\n"
+    )
+    bank = (
+        b"bank_txn_id,credit,debit,posted_at,reference,description\n"
+        b"BANK_TOKEN_1,98.17,0.00,2026-08-04T10:00:00,,RZP/SET_TOKEN_1/SETTLEMENT\n"
+    )
+
+    events, edges, unresolved = _canonicalize(
+        [
+            _document("payments.csv", payments),
+            _document("settlements.csv", settlements),
+            _document("bank.csv", bank),
+        ],
+        run_id="RUN_TOKENIZED",
+        completed_at=datetime(2026, 8, 28, tzinfo=timezone.utc),
+    )
+
+    assert unresolved == 0
+    credited = [edge for edge in edges if edge.relationship == "CREDITED_AS"]
+    assert len(credited) == 1
+    assert credited[0].method == "EXACT"
+    assert credited[0].evidence["reference_token_overlap"] == "1.0000"
+    assert not any(event.event_type == "MISSING_BANK_CREDIT" for event in events)
+
+
+def test_amount_unique_fallback_matches_only_when_both_sides_are_unique() -> None:
+    """No textual link at all: uniqueness of the amount is the only evidence.
+
+    The pairing resolves when exactly one unmatched credit and exactly one
+    unmatched settlement share the amount. A second settlement sharing that
+    amount destroys uniqueness and both stay unresolved.
+    """
+
+    payments = (
+        b"payment_id,amount,captured_at,payment_method,card_scope,fee,tax,status\n"
+        b"PAY_UNIQ_1,100.00,2026-08-01T10:00:00,card,domestic,1.55,0.28,captured\n"
+        b"PAY_UNIQ_2,100.00,2026-08-01T11:00:00,card,domestic,1.55,0.28,captured\n"
+    )
+    settlements_unique = (
+        b"settlement_id,payment_id,net_amount,settled_at\n"
+        b"SET_UNIQ_1,PAY_UNIQ_1,98.17,2026-08-03T10:00:00\n"
+    )
+    settlements_tied = settlements_unique + b"SET_UNIQ_2,PAY_UNIQ_2,98.17,2026-08-03T11:00:00\n"
+    bank = (
+        b"bank_txn_id,credit,debit,posted_at,reference,description\n"
+        b"BANK_UNIQ_1,98.17,0.00,2026-08-04T10:00:00,,PAYMENT AGGREGATOR CREDIT\n"
+    )
+
+    _, unique_edges, unique_unresolved = _canonicalize(
+        [
+            _document("payments.csv", payments),
+            _document("settlements.csv", settlements_unique),
+            _document("bank.csv", bank),
+        ],
+        run_id="RUN_AMOUNT_UNIQUE",
+        completed_at=datetime(2026, 8, 28, tzinfo=timezone.utc),
+    )
+    credited = [edge for edge in unique_edges if edge.relationship == "CREDITED_AS"]
+    assert unique_unresolved == 0
+    assert len(credited) == 1
+    assert credited[0].method == "AMOUNT_UNIQUE"
+    assert credited[0].evidence["matched_on"] == "unique_amount"
+
+    _, tied_edges, tied_unresolved = _canonicalize(
+        [
+            _document("payments.csv", payments),
+            _document("settlements.csv", settlements_tied),
+            _document("bank.csv", bank),
+        ],
+        run_id="RUN_AMOUNT_TIED",
+        completed_at=datetime(2026, 8, 28, tzinfo=timezone.utc),
+    )
+    # Two settlements share the amount: the single credit cannot be attributed
+    # to either, so both remain unresolved rather than being force-matched.
+    assert not any(edge.relationship == "CREDITED_AS" for edge in tied_edges)
+    assert tied_unresolved == 2
 
 
 def test_fuzzy_score_is_explicit_and_deterministic() -> None:

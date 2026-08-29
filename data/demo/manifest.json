@@ -1,5 +1,7 @@
 {
   "schema_version": "1.0",
+  "dataset_id": "novacart_canonical_demo_v1",
+  "dataset_type": "CANONICAL_DEMO",
   "seed": 20260825,
   "dataset": "NovaCart August 2026",
   "records": {

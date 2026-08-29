@@ -209,7 +209,7 @@ def test_root_cause_attribution_partitions_violations_exactly_once() -> None:
     # Every violation is a member of exactly one root cause.
     assert set(all_members) == {violation.id for violation in violations}
     for root in roots:
-        assert root.verification_evidence["grouping_basis"] == "PRIMARY_VIOLATION_CONTROL_TYPE"
+        assert root.verification_evidence["grouping_basis"] == "PRIMARY_VIOLATION_CANONICAL_TYPE"
         assert root.verification_evidence["lineage_authority"] == "CONTROL_DEPENDENCY_SEMANTICS"
         assert root.primary_violation_count >= 1
         assert root.primary_violation_count + root.downstream_effect_count == len(

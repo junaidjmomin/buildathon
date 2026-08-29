@@ -1,0 +1,463 @@
+================================================================================
+sl3dge ENGAGEMENT LOG — 2026-08-29 (written while background agents still run)
+================================================================================
+Written at end of session before user sleep. Status of the overall job:
+- Phase 1 (full stress-dataset diagnosis): COMPLETE — full detail below.
+- Phase 3 (representative failure traces): COMPLETE at data/engine-origin level.
+- Backend fix work (Phases 2/4/5/6/7/11): IN PROGRESS in a background agent
+  (worktree .claude/worktrees/agent-a10a2c54cf9e1ab3c). It has NOT yet
+  reported back — its final metrics are not known yet. Its observed in-flight
+  edits are listed in section D.
+- Frontend browser audit (Phases 8/9): IN PROGRESS in a second background
+  agent. It has NOT yet reported back either.
+- Phase 10 (final verification matrix) and the final stress report JSON will be
+  finished after the agents complete.
+
+Baselines captured on the unmodified main tree (all green):
+- Backend:  pytest 134 passed, 1 skipped; ruff check clean; ruff format clean.
+- Frontend: vitest 17/17 passed; next typegen + tsc --noEmit clean; eslint
+  clean; next production build succeeds.
+- Alembic: all 12 migrations (0001→0012) upgrade cleanly on sqlite.
+- CI: .github/workflows/ci.yml is valid YAML; jobs = backend (ruff, alembic,
+  pytest on Postgres 16), frontend (pnpm typegen/tsc/lint/build), containers
+  (docker build backend+frontend, migration, health/readiness + smoke tests).
+- Docker is NOT installed on this machine ("docker: command not found"), so
+  local container builds cannot be run; CI path is the feasible verification.
+- Playwright 1.62.1 + Chromium installed in ms-playwright cache for the
+  browser audit.
+
+================================================================================
+A. PHASE 1 DIAGNOSIS — COMPLETE (all numbers empirical, from a real API run)
+================================================================================
+Dataset: novacart_prod_stress_v1 (docs/): 1000 payments, 930 settlement rows →
+102 distinct settlements, 99 bank rows (all credits), 94 refunds,
+20 chargebacks. Ground truth docs/ground_truth.csv (evaluation-only, never
+given to the pipeline): 889 PASS, 95 VIOLATION, 16 UNRESOLVED_RELATIONSHIP.
+
+Previous payment-level confusion matrix (old evaluator semantics):
+TP 62 · FP 177 · FN 49 · TN 712 → precision 25.94%, recall 55.86%, F1 35.43%,
+FPR 19.91%. The earlier "321 vs 239" bug = 82 findings outside the payment
+ground-truth universe (see section C).
+
+--- FP breakdown (177 payments) ------------------------------------------------
+1) 107 FP = SETTLEMENT_SLA-only, truth PASS, notes empty.
+   Proof of cause: for every one of these payments,
+   captured_at + 2 business days < settled_at (grouped settlements share a
+   single settled_at; 0 groups have multiple timestamps, so the engine's
+   max(settled_at) group behavior is NOT the cause — the rows are genuinely
+   late). The engine's SLA math is correct and it detects all 131 objectively
+   late payments in the file. Truth labels only 10 as SETTLEMENT_SLA.
+   Classification: GROUND_TRUTH_BUG (proven from clause 6.1 "settled within
+   two business days of capture" + objective per-row lateness). Remedy: add
+   SETTLEMENT_SLA to primary_violation_types by RULE (never per-ID), status
+   PASS→VIOLATION, expected loss unchanged (SLA = cash delay, not leakage).
+   Affects 107 PASS rows + 14 already-VIOLATION rows.
+
+2) 70 FP = MDR_RATE + GST_ON_FEE, all with truth note
+   "Failed payment; should not appear in settlement."
+   All 70 payments: status=failed, fee=0.00, tax=0.00, NO settlement rows,
+   truth PASS. The approved controls' conditions require status == captured,
+   but app/controls/live.py _evaluate_mdr/_evaluate_gst only gated on
+   _is_card_payment → they demanded a fee on failed payments (expected
+   41.23 vs actual 0.00).
+   Classification: ENGINE_BUG (control applicability). Fix: evaluate MDR/GST
+   only on captured payments; gate settlement-arithmetic contributors on
+   captured status (non-captured contributor → incomplete evidence →
+   UNRESOLVED, because a non-captured payment must never be settled).
+
+--- FN breakdown (49 payments) -------------------------------------------------
+3) 16 FN = truth UNRESOLVED_RELATIONSHIP (PAY ids living in 2 settlements
+   SET_AMB_A / SET_AMB_B, 8 payments each, both totaling 56931.36).
+   Two identical bank credits BANK_PROD_00001/00002 exist (same amount
+   56931.36, posted 1 minute apart, generic "PAYMENT AGGREGATOR SETTLEMENT
+   CREDIT" descriptions, blank reference). Deterministically unmatchable →
+   the engine CORRECTLY leaves both settlements unresolved (16/16 of the
+   truth-UNRESOLVED payments' settlements are engine-unresolved).
+   Classification: EVALUATOR_BUG (scope). Relationship resolution was wrongly
+   projected into the payment-violation metric. Payment-level primary metrics
+   must exclude UNRESOLVED_RELATIONSHIP rows; they belong to scope E.
+
+4) 23 FN = MISSING_BANK_SETTLEMENT (3 settlements — includes SET_PROD_0071 —
+   with NO bank row anywhere: no reference match and no amount within
+   tolerance in the entire bank.csv). Engine currently lumps these into
+   generic "unresolved match" instead of distinguishing "no candidate at all"
+   from "ambiguous candidates".
+   Classification: MATCHING_BUG (evidence classification). Fix: settlement
+   with zero bank candidates + bank statement window (max posted_at) extending
+   beyond settled_at + SLA → MISSING_BANK_SETTLEMENT violation, native entity
+   SETTLEMENT, governed by the approved CTRL_SETTLEMENT_ARITHMETIC (scope
+   "Settlement · Bank credit", clause 6.2 requires the corresponding bank
+   credit to exist and equal the settlement). Leakage impact 0 (ground-truth
+   loss for pure missing-bank rows is 0.00); cash exposure = settlement amount.
+   Projected to constituent payments ONLY for the dataset's payment-level
+   evaluation metric.
+
+5) 6 FN = DUPLICATE_REFUND_DEDUCTION. Settlement row refund_adjustment =
+   2 × refund principal (e.g. refund 7999.80 → adjustment 15999.60 on
+   PAY_PROD_000065; also PAY_PROD_000307/675/676/801 + 1 more detected at
+   type level). The approved CTRL_REFUND ("principal may be deducted once")
+   should catch this, but _evaluate_refunds never sees the deduction side
+   (canonicalization drops per-row settlement components).
+   Classification: CONTROL_APPLICABILITY_BUG (engine blind to evidence it
+   already ingests). Fix: retain per-payment settlement row components
+   (gross_amount, fee, tax, refund_adjustment, other_adjustment, net_amount,
+   settled_at) in the settlement event's normalized payload; extend refund
+   integrity: refund_adjustment − refund_principal > tolerance →
+   DUPLICATE_REFUND_DEDUCTION, impact = excess (duplicated amount).
+
+6) 4 type-level FN = REFUND_EXCEEDS_PAYMENT (refunds 399.99/2599.99/12599.00/
+   1049.00 vs payments 299.99/2499.99/12499.00/799.00). The engine DOES flag
+   these today, but as generic REFUND_INTEGRITY with impact 0.
+   Classification: ENGINE_BUG (taxonomy + impact). Fix: violation_type
+   REFUND_EXCEEDS_PAYMENT, impact = linked refund total − payment amount
+   (ground-truth loss = 100+100+100+250 = 550.00 exactly).
+
+7) 8 FN = UNSUPPORTED_FEE (settlement rows other_adjustment=49.00 etc.;
+   ground-truth loss total 542.00). Governed ONLY by the DRAFT control
+   CTRL_UNSUPPORTED_FEE_CANDIDATE.
+   Classification: EXPECTED_BEHAVIOR / CONTROL_BLIND_SPOT. MUST remain
+   undetected by the approved suite (feeds mutation → blind spot → candidate
+   control → backtest → explicit human approval demo flow). Do NOT approve,
+   do NOT add detection.
+
+8) 6 FN = DUPLICATE_CHARGEBACK_FEE (single chargeback row per payment with
+   fee=500.00 where ground-truth loss is 250.00 each — i.e. a duplicated 250
+   fee; total 1500.00). Settlement rows show other_adjustment=0.00 — the fee
+   exists only in chargebacks.csv. No approved control covers chargeback fees.
+   Classification: CONTROL_BLIND_SPOT. Remains undetected; documented gap.
+
+================================================================================
+B. RELATIONSHIP RESOLUTION FACTS (matcher audit)
+================================================================================
+99 bank rows, all credits (no debits), 31 with blank reference:
+- 68 rows: reference column = exact settlement_id → all match correctly today;
+  every matched credit equals its settlement total within 0.01 (0 mismatches).
+- 20 rows: blank reference, description "RZP/<SETTLEMENT_ID>/SETTLEMENT",
+  credit exactly equals that settlement's total → currently UNMATCHED.
+  Tokenization bug in _match_score (app/ingestion/pipeline.py): tokens are
+  split on whitespace/underscore only, so "RZP/SET_PROD_0003/SETTLEMENT"
+  never yields the settlement token → score ~0.75 < 0.80 threshold.
+  Fix: tokenize on "/", "_" and whitespace, case-folded.
+- 9 rows: blank reference, description "PAYMENT AGGREGATOR CREDIT
+  UTR0000000072" — NO textual link to the settlement; only the amount (exact)
+  links them. Fix: deterministic amount-unique fallback — match only when
+  exactly one unmatched bank credit AND exactly one unmatched settlement
+  share that amount (record method AMOUNT_UNIQUE). Must NOT parse UTR numbers
+  or ID morphology (that would break ID-rename invariance).
+- 2 rows: the deliberate ambiguity pair (see A.3) — uniqueness rule keeps both
+  correctly unresolved.
+Expected end state after generic matcher fixes (verification expectation,
+NOT a constant for production code): 97 matched CREDITED_AS edges, 2 correctly
+unresolved (ambiguity), 3 missing-bank violations, 0 forced matches.
+
+================================================================================
+C. OUT-OF-SCOPE PREDICTIONS AUDIT (the "82" from before)
+================================================================================
+- 74 SETTLEMENT_ARITHMETIC violations on settlement-native targets
+  (SET_PROD_*) — correct scope, wrongly projected onto payments by the old
+  evaluator (the Violation model's payment_id field is a generic target id).
+- 34 unresolved-match items whose "payment_id" field actually holds SETTLEMENT
+  ids — relationship-scope findings, evaluator projection mistake.
+- 0 other-entity violations. 74 + 34 = 108 non-payment-native findings; the
+  old script counted 82 distinct out-of-payment-universe ids.
+None of these are genuine payment FPs once scopes are separated.
+
+================================================================================
+D. NATIVE ENTITY MAP + PLANTED-ANOMALY CLASSIFICATION
+================================================================================
+MDR_RATE → PAYMENT ……………………… DETECTABLE_BY_APPROVED_CONTROL
+GST_ON_FEE → PAYMENT ……………………… DETECTABLE_BY_APPROVED_CONTROL
+SETTLEMENT_SLA → PAYMENT ………………… DETECTABLE_BY_APPROVED_CONTROL
+DUPLICATE_REFUND_DEDUCTION → PAYMENT … DETECTABLE_BY_APPROVED_CONTROL
+REFUND_EXCEEDS_PAYMENT → PAYMENT ……… DETECTABLE_BY_APPROVED_CONTROL
+MISSING_BANK_SETTLEMENT → SETTLEMENT … DETECTABLE_BY_APPROVED_CONTROL
+SETTLEMENT_ARITHMETIC → SETTLEMENT …… DETECTABLE (downstream mirror)
+UNSUPPORTED_FEE → SETTLEMENT row ……… CONTROL_BLIND_SPOT (DRAFT control only)
+DUPLICATE_CHARGEBACK_FEE → CHARGEBACK … CONTROL_BLIND_SPOT (no control)
+AMBIGUOUS_BANK_MATCH → RELATIONSHIP …… RELATIONSHIP_RESOLUTION (unresolved =
+  success, must not look like an error in the UI)
+
+================================================================================
+E. FINANCIAL IMPACT SEMANTICS (scope G)
+================================================================================
+Ground-truth total expected verified leakage = 16985.60, composed of:
+- MDR/GST overcharges 509.85 (per row: fee delta + tax delta on approved
+  values; 12 GST-only rows + 29 MDR+GST rows + 1 with missing-bank)
+- DUPLICATE_REFUND_DEDUCTION 13883.75 (the duplicated amounts)
+- UNSUPPORTED_FEE 542.00 (the other_adjustment amounts)
+- REFUND_EXCEEDS_PAYMENT 550.00 (the excess)
+- DUPLICATE_CHARGEBACK_FEE 1500.00 (250 × 6 — engine-attributable blind spot)
+Engine verified_leakage BEFORE fixes = 158634.26 — WRONG: 158124.41 of it is
+SETTLEMENT_ARITHMETIC deltas promoted to "independent primary leakage" by the
+lineage resolver because the underlying payment-level causes (duplicate
+refunds) were undetected. After the fixes, the engine-attributable leakage
+target is 15485.60 (= 509.85 + 13883.75 + 550.00 + 542.00); the 1500.00
+chargebook gap is the documented chargeback blind spot. No double counting:
+GST-after-MDR and settlement mirrors must stay downstream/excluded.
+Cash-delayed metric grows with SLA detections (131 objectively late payments).
+
+================================================================================
+F. OTHER PHASE-1/2/3 OBSERVATIONS
+================================================================================
+- Run summary API: ground_truth_available=false, provider_used=null,
+  model_used=null, mcp_used=false for CSV runs — provenance currently honest
+  on the stress run; verification of ALL code paths is delegated to the
+  backend agent (Phase 7).
+- Summary shows breakdown sums equal control_evaluation_count (invariant held
+  on the diagnostic run); backend agent re-verifies after changes.
+- The canonical demo (data/demo, 500 payments, dataset_id
+  novacart_canonical_demo_v1) regenerates from a seeded generator; its
+  manifest encodes expected outcomes (precision 1.0000, recall 1.0000,
+  verified_leakage 13280.24, mutation detection 47/50). Engine changes must
+  keep these green; any demo regression must be reconciled without weakening
+  deterministic semantics.
+- Control versioning: DOMESTIC_CARD_MDR v1 (1.55%, through 2026-08-31) and v2
+  (1.65%, from 2026-09-01 via Amendment A1) exist; stress data spans both
+  windows — the evaluator must assert per-evaluation control version matches
+  the captured_at window.
+- Untracked-but-present work from before this session (already in the tree):
+  stress dataset CSVs in docs/, ground_truth.csv, dataset fixtures, stress
+  tests, dataset_id/dataset_type provenance fields in pipeline/repository.
+- Docker unavailable locally; container verification limited to CI workflow
+  (valid YAML; covers build/run/migrate/healthcheck/smoke for both images).
+
+================================================================================
+G. STATUS OF THE TWO BACKGROUND AGENTS (as of writing; NOT yet reported)
+================================================================================
+1) Backend agent (worktree agent-a10a2c54cf9e1ab3c) — charter: engine
+   applicability fixes, matcher tokenization + amount-unique rule,
+   missing-bank detection, per-payment settlement component normalization,
+   duplicate-refund + refund-exceeds detection/impact, canonical
+   violation_type taxonomy (+ migration), settlement residual attribution
+   (no double counting), PROVEN ground-truth SLA correction, multi-scope
+   evaluator (A–G) + full report JSON at
+   backend/test-results/prod_stress_evaluation.json, invariance tests
+   (ID rename / row shuffle / dataset metadata), Phase 6 consistency +
+   Phase 7 provenance truthfulness, full pytest + ruff.
+   Observed in-flight edits (mid-run snapshot): backend/app/controls/live.py,
+   lineage.py, domain/models.py, ingestion/pipeline.py, persistence/orm.py,
+   repository.py, tests (test_csv_pipeline, test_live_controls,
+   test_source_run_api), NEW alembic migration
+   0013_violation_taxonomy.py, plus scratch/ and test-results/ artifacts.
+2) Frontend/browser agent — charter: run backend+frontend, Playwright audit at
+   1920×1080 / 1440×900 / 1366×768 / tablet, all major routes, console errors,
+   dead buttons, money formatting, source labels, provenance badges; full E2E
+   flow (upload → run → summary → root cause → transaction → lineage →
+   investigation → unresolved relationship → mutation testing → blind spot →
+   candidate control → backtest → DRAFT); frontend-only generic fixes;
+   vitest/tsc/eslint/build. No completion report yet.
+
+================================================================================
+H. WHAT REMAINS AFTER THE AGENTS REPORT BACK
+================================================================================
+1. Review + merge both agents' worktrees into the main tree (backend work
+   first, then frontend; reconcile any API-contract overlap — backend changes
+   were required to be additive-only).
+2. Re-run the full verification matrix on the merged tree: backend pytest,
+   stress evaluation, ruff, ruff format; frontend vitest/tsc/eslint/build;
+   integration: canonical demo, production stress, ID rename, row shuffle,
+   evaluation harness, persistence round-trip.
+3. Final browser pass on the merged tree (Phase 9 verification of displayed
+   metrics vs backend responses) at the four viewports.
+4. Regenerate/verify backend/test-results/prod_stress_evaluation.json with
+   the full Phase-11 schema.
+5. Write the final Phase-12 response: what was wrong, evaluator/GT-semantics
+   vs engine defects, fixes, final metrics (approved-control P/R/F1, planted
+   coverage, relationship-resolution accuracy, lineage quality, expected vs
+   predicted leakage), performance, invariance results, browser audit result,
+   full test/build/CI matrix, remaining P0/P1, demo-readiness verdict.
+
+================================================================================
+SESSION 2 — 2026-08-29 (taking ownership; background agents from session 1 died)
+================================================================================
+State inherited: Phase 1/3 diagnosis complete (sections A-F above). Two
+background agents had been launched and never reported; their work was found
+half-finished:
+  - backend worktree .claude/worktrees/agent-a10a2c54cf9e1ab3c: engine fixes
+    present but unmerged, evaluation harness incomplete (dead code, missing
+    scopes, wrong report schema).
+  - frontend agent: Playwright artifacts in frontend/scratch-audit/, no report.
+All remaining work is being done directly in the main tree from here.
+
+--- S2.1 CONSOLIDATION -------------------------------------------------------
+Merged the worktree's engine work into main: controls/live.py, controls/
+lineage.py, domain/models.py, ingestion/pipeline.py, integrations/razorpay/
+sync.py, persistence/orm.py, persistence/repository.py, services/
+live_payment_views.py, alembic 0013_violation_taxonomy + 0014_
+evaluation_check_name, tests/test_live_controls.py, test_semantic_invariants.py.
+Verified each worktree file was a strict superset of the main-tree version
+before copying (no session-1 work lost).
+
+--- S2.2 DEFECT: stress pack had overwritten the canonical documented bundle ---
+Session 1 generated the 1000-payment stress pack directly into docs/,
+destroying the published 60-payment six-file sample (which legitimately
+contains the canonical ID PAY_82HD9). Consequences: test_csv_pipeline and
+test_source_run_api had their exact structural assertions loosened to
+inequalities (`len(events) > 1000`, `unresolved >= 0`) — a real loss of
+verification strength — and docs/backend.md's documented schema no longer
+matched the files it documents.
+RESOLUTION (relocation only, zero content change):
+  - stress pack moved docs/*.csv + manifest.json -> data/stress/, joined by
+    ground_truth.csv (which existed ONLY in the worktree and was otherwise
+    about to be lost).
+  - docs/*.csv restored byte-identically from HEAD (git diff docs/ empty).
+  - tests/fixtures/datasets.py: prod_stress root -> ROOT/data/stress.
+  - test_source_run_api.py: DOCS_ROOT back to docs/ (60-row canonical bundle),
+    exact assertions restored: events_created == 145, edges_created == 132,
+    transaction_count == 60, event_count == 145, relationship_count == 132.
+  - test_csv_pipeline.py: exact assertions restored, now 145 events / 132 edges
+    / unresolved == 0 / 9 CREDITED_AS / 1 MISSING_BANK_CREDIT.
+Note the docs bundle's unresolved count legitimately changed 1 -> 0: SET_006
+(constituent PAY_NOBANK) has no bank credit and no amount-compatible unmatched
+credit anywhere, so it is now an absence finding (MISSING_BANK_CREDIT) rather
+than a matching failure. The two 18420.00 BANK_AMB_* credits correspond to no
+settlement at all, so they create no ambiguous settlement.
+
+--- S2.3 GENUINE DEFECT: narration tokenizer destroyed identifiers -----------
+The inherited fix split narration tokens on BOTH "/" and "_". Since "_" occurs
+*inside* identifiers, "RZP/SET_TOKEN_1/SETTLEMENT" tokenized to
+{rzp,set,token,1,settlement} and the settlement id was never a token, so a
+VERBATIM reference was not recognised as exact identification — it only
+squeaked past the threshold as FUZZY. Proven by a new regression test.
+FIX (app/ingestion/pipeline.py): two-level tokenization with distinct
+purposes. _narration_tokens() splits on structural delimiters only
+("/\|,;:()[]{}<>-" + whitespace) leaving "_"-joined identifiers whole -> used
+for the exact-identification decision. _tokens() sub-splits those on "_" ->
+used only for the graded fuzzy overlap signal. Result: verbatim embedded
+references match as EXACT with token overlap 1.0000.
+
+--- S2.4 GROUND TRUTH: SLA correction INDEPENDENTLY RE-VERIFIED --------------
+I did not take session 1's proof on faith. Recomputed from the raw records:
+clause 6.1 ("Captured payments must be settled within two business days of
+capture"), due = captured_at + 2 business days, per-payment settled_at taken
+from that payment's own settlement row. Result: exactly 131 captured payments
+are objectively late. The corrected data/stress/ground_truth.csv labels exactly
+131 rows SETTLEMENT_SLA — set-identical to my independent derivation (0 rows
+late-but-unlabelled, 0 rows labelled-but-not-late). The manifest's planted
+count is 10, so the original fixture labels were incomplete: PROVEN
+ground-truth semantic error, correction adopted. Correction is by rule, never
+per-ID; expected loss unchanged (SLA is cash delay, not leakage).
+
+--- S2.5 GENUINE DEFECT: SLA measured against the settlement batch timestamp --
+_evaluate_sla compared due_at against the SETTLEMENT EVENT timestamp, which
+canonicalization sets to max(settled_at) over all rows in the batch. Clause 6.1
+asks when *this payment* settled, so a payment declared settled on time inside
+a batch containing later rows would be judged by the batch's latest row.
+Latent in the stress pack (all 102 groups have exactly 1 distinct settled_at,
+verified) but live in the docs bundle (SET_001 spans 13:00 and 16:00).
+FIX: _evaluate_sla now prefers the payment's own declared settled_at from the
+settlement's per-payment components, recording settled_at_basis =
+PAYMENT_SETTLEMENT_ROW vs SETTLEMENT_EVENT_TIMESTAMP in the evidence, with
+timezone alignment for naive declared values. Cannot mask a genuinely late
+payment; removes a whole class of latent false positives.
+
+--- S2.6 GENUINE DEFECT: refund violation_type fell through -------------------
+The inherited refund check ended with `else: violation_type =
+"DUPLICATE_REFUND_DEDUCTION"`, so a refund finding caused by an unsupported
+refund fee or an under-declared refund total was published under the duplicate-
+deduction taxonomy — wrong root-cause grouping and wrong operator narrative.
+FIX: clause 7.2's obligations are now separate canonical types selected by
+financial severity — REFUND_EXCEEDS_PAYMENT, DUPLICATE_REFUND_DEDUCTION,
+UNSUPPORTED_REFUND_FEE, UNDECLARED_REFUND — each with its own violation
+category label and root-cause title.
+
+Backend suite after S2.1-S2.6: 132 passed, 1 skipped (stress harness deselected
+pending rewrite).
+
+================================================================================
+SESSION 3 — 2026-08-29 (final verification, two new frontend fixes, cleanup)
+================================================================================
+Inherited state: S2.1-S2.6 done; stress harness had been rewritten after the log
+was written (test_stress_evaluation.py 11:24, report regenerated 11:28) and the
+full backend suite was already green. Remaining work was verification, browser
+audit, cleanup, final report.
+
+--- S3.1 STRESS EVALUATION REPORT — VERIFIED COMPLETE -------------------------
+backend/test-results/prod_stress_evaluation.json, all 15 sections populated and
+matching the S1 targets: payment-primary P/R/F1 = 1.000 (174 TP, 0 FP, 0 FN);
+approved-control execution adjusted P/R/F1 = 1.000 (strict 42 FPs all
+dispositioned: 34 lineage-explained downstream + 8 taxonomy alias of the draft-
+governed UNSUPPORTED_FEE, 0 unexplained); planted coverage 216+8/230 with
+coverage_of_approved_governed_modes = 1.0 (the 6 undetected are the by-design
+DUPLICATE_CHARGEBACK_FEE blind spot); relationship resolution accuracy 1.0
+(2/2 ambiguous correctly unresolved, 0 forced matches); lineage accuracy 1.0
+(all 258 violations rooted, MDR→GST chain 30/30 intact); financial impact
+predicted 15485.60 vs expected 16985.60, gap = exactly the 1500.00 chargeback
+blind spot, residual_unexplained_gap 0.00, all double-counting checks true;
+control versioning per-window correct (v1 532 / v2 398 evaluations); run summary
+invariant holds; performance 6678 evals/sec; invariance (ID rename / row shuffle
+/ dataset metadata) all equivalent.
+
+--- S3.2 TWO GENUINE FRONTEND DEFECTS FOUND AND FIXED --------------------------
+1) P0 — Upload execute path deterministically broken without private storage.
+   The "Create run and execute controls" button appeared whenever files were
+   ACCEPTED, but _persist_source_upload only writes an ArtifactRecord when
+   Supabase storage is configured (router.py:209). Default deployments
+   (docker-compose defaults SUPABASE_URL to empty; local dev) therefore got a
+   guaranteed 404 "Accepted upload not found" — which the previous session's
+   frontend patch mislabeled as "uploads expired after the backend restarted".
+   docs/operations.md requires SUPABASE_* for production releases, so the
+   design intent is that execution requires durable storage. FIX (frontend
+   src/app/data/page.tsx): gate the execute button on every accepted file
+   having storage_status PRIVATE_STORAGE; otherwise show the truthful message
+   that private storage must be configured. Misleading message removed.
+   Browser-verified: 6-file demo upload → classification shown, no execute
+   button, honest notice, 0 console errors.
+2) P2 — DRAFT control detail showed "Version history could not be loaded.
+   Retry". /controls/{key}/versions returns only APPROVED controls by design,
+   so the DRAFT candidate (UNLISTED_SETTLEMENT_FEE) 404s. FIX
+   (src/app/controls/[controlKey]/page.tsx): ApiError 404 renders "No approved
+   versions yet — draft candidate awaiting activation"; other errors keep the
+   retry state. Browser-verified for both DRAFT and APPROVED (v1/v2 timeline)
+   controls.
+
+--- S3.3 BROWSER AUDIT (Phase 8/9) — PASSED ------------------------------------
+Backend (uvicorn, sqlite audit.db, alembic head 0014) + frontend prod build.
+- Demo load E2E: run complete; summary matches manifest EXACTLY (precision 1,
+  recall 1, verified_leakage 13280.24, 500 tx / 2018 evals).
+- Route sweep: 10 routes × 4 viewports (1920x1080, 1440x900, 1366x768,
+  tablet-768) = 40 combos, 0 console errors, 0 failed requests, 0 images
+  without alt.
+- Deep routes all 200 + correct content: payment detail (PAY_82HD9), replay,
+  operations, mutation-test, coverage, root-cause detail, controls (MDR v1/v2
+  timeline), agreements.
+- Mutation testing: UI shows 50/47/3/94%/0 FP matching the API exactly;
+  blind spots (M_048/M_049 unsupported fee, M_050 method reclassification)
+  rendered; backtest candidate clicked → BEFORE 47/50 → WITH CANDIDATE 49/50,
+  +4%, FP delta 0, Approve control offered (POST returned 200).
+- Investigation flow: deterministic verifier returns UNRESOLVED and escalates
+  without forcing a conclusion; 0 console errors.
+- Money formatting correct (₹13,280.24 / ₹4,74,908 Indian grouping).
+- Note: the upload→run E2E cannot execute locally without Supabase storage;
+  that path is covered by backend tests (test_source_run_api with storage
+  fake) and is now honestly gated in the UI (S3.2.1).
+
+--- S3.4 CLEANUP ---------------------------------------------------------------
+- Deleted backend/scratch/ (session-1 ad-hoc probe; its findings are baked into
+  this log and the evaluation report) — this is what made ruff clean again.
+- Deleted frontend/scratch-audit/, scratch-*.log, backend/audit.db.
+- Removed worktree agent-a10a2c54cf9e1ab3c (engine work merged in S2.1; nothing
+  unique remained).
+- CARELESS MOMENT, corrected: `git checkout -- docs/ data/demo/manifest.json`
+  to clear line-ending-only diffs also reverted the manifest's dataset_id/
+  dataset_type provenance fields; re-applied identically (tests read
+  manifest["dataset_id"], suite re-verified green after).
+- docs/*.csv remain content-identical to HEAD (diff empty; CRLF warnings only).
+
+--- S3.5 FINAL VERIFICATION MATRIX (merged tree, after cleanup) ----------------
+Backend:  pytest 149 passed, 1 skipped (Postgres RLS needs TEST_POSTGRES_URL;
+          Docker unavailable locally — CI covers it). ruff check clean.
+          ruff format clean (95 files). Alembic 0001→0014 upgrade clean on
+          fresh sqlite.
+Frontend: eslint clean. vitest 17/17. tsc --noEmit clean. next build clean.
+CI:       .github/workflows/ci.yml valid (backend ruff/alembic/pytest on
+          Postgres 16; frontend typegen/tsc/lint/build; container build +
+          healthcheck + smoke). Container verification is CI-only (no Docker
+          on this machine).
+
+ENGAGEMENT STATUS: COMPLETE. Demo-ready. Remaining known gaps: the
+DUPLICATE_CHARGEBACK_FEE blind spot (documented, 1500.00, no control in
+registry) and UNSUPPORTED_FEE (DRAFT control, intentionally unapproved for the
+blind-spot demo flow); Postgres RLS integration test needs a real Postgres;
+upload→run execution requires Supabase private storage by design (now honestly
+gated in the UI).

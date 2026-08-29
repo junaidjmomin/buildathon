@@ -111,8 +111,10 @@ def _classify(
         # gst_rate * fee_delta. The tax deviation is downstream of the fee
         # violation only when that identity holds within tolerance; any excess
         # beyond it means the tax computation itself deviates independently.
-        evaluation = evaluation_by_key.get((violation.control_type, violation.payment_id))
-        mdr = evaluation_by_key.get((ControlType.MDR_RATE, violation.payment_id))
+        evaluation = evaluation_by_key.get(
+            (violation.control_type, violation.payment_id, violation.violation_type)
+        )
+        mdr = evaluation_by_key.get((ControlType.MDR_RATE, violation.payment_id, "MDR_RATE"))
         parents = [
             candidate
             for candidate in violations_by_key.get((violation.payment_id, ControlType.MDR_RATE), [])
@@ -131,6 +133,11 @@ def _classify(
             return LineageOutcome(violation=violation, parent=_dominant(parents))
         return LineageOutcome(violation=violation, parent=None)
 
+    if violation.violation_type == "MISSING_BANK_SETTLEMENT":
+        # Missing bank evidence is an exposure finding, never leakage, and is
+        # not downstream of any arithmetic deviation.
+        return LineageOutcome(violation=violation, parent=None)
+
     if violation.control_type == ControlType.SETTLEMENT_ARITHMETIC:
         # The expected settlement is recomputed from approved fee, approved
         # tax and refund principals, so upstream violations on contributing
@@ -138,7 +145,9 @@ def _classify(
         # impact covers the difference. Any residual beyond that is
         # independent leakage (e.g. an unlisted deduction) and keeps the
         # violation primary.
-        evaluation = evaluation_by_key.get((violation.control_type, violation.payment_id))
+        evaluation = evaluation_by_key.get(
+            (violation.control_type, violation.payment_id, violation.violation_type)
+        )
         if evaluation is None:
             return LineageOutcome(violation=violation, parent=None)
         contributors = settlement_contributions.get(violation.payment_id, [])
@@ -176,8 +185,15 @@ def resolve_violation_lineage(
     violations_by_key: dict[tuple[str, ControlType], list[Violation]] = defaultdict(list)
     for violation in violations:
         violations_by_key[(violation.payment_id, violation.control_type)].append(violation)
-    evaluation_by_key: dict[tuple[ControlType, str], LiveControlEvaluation] = {
-        (evaluation.control.control_type, evaluation.target_id): evaluation
+    # Keyed by control type, target and canonical violation type: one control
+    # can execute several distinct deterministic checks (e.g. settlement
+    # arithmetic and missing-bank evidence) on the same target.
+    evaluation_by_key: dict[tuple[ControlType, str, str], LiveControlEvaluation] = {
+        (
+            evaluation.control.control_type,
+            evaluation.target_id,
+            evaluation.violation.violation_type if evaluation.violation else "",
+        ): evaluation
         for evaluation in evaluations
     }
     contributions = _settlement_contributions(edges, event_by_id)
@@ -279,18 +295,22 @@ def attribute_root_causes(
             current = parent
         return current
 
-    primary_category_by_id: dict[str, ControlType] = {}
+    primary_category_by_id: dict[str, str] = {}
     for violation in violations:
         ancestor = primary_ancestor(violation)
-        primary_category_by_id[violation.id] = ancestor.control_type
+        # Root causes group by canonical violation type — the deterministic
+        # failure mode — falling back to the control type for legacy records.
+        primary_category_by_id[violation.id] = (
+            ancestor.violation_type or ancestor.control_type.value
+        )
 
-    root_ids: dict[ControlType, str] = {}
+    root_ids: dict[str, str] = {}
     for violation in violations:
         category = primary_category_by_id[violation.id]
         if violation.lineage_type != LineageType.PRIMARY:
             continue
         if category not in root_ids:
-            digest = sha256(f"{run_id}:{category.value}".encode()).hexdigest()[:16].upper()
+            digest = sha256(f"{run_id}:{category}".encode()).hexdigest()[:16].upper()
             root_ids[category] = f"RC_{digest}"
 
     attributed = [
@@ -306,6 +326,11 @@ def attribute_root_causes(
         ControlType.SETTLEMENT_SLA.value: "Settlement SLA breach pattern",
         ControlType.REFUND_INTEGRITY.value: "Refund integrity deviation",
         ControlType.SETTLEMENT_ARITHMETIC.value: "Settlement arithmetic deviation",
+        "REFUND_EXCEEDS_PAYMENT": "Refunds exceeding payment principal",
+        "DUPLICATE_REFUND_DEDUCTION": "Duplicate refund deductions",
+        "UNSUPPORTED_REFUND_FEE": "Unsupported refund fees",
+        "UNDECLARED_REFUND": "Under-declared refund totals",
+        "MISSING_BANK_SETTLEMENT": "Settlements missing bank credits",
     }
 
     roots: list[RootCause] = []
@@ -328,15 +353,18 @@ def attribute_root_causes(
             for item in members
             if item.id in evaluation_by_violation_id
         ]
+        # The "unaffected" comparison counts evaluations of the same control
+        # family (control_type) — violation types are finer than controls.
+        member_control_types = {item.control_type for item in members}
         unaffected = sum(
-            evaluation.control.control_type == category and evaluation.violation is None
+            evaluation.control.control_type in member_control_types and evaluation.violation is None
             for evaluation in evaluations
         )
         roots.append(
             RootCause(
                 id=root_id,
-                title=titles.get(category.value, category.value.replace("_", " ").title()),
-                category=category.value,
+                title=titles.get(category, category.replace("_", " ").title()),
+                category=category,
                 affected_count=len(members),
                 verified_impact=total,
                 expected_value=primaries[0].expected,
@@ -346,7 +374,7 @@ def attribute_root_causes(
                 verification_status="DETERMINISTICALLY_VERIFIED",
                 verification_evidence={
                     "engine": "sl3dge-deterministic-v1",
-                    "grouping_basis": "PRIMARY_VIOLATION_CONTROL_TYPE",
+                    "grouping_basis": "PRIMARY_VIOLATION_CANONICAL_TYPE",
                     "lineage_authority": "CONTROL_DEPENDENCY_SEMANTICS",
                     "evaluation_ids": sorted(
                         evaluation.evaluation_id for evaluation in member_evaluations
@@ -361,7 +389,7 @@ def attribute_root_causes(
                     ),
                     "unaffected_comparison": {
                         "evaluations_in_control_family": sum(
-                            evaluation.control.control_type == category
+                            evaluation.control.control_type in member_control_types
                             for evaluation in evaluations
                         ),
                         "violating_evaluations": len(primaries),

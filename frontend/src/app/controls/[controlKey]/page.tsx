@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import { Badge, ErrorState, PageHeader } from "@/components/ui/primitives";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import type { Control } from "@/types/api";
 
 export default function ControlDetailPage() {
@@ -169,9 +169,17 @@ export default function ControlDetailPage() {
           <CalendarRange size={16} className="text-[var(--evergreen)]" /> Immutable version timeline
         </div>
         {versions.isError ? (
-          <div className="mt-4">
-            <ErrorState what="Version history" onRetry={() => versions.refetch()} />
-          </div>
+          versions.error instanceof ApiError && versions.error.status === 404 ? (
+            <p className="mt-4 rounded-xl border border-[var(--line)] bg-[var(--ink-700)] p-4 text-xs leading-5 text-[var(--paper-dim)]">
+              No approved versions yet. This logical control is still a{" "}
+              {current.status === "DRAFT" ? "draft candidate" : "candidate"} awaiting activation, so
+              only its current definition exists.
+            </p>
+          ) : (
+            <div className="mt-4">
+              <ErrorState what="Version history" onRetry={() => versions.refetch()} />
+            </div>
+          )
         ) : (
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {history.map((version) => (

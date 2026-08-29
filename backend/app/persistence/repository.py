@@ -370,6 +370,8 @@ class RunRepository:
                 status=summary.status,
                 seed=DEMO_SEED,
                 manifest={
+                    "dataset_id": "novacart_canonical_demo_v1",
+                    "dataset_type": "CANONICAL_DEMO",
                     "counts": dataset.counts,
                     "event_count": summary.event_count,
                     "relationship_count": summary.relationship_count,
@@ -982,6 +984,8 @@ class RunRepository:
                     "root_violation_id": violation.root_violation_id,
                     "lineage_type": violation.lineage_type.value,
                     "causal_evidence": violation.causal_evidence,
+                    "violation_type": violation.violation_type,
+                    "target_type": violation.target_type,
                     "evidence": {
                         "expected": violation.expected,
                         "actual": violation.actual,
@@ -1003,6 +1007,8 @@ class RunRepository:
                 "root_violation_id",
                 "lineage_type",
                 "causal_evidence",
+                "violation_type",
+                "target_type",
                 "evidence",
             ],
         )
@@ -1257,6 +1263,8 @@ class RunRepository:
             parent_violation_id=record.parent_violation_id,
             causal_evidence=record.causal_evidence or {},
             occurred_at=record.occurred_at,
+            violation_type=getattr(record, "violation_type", "") or "",
+            target_type=getattr(record, "target_type", "PAYMENT") or "PAYMENT",
         )
 
     def _root_cause(self, record: RootCauseRecord) -> RootCause:
@@ -1936,6 +1944,7 @@ class ControlEvaluationRepository:
         control_version: int,
         target_type: str,
         target_id: str,
+        check_name: str,
         outcome: str,
         expected_amount: Decimal | None,
         actual_amount: Decimal | None,
@@ -1957,6 +1966,7 @@ class ControlEvaluationRepository:
             control_version=control_version,
             target_type=target_type,
             target_id=target_id,
+            check_name=check_name,
             outcome=outcome,
             expected_amount=expected_amount,
             actual_amount=actual_amount,
@@ -1994,6 +2004,7 @@ class ControlEvaluationRepository:
                 "control_id",
                 "target_type",
                 "target_id",
+                "check_name",
             ],
             update_columns=[
                 "control_version",

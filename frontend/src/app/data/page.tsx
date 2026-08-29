@@ -190,28 +190,48 @@ export default function DataSourcesPage() {
                     ) : null}
                   </div>
                 ))}
-                {upload.data.rejected_count === 0 && upload.data.accepted_count > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => execute.mutate()}
-                    disabled={execute.isPending}
-                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-3 py-2.5 text-xs font-semibold text-[#06120c] transition-opacity duration-150 disabled:cursor-wait disabled:opacity-60"
-                  >
-                    {execute.isPending ? (
-                      <LoaderCircle size={13} className="animate-spin" />
-                    ) : (
-                      <ArrowRight size={13} />
-                    )}
-                    {execute.isPending ? "Executing deterministic controls…" : "Create run and execute controls"}
-                  </button>
-                ) : null}
+                {(() => {
+                  const accepted = upload.data.files.filter((file) => file.status === "ACCEPTED");
+                  // Execution re-verifies bytes against persisted artifact hashes, so it
+                  // requires durable private storage. VALIDATED_ONLY uploads (no storage
+                  // backend configured) would deterministically fail with 404.
+                  const durable =
+                    upload.data.rejected_count === 0 &&
+                    accepted.length > 0 &&
+                    accepted.every((file) => file.storage_status === "PRIVATE_STORAGE");
+                  return durable ? (
+                    <button
+                      type="button"
+                      onClick={() => execute.mutate()}
+                      disabled={execute.isPending}
+                      className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-3 py-2.5 text-xs font-semibold text-[#06120c] transition-opacity duration-150 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {execute.isPending ? (
+                        <LoaderCircle size={13} className="animate-spin" />
+                      ) : (
+                        <ArrowRight size={13} />
+                      )}
+                      {execute.isPending ? "Executing deterministic controls…" : "Create run and execute controls"}
+                    </button>
+                  ) : (
+                    <p className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--ink-700)] px-2.5 py-2 text-[11px] leading-5 text-[var(--paper-dim)]">
+                      {upload.data.rejected_count === 0 && accepted.length > 0
+                        ? "Classified, but not durably stored: configure private storage (SUPABASE_URL and service role key) on the backend before creating a run."
+                        : null}
+                    </p>
+                  );
+                })()}
                 {execute.data ? (
                   <p className="number-tabular rounded-lg bg-[rgba(47,189,127,0.14)] px-2.5 py-2 font-mono font-semibold text-[var(--evergreen)]">
                     Run complete · {execute.data.events_created} events · {execute.data.violations_created}{" "}
                     violations
                   </p>
                 ) : null}
-                {execute.error ? <p className="text-[var(--crimson)]">{execute.error.message}</p> : null}
+                {execute.error ? (
+                  <p className="text-[var(--crimson)]" role="alert">
+                    {execute.error.message}
+                  </p>
+                ) : null}
               </div>
             ) : null}
             {upload.error && <span className="text-[var(--crimson)]">{upload.error.message}</span>}

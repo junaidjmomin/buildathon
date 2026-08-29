@@ -1,0 +1,51 @@
+{
+  "seed": 20260829,
+  "dataset_id": "novacart_prod_stress_v1",
+  "dataset_type": "LABELED_STRESS",
+  "profile": "production_like_stress",
+  "date_window": "2026-08-25 through 2026-09-05",
+  "counts": {
+    "orders": 1000,
+    "payments": 1000,
+    "captured_payments": 930,
+    "failed_payments": 70,
+    "settlement_rows": 930,
+    "unique_settlements": 102,
+    "bank_rows": 99,
+    "refunds": 94,
+    "chargebacks": 20,
+    "missing_bank_settlements": 3,
+    "ambiguous_settlement_groups": 2
+  },
+  "contract_versions": {
+    "domestic_card_mdr_v1": {
+      "rate": "0.0155",
+      "effective_through": "2026-08-31"
+    },
+    "domestic_card_mdr_v2": {
+      "rate": "0.0165",
+      "effective_from": "2026-09-01"
+    },
+    "gst_on_approved_fee": "0.18",
+    "settlement_sla_business_days": 2
+  },
+  "planted_scenarios": {
+    "mdr_rate_violations": 30,
+    "gst_violations_total": 42,
+    "unsupported_fee": 8,
+    "duplicate_refund_deduction": 6,
+    "refund_exceeds_payment": 4,
+    "settlement_sla": 10,
+    "missing_bank_settlement_payment_rows": 23,
+    "duplicate_chargeback_fee": 6,
+    "ambiguous_relationship_payment_rows": 16,
+    "rounding_tolerance_cases": 10
+  },
+  "notes": [
+    "ground_truth.csv is evaluation-only and must not be uploaded into the financial pipeline.",
+    "The pack intentionally spans the 1.55% and 1.65% MDR control versions.",
+    "Bank narration quality varies; some rows have no settlement reference.",
+    "SET_AMB_A and SET_AMB_B have identical bank-credit economics and should remain ambiguous without stronger evidence.",
+    "Three settlements are intentionally absent from bank.csv."
+  ]
+}

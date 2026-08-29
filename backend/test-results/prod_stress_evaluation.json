@@ -1,0 +1,1632 @@
+{
+  "dataset": {
+    "dataset_id": "novacart_prod_stress_v1",
+    "dataset_type": "LABELED_STRESS",
+    "run_id": "RUN_CSV_AD000103DF7A09F904D0",
+    "labeled_rows": 1000,
+    "expected_status_counts": {
+      "PASS": 782,
+      "UNRESOLVED_RELATIONSHIP": 16,
+      "VIOLATION": 202
+    },
+    "manifest_counts": {
+      "orders": 1000,
+      "payments": 1000,
+      "captured_payments": 930,
+      "failed_payments": 70,
+      "settlement_rows": 930,
+      "unique_settlements": 102,
+      "bank_rows": 99,
+      "refunds": 94,
+      "chargebacks": 20,
+      "missing_bank_settlements": 3,
+      "ambiguous_settlement_groups": 2
+    },
+    "ground_truth_read_only_after_execution": true
+  },
+  "payment_primary_detection": {
+    "true_positive": 174,
+    "false_positive": 0,
+    "false_negative": 0,
+    "predicted_positive": 174,
+    "expected_positive": 174,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "true_negative": 826,
+    "universe": 1000,
+    "false_positive_rate": 0.0,
+    "scope": "One row per labeled payment. Positive means at least one payment-native deterministic violation; settlement, chargeback and relationship findings are scored in their own scopes.",
+    "payment_native_types": [
+      "DUPLICATE_REFUND_DEDUCTION",
+      "GST_ON_FEE",
+      "MDR_RATE",
+      "REFUND_EXCEEDS_PAYMENT",
+      "SETTLEMENT_SLA",
+      "UNDECLARED_REFUND",
+      "UNSUPPORTED_REFUND_FEE"
+    ],
+    "predictions_outside_labeled_universe": 0,
+    "false_positive_samples": [],
+    "false_negative_samples": []
+  },
+  "approved_control_execution": {
+    "scope": "Instance-level (native entity, canonical violation type) over the failure modes an APPROVED control claims. Draft-governed and unregistered modes are excluded \u2014 they are blind spots, not execution failures.",
+    "claimed_by_approved_controls": [
+      "DUPLICATE_REFUND_DEDUCTION",
+      "GST_ON_FEE",
+      "MDR_RATE",
+      "MISSING_BANK_SETTLEMENT",
+      "REFUND_EXCEEDS_PAYMENT",
+      "SETTLEMENT_ARITHMETIC",
+      "SETTLEMENT_SLA",
+      "UNDECLARED_REFUND",
+      "UNSUPPORTED_REFUND_FEE"
+    ],
+    "approved_control_ids": [
+      "CTRL_GST_FEE",
+      "CTRL_MDR_DOMESTIC",
+      "CTRL_MDR_DOMESTIC_V2",
+      "CTRL_REFUND",
+      "CTRL_SETTLEMENT_ARITHMETIC",
+      "CTRL_SETTLEMENT_SLA"
+    ],
+    "excluded_draft_only_modes": [
+      "UNSUPPORTED_FEE"
+    ],
+    "strict": {
+      "true_positive": 216,
+      "false_positive": 42,
+      "false_negative": 0,
+      "predicted_positive": 258,
+      "expected_positive": 216,
+      "precision": 0.837209,
+      "recall": 1.0,
+      "f1": 0.911392
+    },
+    "adjusted": {
+      "true_positive": 216,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 216,
+      "expected_positive": 216,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "adjustments": {
+      "basis": "Strict counts exact name matches only. Adjusted additionally credits findings the engine reports under an equivalent approved name and discounts downstream effects of confirmed findings; every adjustment is itemized below.",
+      "lineage_explained_false_positives": 42,
+      "taxonomy_alias_false_positives": 8,
+      "alias_credited_false_negatives": 0
+    },
+    "unexplained_false_positives": [],
+    "unexplained_false_negatives": []
+  },
+  "planted_anomaly_coverage": {
+    "scope": "Coverage of the planted failure modes at their native entity. A blind spot lowers coverage and never lowers approved-control recall. Ambiguous relationships are excluded and scored in the relationship-resolution scope, where refusing to match is success.",
+    "manifest_planted_scenarios": {
+      "mdr_rate_violations": 30,
+      "gst_violations_total": 42,
+      "unsupported_fee": 8,
+      "duplicate_refund_deduction": 6,
+      "refund_exceeds_payment": 4,
+      "settlement_sla": 10,
+      "missing_bank_settlement_payment_rows": 23,
+      "duplicate_chargeback_fee": 6,
+      "ambiguous_relationship_payment_rows": 16,
+      "rounding_tolerance_cases": 10
+    },
+    "manifest_note": "Manifest counts record the generator's intent per scenario and are expressed in payment rows; planted_instances below is derived from the label file at the native entity, which is authoritative.",
+    "planted_instances": 230,
+    "detected_exact": 216,
+    "detected_under_approved_alias": 8,
+    "undetected": 6,
+    "coverage": 0.973913,
+    "coverage_of_approved_governed_modes": 1.0,
+    "by_type": [
+      {
+        "violation_type": "DUPLICATE_CHARGEBACK_FEE",
+        "native_entity": "CHARGEBACK",
+        "governance": "NO_CONTROL_IN_REGISTRY",
+        "planted_instances": 6,
+        "labeled_payment_rows": 6,
+        "detected_exact": 0,
+        "detected_under_approved_alias": 0,
+        "undetected": 6,
+        "coverage": 0.0,
+        "undetected_samples": [
+          "CB_PROD_0001",
+          "CB_PROD_0002",
+          "CB_PROD_0003",
+          "CB_PROD_0004",
+          "CB_PROD_0005",
+          "CB_PROD_0006"
+        ]
+      },
+      {
+        "violation_type": "DUPLICATE_REFUND_DEDUCTION",
+        "native_entity": "PAYMENT",
+        "governance": "APPROVED_CONTROL",
+        "planted_instances": 6,
+        "labeled_payment_rows": 6,
+        "detected_exact": 6,
+        "detected_under_approved_alias": 0,
+        "undetected": 0,
+        "coverage": 1.0,
+        "undetected_samples": []
+      },
+      {
+        "violation_type": "GST_ON_FEE",
+        "native_entity": "PAYMENT",
+        "governance": "APPROVED_CONTROL",
+        "planted_instances": 42,
+        "labeled_payment_rows": 42,
+        "detected_exact": 42,
+        "detected_under_approved_alias": 0,
+        "undetected": 0,
+        "coverage": 1.0,
+        "undetected_samples": []
+      },
+      {
+        "violation_type": "MDR_RATE",
+        "native_entity": "PAYMENT",
+        "governance": "APPROVED_CONTROL",
+        "planted_instances": 30,
+        "labeled_payment_rows": 30,
+        "detected_exact": 30,
+        "detected_under_approved_alias": 0,
+        "undetected": 0,
+        "coverage": 1.0,
+        "undetected_samples": []
+      },
+      {
+        "violation_type": "MISSING_BANK_SETTLEMENT",
+        "native_entity": "SETTLEMENT",
+        "governance": "APPROVED_CONTROL",
+        "planted_instances": 3,
+        "labeled_payment_rows": 23,
+        "detected_exact": 3,
+        "detected_under_approved_alias": 0,
+        "undetected": 0,
+        "coverage": 1.0,
+        "undetected_samples": []
+      },
+      {
+        "violation_type": "REFUND_EXCEEDS_PAYMENT",
+        "native_entity": "PAYMENT",
+        "governance": "APPROVED_CONTROL",
+        "planted_instances": 4,
+        "labeled_payment_rows": 4,
+        "detected_exact": 4,
+        "detected_under_approved_alias": 0,
+        "undetected": 0,
+        "coverage": 1.0,
+        "undetected_samples": []
+      },
+      {
+        "violation_type": "SETTLEMENT_SLA",
+        "native_entity": "PAYMENT",
+        "governance": "APPROVED_CONTROL",
+        "planted_instances": 131,
+        "labeled_payment_rows": 131,
+        "detected_exact": 131,
+        "detected_under_approved_alias": 0,
+        "undetected": 0,
+        "coverage": 1.0,
+        "undetected_samples": []
+      },
+      {
+        "violation_type": "UNSUPPORTED_FEE",
+        "native_entity": "SETTLEMENT",
+        "governance": "DRAFT_CANDIDATE_ONLY",
+        "planted_instances": 8,
+        "labeled_payment_rows": 8,
+        "detected_exact": 0,
+        "detected_under_approved_alias": 8,
+        "undetected": 0,
+        "coverage": 1.0,
+        "undetected_samples": []
+      }
+    ],
+    "scored_in_relationship_scope": [
+      {
+        "violation_type": "AMBIGUOUS_BANK_MATCH",
+        "native_entity": "RELATIONSHIP",
+        "governance": "RELATIONSHIP_RESOLUTION",
+        "planted_instances": 2,
+        "labeled_payment_rows": 16,
+        "detected_exact": 0,
+        "detected_under_approved_alias": 0,
+        "undetected": 2,
+        "coverage": 0.0,
+        "undetected_samples": [
+          "SET_AMB_A",
+          "SET_AMB_B"
+        ],
+        "scored_in": "relationship_resolution"
+      }
+    ],
+    "blind_spots": [
+      {
+        "violation_type": "DUPLICATE_CHARGEBACK_FEE",
+        "governance": "NO_CONTROL_IN_REGISTRY",
+        "undetected": 6,
+        "reason": "No control in the registry claims this failure mode."
+      }
+    ]
+  },
+  "violation_types": [
+    {
+      "violation_type": "AMBIGUOUS_BANK_MATCH",
+      "native_entity": "RELATIONSHIP",
+      "governance": "RELATIONSHIP_RESOLUTION",
+      "strict": {
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 2,
+        "predicted_positive": 0,
+        "expected_positive": 2,
+        "precision": null,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "adjusted": {
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 0,
+        "expected_positive": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      "false_positive_dispositions": {},
+      "false_negative_dispositions": {
+        "SCORED_AS_RELATIONSHIP_RESOLUTION": 2
+      },
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0
+    },
+    {
+      "violation_type": "DUPLICATE_CHARGEBACK_FEE",
+      "native_entity": "CHARGEBACK",
+      "governance": "NO_CONTROL_IN_REGISTRY",
+      "strict": {
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 6,
+        "predicted_positive": 0,
+        "expected_positive": 6,
+        "precision": null,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "adjusted": {
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 0,
+        "expected_positive": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      "false_positive_dispositions": {},
+      "false_negative_dispositions": {
+        "CONTROL_BLIND_SPOT_NO_CONTROL": 6
+      },
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0
+    },
+    {
+      "violation_type": "DUPLICATE_REFUND_DEDUCTION",
+      "native_entity": "PAYMENT",
+      "governance": "APPROVED_CONTROL",
+      "strict": {
+        "true_positive": 6,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 6,
+        "expected_positive": 6,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "adjusted": {
+        "true_positive": 6,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 6,
+        "expected_positive": 6,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "false_positive_dispositions": {},
+      "false_negative_dispositions": {},
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0
+    },
+    {
+      "violation_type": "GST_ON_FEE",
+      "native_entity": "PAYMENT",
+      "governance": "APPROVED_CONTROL",
+      "strict": {
+        "true_positive": 42,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 42,
+        "expected_positive": 42,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "adjusted": {
+        "true_positive": 42,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 42,
+        "expected_positive": 42,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "false_positive_dispositions": {},
+      "false_negative_dispositions": {},
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0
+    },
+    {
+      "violation_type": "MDR_RATE",
+      "native_entity": "PAYMENT",
+      "governance": "APPROVED_CONTROL",
+      "strict": {
+        "true_positive": 30,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 30,
+        "expected_positive": 30,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "adjusted": {
+        "true_positive": 30,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 30,
+        "expected_positive": 30,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "false_positive_dispositions": {},
+      "false_negative_dispositions": {},
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0
+    },
+    {
+      "violation_type": "MISSING_BANK_SETTLEMENT",
+      "native_entity": "SETTLEMENT",
+      "governance": "APPROVED_CONTROL",
+      "strict": {
+        "true_positive": 3,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 3,
+        "expected_positive": 3,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "adjusted": {
+        "true_positive": 3,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 3,
+        "expected_positive": 3,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "false_positive_dispositions": {},
+      "false_negative_dispositions": {},
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0
+    },
+    {
+      "violation_type": "REFUND_EXCEEDS_PAYMENT",
+      "native_entity": "PAYMENT",
+      "governance": "APPROVED_CONTROL",
+      "strict": {
+        "true_positive": 4,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 4,
+        "expected_positive": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "adjusted": {
+        "true_positive": 4,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 4,
+        "expected_positive": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "false_positive_dispositions": {},
+      "false_negative_dispositions": {},
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0
+    },
+    {
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "native_entity": "SETTLEMENT",
+      "governance": "APPROVED_CONTROL",
+      "strict": {
+        "true_positive": 0,
+        "false_positive": 42,
+        "false_negative": 0,
+        "predicted_positive": 42,
+        "expected_positive": 0,
+        "precision": 0.0,
+        "recall": null,
+        "f1": 0.0
+      },
+      "adjusted": {
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 0,
+        "expected_positive": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      "false_positive_dispositions": {
+        "LINEAGE_EXPLAINED_DOWNSTREAM": 34,
+        "TAXONOMY_ALIAS_OF_EXPECTED_FINDING": 8
+      },
+      "false_negative_dispositions": {},
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0
+    },
+    {
+      "violation_type": "SETTLEMENT_SLA",
+      "native_entity": "PAYMENT",
+      "governance": "APPROVED_CONTROL",
+      "strict": {
+        "true_positive": 131,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 131,
+        "expected_positive": 131,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "adjusted": {
+        "true_positive": 131,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 131,
+        "expected_positive": 131,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "false_positive_dispositions": {},
+      "false_negative_dispositions": {},
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0
+    },
+    {
+      "violation_type": "UNSUPPORTED_FEE",
+      "native_entity": "SETTLEMENT",
+      "governance": "DRAFT_CANDIDATE_ONLY",
+      "strict": {
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 8,
+        "predicted_positive": 0,
+        "expected_positive": 8,
+        "precision": null,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "adjusted": {
+        "true_positive": 8,
+        "false_positive": 0,
+        "false_negative": 0,
+        "predicted_positive": 8,
+        "expected_positive": 8,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "false_positive_dispositions": {},
+      "false_negative_dispositions": {
+        "DETECTED_UNDER_APPROVED_ALIAS": 8
+      },
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0
+    }
+  ],
+  "entity_level": {
+    "payment": {
+      "true_positive": 213,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 213,
+      "expected_positive": 213,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0,
+      "violation_types": [
+        "DUPLICATE_REFUND_DEDUCTION",
+        "GST_ON_FEE",
+        "MDR_RATE",
+        "REFUND_EXCEEDS_PAYMENT",
+        "SETTLEMENT_SLA"
+      ]
+    },
+    "settlement": {
+      "true_positive": 3,
+      "false_positive": 42,
+      "false_negative": 10,
+      "predicted_positive": 45,
+      "expected_positive": 13,
+      "precision": 0.066667,
+      "recall": 0.230769,
+      "f1": 0.103448,
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0,
+      "violation_types": [
+        "AMBIGUOUS_BANK_MATCH",
+        "MISSING_BANK_SETTLEMENT",
+        "SETTLEMENT_ARITHMETIC",
+        "UNSUPPORTED_FEE"
+      ]
+    },
+    "chargeback": {
+      "true_positive": 0,
+      "false_positive": 0,
+      "false_negative": 6,
+      "predicted_positive": 0,
+      "expected_positive": 6,
+      "precision": null,
+      "recall": 0.0,
+      "f1": 0.0,
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0,
+      "violation_types": [
+        "DUPLICATE_CHARGEBACK_FEE"
+      ]
+    },
+    "refund": {
+      "native_findings": 0,
+      "scored_under": "payment",
+      "evidence_entity_for": [
+        "DUPLICATE_REFUND_DEDUCTION",
+        "REFUND_EXCEEDS_PAYMENT",
+        "UNDECLARED_REFUND",
+        "UNSUPPORTED_REFUND_FEE"
+      ],
+      "refund_records": 94,
+      "note": "Clause 7.2 obliges the payment's settlement to deduct the refunded principal once, so the obligation is payment-native and the refund is the evidence record. Refund findings are scored under `payment`; no separate refund-native type exists."
+    },
+    "relationship": {
+      "true_positive": 0,
+      "false_positive": 0,
+      "false_negative": 0,
+      "predicted_positive": 0,
+      "expected_positive": 0,
+      "precision": null,
+      "recall": null,
+      "f1": null,
+      "unexplained_false_positives": 0,
+      "unexplained_false_negatives": 0,
+      "violation_types": []
+    }
+  },
+  "relationship_resolution": {
+    "scope": "Settlement-to-bank pairings. Leaving a genuinely ambiguous pairing unresolved is the correct outcome; forcing a match is the failure.",
+    "expected_ambiguous_settlements": 2,
+    "expected_ambiguous_payment_rows": 16,
+    "correctly_unresolved": 2,
+    "missed_unresolved": 0,
+    "false_unresolved": 0,
+    "forced_incorrect_matches": 0,
+    "accuracy": 1.0,
+    "missed_unresolved_samples": [],
+    "false_unresolved_samples": [],
+    "unresolved_conclusions": [
+      "No EventEdge was created."
+    ],
+    "missing_evidence": [
+      "No deterministic bank match met the confidence and ambiguity thresholds."
+    ]
+  },
+  "lineage": {
+    "scope": "Persisted production lineage (violations.lineage_type, parent_violation_id, root_violation_id) against the labeled primary/downstream split. Payment-native types only; settlement downstream effects are consequences the label file does not record.",
+    "primary_correct": 183,
+    "primary_incorrect": 0,
+    "downstream_correct": 30,
+    "downstream_incorrect": 0,
+    "missing_causal_edges": 0,
+    "extra_causal_edges": 0,
+    "missing_causal_edge_samples": [],
+    "extra_causal_edge_samples": [],
+    "mdr_rate_to_gst_on_fee": {
+      "downstream_gst_violations": 30,
+      "with_mdr_rate_parent_on_same_payment": 30,
+      "chain_intact": true
+    },
+    "persisted_lineage_integrity": {
+      "downstream_violations": 64,
+      "violations_with_root": 258,
+      "all_violations_rooted": true
+    },
+    "accuracy": 1.0
+  },
+  "financial_impact": {
+    "scope": "Decimal-only. Expected leakage is the labeled verified loss; predicted leakage is the run's attributable leakage. Delay is cash timing, never leakage, and is reported separately.",
+    "expected_verified_leakage": "16985.60",
+    "predicted_attributable_leakage": "15485.60",
+    "absolute_error": "1500.00",
+    "percentage_error": 8.831,
+    "direct_impact": "15416.69",
+    "downstream_impact": "68.91",
+    "cash_delayed_not_leakage": "719505.27",
+    "gap_attributable_to_blind_spots": "1500.00",
+    "gap_by_undetected_type": {
+      "DUPLICATE_CHARGEBACK_FEE": "1500.00"
+    },
+    "blind_spot_labeled_rows": 6,
+    "residual_unexplained_gap": "0.00",
+    "double_counting_checks": {
+      "sum_violation_impact": "15485.60",
+      "sum_root_cause_attributable_impact": "15485.60",
+      "run_summary_verified_leakage": "15485.60",
+      "violations_equal_summary": true,
+      "root_causes_equal_violations": true,
+      "direct_plus_downstream_equals_total": true,
+      "every_violation_attributed_once": true
+    }
+  },
+  "control_versioning": {
+    "scope": "Every control evaluation must select its version from the target's own transaction timestamp against effective_from/effective_to, never from 'latest approved'.",
+    "applied_controls": [
+      {
+        "control_id": "CTRL_GST_FEE",
+        "control_version": 1,
+        "logical_control_key": "GST_ON_VALID_FEE",
+        "expected": "18% of approved fee",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "evaluations": 930,
+        "selection_basis_recorded": 930,
+        "selection_inside_window": 930,
+        "corroborated_by_source_timestamp": 930
+      },
+      {
+        "control_id": "CTRL_MDR_DOMESTIC",
+        "control_version": 1,
+        "logical_control_key": "DOMESTIC_CARD_MDR",
+        "expected": "1.55%",
+        "effective_from": "2026-01-01",
+        "effective_to": "2026-08-31",
+        "evaluations": 532,
+        "selection_basis_recorded": 532,
+        "selection_inside_window": 532,
+        "corroborated_by_source_timestamp": 532
+      },
+      {
+        "control_id": "CTRL_MDR_DOMESTIC_V2",
+        "control_version": 2,
+        "logical_control_key": "DOMESTIC_CARD_MDR",
+        "expected": "1.65%",
+        "effective_from": "2026-09-01",
+        "effective_to": null,
+        "evaluations": 398,
+        "selection_basis_recorded": 398,
+        "selection_inside_window": 398,
+        "corroborated_by_source_timestamp": 398
+      },
+      {
+        "control_id": "CTRL_REFUND",
+        "control_version": 1,
+        "logical_control_key": "REFUND_PRINCIPAL_INTEGRITY",
+        "expected": "Deduct once \u00b7 fee \u20b90",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "evaluations": 930,
+        "selection_basis_recorded": 930,
+        "selection_inside_window": 930,
+        "corroborated_by_source_timestamp": 930
+      },
+      {
+        "control_id": "CTRL_SETTLEMENT_ARITHMETIC",
+        "control_version": 1,
+        "logical_control_key": "SETTLEMENT_BANK_ARITHMETIC",
+        "expected": "Gross less approved deductions",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "evaluations": 107,
+        "selection_basis_recorded": 107,
+        "selection_inside_window": 107,
+        "corroborated_by_source_timestamp": 0
+      },
+      {
+        "control_id": "CTRL_SETTLEMENT_SLA",
+        "control_version": 1,
+        "logical_control_key": "CAPTURE_TO_SETTLEMENT_SLA",
+        "expected": "T+2 business days",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "evaluations": 930,
+        "selection_basis_recorded": 930,
+        "selection_inside_window": 930,
+        "corroborated_by_source_timestamp": 930
+      }
+    ],
+    "logical_keys_with_multiple_versions_applied": [
+      "DOMESTIC_CARD_MDR"
+    ],
+    "evaluations_outside_control_window": 0,
+    "outside_window_samples": [],
+    "evaluations_without_recorded_selection_basis": 0,
+    "unrecorded_selection_samples": [],
+    "evaluations_disagreeing_with_source_timestamp": 0,
+    "disagreeing_samples": [],
+    "effective_date_selection_correct": true
+  },
+  "run_summary_invariant": {
+    "breakdown": {
+      "passed": 3567,
+      "violation": 258,
+      "warning": 0,
+      "unresolved": 2
+    },
+    "control_evaluation_count": 3827,
+    "breakdown_sums_to_evaluation_count": true,
+    "unresolved_control_count": 2,
+    "unresolved_relationship_count": 2,
+    "unresolved_quantities_are_separate_fields": true,
+    "ground_truth_available": false,
+    "metrics_scope": "LIVE_CONTROL_OUTCOMES_NO_GROUND_TRUTH"
+  },
+  "false_positive_dispositions": [
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0002",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000031",
+          "violation_type": "DUPLICATE_REFUND_DEDUCTION"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0003",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000038",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0006",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000065",
+          "violation_type": "DUPLICATE_REFUND_DEDUCTION"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0007",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000067",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0008",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_PROD_0008",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": "49.00",
+      "actual_amount": "49.00",
+      "amounts_agree": true,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0009",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000092",
+          "violation_type": "GST_ON_FEE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0011",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000102",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0013",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000130",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0016",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000156",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0021",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000194",
+          "violation_type": "GST_ON_FEE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0022",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000206",
+          "violation_type": "REFUND_EXCEEDS_PAYMENT"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0025",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000239",
+          "violation_type": "REFUND_EXCEEDS_PAYMENT"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0026",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000247",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0027",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000259",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0028",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000262",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0030",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000282",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0033",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_PROD_0033",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": "49.00",
+      "actual_amount": "49.00",
+      "amounts_agree": true,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0034",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000314",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0035",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_PROD_0035",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": "49.00",
+      "actual_amount": "49.00",
+      "amounts_agree": true,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0039",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000364",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0040",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000374",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0044",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_PROD_0044",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": "49.00",
+      "actual_amount": "49.00",
+      "amounts_agree": true,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0047",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000441",
+          "violation_type": "GST_ON_FEE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0051",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_PROD_0051",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": "49.00",
+      "actual_amount": "49.00",
+      "amounts_agree": true,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0052",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000492",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0053",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000497",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0055",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000518",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0057",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_PROD_0057",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": "49.00",
+      "actual_amount": "49.00",
+      "amounts_agree": true,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0058",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000548",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0059",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000564",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0061",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000581",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0063",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_PROD_0063",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": "99.00",
+      "actual_amount": "99.00",
+      "amounts_agree": true,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0071",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000675",
+          "violation_type": "DUPLICATE_REFUND_DEDUCTION"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0072",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000687",
+          "violation_type": "REFUND_EXCEEDS_PAYMENT"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0083",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000777",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0085",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000794",
+          "violation_type": "GST_ON_FEE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0086",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000801",
+          "violation_type": "DUPLICATE_REFUND_DEDUCTION"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0092",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000864",
+          "violation_type": "GST_ON_FEE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0093",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000869",
+          "violation_type": "GST_ON_FEE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0095",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "TAXONOMY_ALIAS_OF_EXPECTED_FINDING",
+      "alias_of": {
+        "entity_type": "SETTLEMENT",
+        "entity_id": "SET_PROD_0095",
+        "violation_type": "UNSUPPORTED_FEE"
+      },
+      "expected_amount": "149.00",
+      "actual_amount": "149.00",
+      "amounts_agree": true,
+      "governing_approved_control": [
+        "CTRL_GST_FEE",
+        "CTRL_MDR_DOMESTIC",
+        "CTRL_MDR_DOMESTIC_V2",
+        "CTRL_REFUND",
+        "CTRL_SETTLEMENT_ARITHMETIC",
+        "CTRL_SETTLEMENT_SLA"
+      ]
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0097",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000896",
+          "violation_type": "GST_ON_FEE"
+        }
+      ],
+      "financial_impact": "0.00"
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0099",
+      "violation_type": "SETTLEMENT_ARITHMETIC",
+      "disposition": "LINEAGE_EXPLAINED_DOWNSTREAM",
+      "explained_by": [
+        {
+          "entity_type": "PAYMENT",
+          "entity_id": "PAY_PROD_000920",
+          "violation_type": "MDR_RATE"
+        }
+      ],
+      "financial_impact": "0.00"
+    }
+  ],
+  "false_negative_dispositions": [
+    {
+      "entity_type": "CHARGEBACK",
+      "entity_id": "CB_PROD_0001",
+      "violation_type": "DUPLICATE_CHARGEBACK_FEE",
+      "disposition": "CONTROL_BLIND_SPOT_NO_CONTROL",
+      "governance": "NO_CONTROL_IN_REGISTRY",
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "CHARGEBACK",
+      "entity_id": "CB_PROD_0002",
+      "violation_type": "DUPLICATE_CHARGEBACK_FEE",
+      "disposition": "CONTROL_BLIND_SPOT_NO_CONTROL",
+      "governance": "NO_CONTROL_IN_REGISTRY",
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "CHARGEBACK",
+      "entity_id": "CB_PROD_0003",
+      "violation_type": "DUPLICATE_CHARGEBACK_FEE",
+      "disposition": "CONTROL_BLIND_SPOT_NO_CONTROL",
+      "governance": "NO_CONTROL_IN_REGISTRY",
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "CHARGEBACK",
+      "entity_id": "CB_PROD_0004",
+      "violation_type": "DUPLICATE_CHARGEBACK_FEE",
+      "disposition": "CONTROL_BLIND_SPOT_NO_CONTROL",
+      "governance": "NO_CONTROL_IN_REGISTRY",
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "CHARGEBACK",
+      "entity_id": "CB_PROD_0005",
+      "violation_type": "DUPLICATE_CHARGEBACK_FEE",
+      "disposition": "CONTROL_BLIND_SPOT_NO_CONTROL",
+      "governance": "NO_CONTROL_IN_REGISTRY",
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "CHARGEBACK",
+      "entity_id": "CB_PROD_0006",
+      "violation_type": "DUPLICATE_CHARGEBACK_FEE",
+      "disposition": "CONTROL_BLIND_SPOT_NO_CONTROL",
+      "governance": "NO_CONTROL_IN_REGISTRY",
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_AMB_A",
+      "violation_type": "AMBIGUOUS_BANK_MATCH",
+      "disposition": "SCORED_AS_RELATIONSHIP_RESOLUTION",
+      "governance": "RELATIONSHIP_RESOLUTION",
+      "labeled_payment_rows": 8
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_AMB_B",
+      "violation_type": "AMBIGUOUS_BANK_MATCH",
+      "disposition": "SCORED_AS_RELATIONSHIP_RESOLUTION",
+      "governance": "RELATIONSHIP_RESOLUTION",
+      "labeled_payment_rows": 8
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0008",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0033",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0035",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0044",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0051",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0057",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0063",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    },
+    {
+      "entity_type": "SETTLEMENT",
+      "entity_id": "SET_PROD_0095",
+      "violation_type": "UNSUPPORTED_FEE",
+      "disposition": "DETECTED_UNDER_APPROVED_ALIAS",
+      "detected_as": [
+        "SETTLEMENT_ARITHMETIC"
+      ],
+      "labeled_payment_rows": 1
+    }
+  ],
+  "performance": {
+    "transactions": 1000,
+    "events": 2320,
+    "relationships": 2141,
+    "control_evaluations": 3827,
+    "deterministic_processing_ms": 1071,
+    "persistence_ms": 1770,
+    "total_processing_ms": 2841,
+    "evaluations_per_second": 3573
+  },
+  "invariance": {
+    "id_rename": {
+      "basis": "Every identifier in the bundle renamed consistently, then conclusions compared under the bijection: same findings about the same entities, not merely the same totals.",
+      "identifiers_renamed": 2695,
+      "equivalent": true
+    },
+    "row_order": {
+      "basis": "Data rows of every source file independently shuffled.",
+      "seed": 20260829,
+      "equivalent": true
+    },
+    "dataset_metadata": {
+      "basis": "Identical bytes executed under a different run name and dataset label; only provenance differs.",
+      "equivalent": true
+    }
+  }
+}

@@ -330,6 +330,11 @@ class Violation(ApiModel):
     parent_violation_id: str | None = None
     causal_evidence: dict[str, Any] = Field(default_factory=dict)
     occurred_at: datetime
+    #: Canonical violation taxonomy, derived from control semantics (never from
+    #: identifiers or dataset-specific values). Empty for legacy records.
+    violation_type: str = ""
+    #: Native entity of the finding: PAYMENT, SETTLEMENT, RELATIONSHIP, ...
+    target_type: str = "PAYMENT"
 
 
 class RootCause(ApiModel):

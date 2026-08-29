@@ -4,7 +4,12 @@ The tests drive the real FastAPI app with a scratch sqlite database and an
 in-memory stand-in for Supabase Storage, covering classification, the
 deterministic run pipeline, every persisted run view, the artifact hash
 tamper check and the new live payment drill-down endpoints.
+
+The bundle under test is the documented six-file sample in ``docs/`` — the
+canonical published example. Labeled datasets live under ``data/`` and are
+scored by ``tests/test_stress_evaluation.py``.
 """
+# ruff: noqa: E402
 
 import os
 from decimal import Decimal
@@ -154,7 +159,10 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
         assert body["files_ingested"] == 6
         assert body["events_created"] == 145
         assert body["edges_created"] == 132
-        assert body["unresolved_matches"] == 1
+        # No settlement in the documented bundle is genuinely ambiguous: the one
+        # settlement without a bank credit has no amount-compatible candidate,
+        # which is an absence finding rather than an unresolved relationship.
+        assert body["unresolved_matches"] == 0
         assert body["control_evaluations_created"] > 0
         assert body["violations_created"] > 0
         assert body["persistence_status"] == "POSTGRES"
@@ -210,7 +218,7 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
             == summary_body["control_evaluation_count"]
         )
         assert summary_body["unresolved_control_count"] == breakdown["unresolved"]
-        assert summary_body["unresolved_relationship_count"] == 1
+        assert summary_body["unresolved_relationship_count"] == 0
         assert summary_body["metrics_note"] == (
             "Precision and recall require labeled ground truth and are not scored for this run."
         )
@@ -242,7 +250,7 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
         assert all(isinstance(item["total_attributable_impact"], str) for item in root_items)
         assert all(item["verification_evidence"]["violation_ids"] for item in root_items)
         assert all(
-            item["verification_evidence"]["grouping_basis"] == "PRIMARY_VIOLATION_CONTROL_TYPE"
+            item["verification_evidence"]["grouping_basis"] == "PRIMARY_VIOLATION_CANONICAL_TYPE"
             for item in root_items
         )
         assert all(item["primary_violation_count"] >= 1 for item in root_items)
@@ -255,9 +263,22 @@ def test_six_file_bundle_classifies_uploads_and_executes(tmp_path, monkeypatch) 
         assert cases.status_code == 200
         assert len(cases.json()) > 0
 
+        # Settlements whose bank credit is absent with no amount-compatible
+        # candidate anywhere are deterministic missing-bank findings, not
+        # unresolved matches: they surface as MISSING_BANK_SETTLEMENT
+        # violations, while only genuinely ambiguous pairings stay in the
+        # unresolved endpoint.
         unresolved = client.get(f"/api/v1/runs/{run_id}/unresolved")
         assert unresolved.status_code == 200
-        assert len(unresolved.json()) == 1
+        missing_bank = [
+            item
+            for item in violation_items
+            if item.get("violation_type") == "MISSING_BANK_SETTLEMENT"
+        ]
+        assert missing_bank
+        assert all(item["target_type"] == "SETTLEMENT" for item in missing_bank)
+        unresolved_settlement_ids = {item["payment_id"] for item in unresolved.json()}
+        assert unresolved_settlement_ids.isdisjoint({item["payment_id"] for item in missing_bank})
 
         mutation = client.post(f"/api/v1/runs/{run_id}/mutation-tests")
         assert mutation.status_code == 200, mutation.text
@@ -374,7 +395,9 @@ def test_row_level_errors_are_reported_without_blocking_valid_rows(tmp_path, mon
     try:
         lines = (DOCS_ROOT / "payments.csv").read_text().splitlines()
         # CSV row 3 gets an unparsable fee; CSV row 4 loses its payment_id.
-        lines[2] = lines[2].replace("27.90", "2a.90")
+        payment_fields = lines[2].split(",")
+        payment_fields[8] = "not-a-decimal"
+        lines[2] = ",".join(payment_fields)
         fields = lines[3].split(",")
         lines[3] = ",".join(["", *fields[1:]])
         bad_payments = ("\n".join(lines) + "\n").encode()
