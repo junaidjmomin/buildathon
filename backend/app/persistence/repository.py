@@ -47,6 +47,7 @@ from app.persistence.orm import (
     AgentExecutionRecord,
     AgreementClauseRecord,
     AgreementRecord,
+    ArtifactRecord,
     AuditLogRecord,
     BackgroundJobRecord,
     ControlEvaluationRecord,
@@ -353,6 +354,27 @@ class RunRepository:
         controls: list[Control],
         tenant_id: str = "novacart_demo",
     ) -> tuple[int, int]:
+        # SQLite does not enforce ON DELETE CASCADE unless PRAGMA foreign_keys=ON
+        # is set per connection (this stack never sets it), so the run-scoped
+        # children must be deleted explicitly before the run row. Postgres
+        # would cascade, but deleting explicitly keeps both backends identical.
+        for record in (
+            ControlEvaluationRecord,
+            MutationTestRecord,
+            ArtifactRecord,
+            ExceptionCaseRecord,
+            RootCauseRecord,
+            ViolationRecord,
+            EventEdgeRecord,
+            EventRecord,
+            RunStageRecord,
+        ):
+            self.session.execute(
+                delete(record).where(
+                    record.tenant_id == tenant_id,
+                    record.run_id == run_id,
+                )
+            )
         self.session.execute(
             delete(RunRecord).where(
                 RunRecord.tenant_id == tenant_id,

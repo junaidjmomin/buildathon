@@ -118,6 +118,46 @@ def test_demo_run_parent_is_flushed_before_foreign_key_children() -> None:
         assert session.scalar(select(func.count()).select_from(EventEdgeRecord)) == edge_count
 
 
+def test_reloading_the_demo_run_replaces_everything_without_cascade() -> None:
+    """A second demo load must replace the run even where ON DELETE CASCADE is
+    not enforced. SQLite only honours FK cascades with PRAGMA foreign_keys=ON,
+    which the production engine never sets — so replace_demo_run must delete
+    the run-scoped children explicitly. Without that, the re-insert fails with
+    an IntegrityError on every duplicate event id.
+    """
+    # Deliberately no foreign_keys pragma: mirrors the production SQLite engine.
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    dataset = generate_dataset()
+    store = DemoStore()
+    summary = store._build_summary(dataset, perf_counter())
+
+    with Session(engine) as session:
+        first_events, first_edges = RunRepository(session).replace_demo_run(
+            run_id="RUN_NOVACART_AUG_2026",
+            dataset=dataset,
+            summary=summary,
+            violations=[],
+            root_causes=[],
+            controls=[],
+        )
+        session.flush()
+        # Reload: same run id, same content — must succeed, not IntegrityError.
+        second_events, second_edges = RunRepository(session).replace_demo_run(
+            run_id="RUN_NOVACART_AUG_2026",
+            dataset=dataset,
+            summary=summary,
+            violations=[],
+            root_causes=[],
+            controls=[],
+        )
+        session.flush()
+        assert (second_events, second_edges) == (first_events, first_edges)
+        assert session.scalar(select(func.count()).select_from(RunRecord)) == 1
+        assert session.scalar(select(func.count()).select_from(EventRecord)) == first_events
+        assert session.scalar(select(func.count()).select_from(EventEdgeRecord)) == first_edges
+
+
 def test_concurrent_first_demo_reads_initialize_the_seed_only_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
