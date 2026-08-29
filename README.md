@@ -76,7 +76,7 @@ is evaluated by a multi-scope harness — the full report lives at
 | Predicted vs. labeled leakage | ₹15,485.60 vs ₹16,985.60 — the gap is exactly the documented ₹1,500 chargeback-fee blind spot, ₹0.00 unexplained |
 | Approved-governed mode coverage | **100%** |
 | Invariance | Identical conclusions under ID rename (2,695 identifiers), row shuffle, and dataset relabeling |
-| Throughput | ~6,700 control evaluations/sec |
+| Throughput | ~4,000 control evaluations/sec (deterministic stage) |
 
 ## Quick start
 

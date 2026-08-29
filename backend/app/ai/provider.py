@@ -96,6 +96,27 @@ class GroqStructuredProvider:
             raise ValueError("LLM input exceeds the configured redacted-context limit")
         return [SystemMessage(content=system), HumanMessage(content=prompt)]
 
+    @staticmethod
+    def _response_schema(schema: type[StructuredOutput]) -> dict[str, object]:
+        """Adapt Pydantic JSON Schema to Groq's supported strict-schema subset."""
+
+        def sanitize(value: object) -> object:
+            if isinstance(value, dict):
+                cleaned: dict[str, object] = {}
+                for key, child in value.items():
+                    # Pydantic emits a Decimal regex with lookarounds. Groq
+                    # rejects that regex even though local Pydantic validation
+                    # can enforce it after the response is received.
+                    if key == "pattern" and isinstance(child, str) and "(?" in child:
+                        continue
+                    cleaned[key] = sanitize(child)
+                return cleaned
+            if isinstance(value, list):
+                return [sanitize(item) for item in value]
+            return value
+
+        return sanitize(schema.model_json_schema())  # type: ignore[return-value]
+
     async def generate(self, *, system: str, prompt: str) -> str:
         response = await self.model.ainvoke(self._messages(system=system, prompt=prompt))
         if isinstance(response.content, str):
@@ -109,12 +130,20 @@ class GroqStructuredProvider:
         system: str,
         prompt: str,
     ) -> StructuredOutput:
+        # Groq's strict validator rejects some valid Pydantic schemas (notably
+        # Decimal's generated lookaround regex).  Sanitize only that unsupported
+        # constraint; local Pydantic validation below remains authoritative.
         structured = self.model.with_structured_output(
-            schema,
+            self._response_schema(schema),
             method="json_schema",
             strict=True,
         )
-        result = await structured.ainvoke(self._messages(system=system, prompt=prompt))
+        result = await structured.ainvoke(
+            self._messages(
+                system=f"{system}\nReturn only valid JSON.",
+                prompt=prompt,
+            )
+        )
         if isinstance(result, schema):
             return result
         return schema.model_validate(result)

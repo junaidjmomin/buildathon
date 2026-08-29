@@ -13,7 +13,11 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 
 from app.agents.checkpoint import agent_checkpointer
-from app.agents.control_workflows import AgreementControlCompiler, BlindSpotRemediationController
+from app.agents.control_workflows import (
+    AgreementControlCompiler,
+    BlindSpotRemediationController,
+    validate_candidate_evidence,
+)
 from app.agents.investigation import InvestigationController
 from app.agents.models import (
     AgentEvidence,
@@ -74,7 +78,7 @@ from app.domain.models import (
     ViolationLineageResponse,
 )
 from app.ingestion.csv import parse_source_csv, read_source_csv
-from app.ingestion.pdf import extract_agreement_pages
+from app.ingestion.pdf import extract_agreement_pages, segment_agreement_clauses
 from app.ingestion.pipeline import execute_source_run
 from app.integrations.razorpay.client import RazorpayNotConfiguredError
 from app.integrations.razorpay.mcp_evidence import capability as mcp_evidence_capability
@@ -115,6 +119,12 @@ def _require_seeded_demo(principal: Principal) -> None:
 def _seeded_demo_enabled(principal: Principal) -> bool:
     settings = get_settings()
     return settings.environment in {"development", "test"} and principal.tenant_id == DEMO_TENANT_ID
+
+
+def _is_seeded_agreement(principal: Principal, agreement_id: str) -> bool:
+    """Return whether an agreement ID refers to the immutable in-memory demo fixture."""
+
+    return _seeded_demo_enabled(principal) and agreement_id == AGREEMENT.id
 
 
 def _job_response(record: BackgroundJobRecord) -> BackgroundJob:
@@ -479,6 +489,15 @@ async def upload_agreement(
         max_page_content_bytes=settings.max_pdf_page_content_bytes,
         max_extracted_chars=settings.max_extracted_agreement_chars,
     )
+    extracted_clauses = segment_agreement_clauses(
+        pages,
+        agreement_effective_from=effective_from,
+    )
+    if not extracted_clauses:
+        raise HTTPException(
+            status_code=422,
+            detail="No numbered clauses could be segmented from this agreement PDF",
+        )
     content_hash = sha256(content).hexdigest()
     with session_scope(tenant_id=principal.tenant_id) as session:
         existing = AgreementRepository(session).get_by_hash(
@@ -501,15 +520,23 @@ async def upload_agreement(
         content_hash=content_hash,
         clauses=[
             AgreementClause(
-                id=f"CLAUSE_{content_hash[:12].upper()}_P{page.page_number:04d}",
-                reference=f"PAGE_{page.page_number}",
-                page=page.page_number,
-                heading=(page.text.splitlines()[0][:240] or f"Page {page.page_number}"),
-                text=page.text,
-                effective_from=effective_from,
+                id=(f"CLAUSE_{content_hash[:12].upper()}_{clause.clause_number.replace('.', '_')}"),
+                reference=clause.clause_number,
+                page=clause.page_number,
+                heading=clause.clause_title[:240],
+                text=clause.text,
+                effective_from=clause.effective_from,
                 effective_to=effective_to,
+                clause_number=clause.clause_number,
+                clause_title=clause.clause_title,
+                source_offsets={
+                    "page_number": clause.page_number,
+                    "start_offset": clause.start_offset,
+                    "end_offset": clause.end_offset,
+                    "offset_basis": "normalized_page_text",
+                },
             )
-            for page in pages
+            for clause in extracted_clauses
         ],
     )
     object_path = f"tenants/{principal.tenant_id}/agreements/{agreement_id}.pdf"
@@ -545,6 +572,7 @@ async def upload_agreement(
                 details={
                     "artifact_id": artifact_id,
                     "page_count": len(pages),
+                    "clause_count": len(extracted_clauses),
                     "content_hash": content_hash,
                 },
                 request_id=request.state.request_id,
@@ -648,7 +676,7 @@ def _proposal_from_candidate(
         expected=expected,
         scope=" · ".join(candidate.conditions) or f"Agreement page {clause.page}",
         source=agreement_record.title,
-        source_clause=f"Page {clause.page} · {clause.reference}",
+        source_clause=(f"Clause {clause.clause_number or clause.reference} · Page {clause.page}"),
         status="DRAFT",
         agreement_id=agreement_record.id,
         clause_id=clause.id,
@@ -659,19 +687,28 @@ def _proposal_from_candidate(
         supersedes_control_id=candidate.supersedes_candidate_id,
         parameters=candidate.parameters,
         conditions=candidate.conditions,
-        extraction_method="LANGGRAPH_STRUCTURED_COMPILATION",
+        extraction_method=(
+            "DETERMINISTIC_CLAUSE_EXTRACTION"
+            if candidate.rationale.startswith("Deterministically extracted")
+            else "LANGGRAPH_STRUCTURED_COMPILATION"
+        ),
+    )
+    validation_warnings = validate_candidate_evidence(
+        candidate,
+        [clause.model_dump(mode="json")],
     )
     return ControlProposal(
         id=f"PROP_{fingerprint}",
         agreement_id=agreement_record.id,
         clause_id=clause.id,
         control_id=control_id,
-        status="DRAFT",
+        status="REVIEW_REQUIRED" if validation_warnings else "DRAFT",
         confidence=candidate.confidence,
         rationale=candidate.rationale,
-        source_excerpt=clause.text[:4000],
-        extraction_method="LANGGRAPH_STRUCTURED_COMPILATION",
+        source_excerpt=clause.text,
+        extraction_method=control.extraction_method,
         proposed_control=control,
+        validation_warnings=validation_warnings,
     )
 
 
@@ -681,7 +718,7 @@ async def _run_agreement_compilation(
     principal: Principal,
     request: Request,
 ) -> tuple[AgreementCompilationExecution, list[ControlProposal]]:
-    if _seeded_demo_enabled(principal):
+    if _is_seeded_agreement(principal, agreement_id):
         try:
             agreement_record = governance.agreement(agreement_id)
             existing_proposals = governance.proposals(agreement_id)
@@ -740,7 +777,7 @@ async def _run_agreement_compilation(
                 started_at=result.started_at,
                 completed_at=result.completed_at,
             )
-            if not _seeded_demo_enabled(principal):
+            if not _is_seeded_agreement(principal, agreement_id):
                 agreement_repository = AgreementRepository(session)
                 agreement_repository.replace_proposals(
                     tenant_id=principal.tenant_id,

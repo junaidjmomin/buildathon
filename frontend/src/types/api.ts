@@ -361,6 +361,9 @@ export interface AgreementClause {
   effective_to: string | null;
   source_type: "PDF_TEXT_EXTRACTION" | "MANUAL_ENTRY" | string;
   created_by: string | null;
+  clause_number?: string | null;
+  clause_title?: string | null;
+  source_offsets?: Record<string, number | string> | null;
 }
 
 export interface AgreementClauseCreate {
@@ -395,6 +398,7 @@ export interface ControlProposal {
   extraction_method: string;
   proposed_control: Control;
   version: number;
+  validation_warnings?: string[];
   verification_status: "NOT_RUN" | "PASSED" | "FAILED";
   verification_result: ControlProposalVerificationResult | null;
   verified_by: string | null;

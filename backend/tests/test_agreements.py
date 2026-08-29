@@ -81,6 +81,18 @@ def test_pdf_agreement_extraction_rejects_non_pdf_and_tight_limits() -> None:
             max_page_content_bytes=100_000,
             max_extracted_chars=10_000,
         )
+
+
+def test_uploaded_demo_tenant_agreements_use_durable_compilation_path() -> None:
+    principal = api_router.Principal(
+        subject="local-demo-user",
+        tenant_id="novacart_demo",
+        roles=frozenset({"analyst"}),
+        auth_mode="disabled",
+    )
+
+    assert api_router._is_seeded_agreement(principal, api_router.AGREEMENT.id)
+    assert not api_router._is_seeded_agreement(principal, "AGR_UPLOADED_1")
     with pytest.raises(AgreementPdfError, match="page limit"):
         extract_agreement_pages(
             base64.b64decode(AGREEMENT_PDF_BASE64),

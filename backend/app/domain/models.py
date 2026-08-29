@@ -72,6 +72,9 @@ class AgreementClause(ApiModel):
     effective_to: date | None = None
     source_type: str = "PDF_TEXT_EXTRACTION"
     created_by: str | None = None
+    clause_number: str | None = None
+    clause_title: str | None = None
+    source_offsets: dict[str, Any] | None = None
 
 
 class AgreementClauseCreate(ApiModel):
@@ -106,6 +109,7 @@ class ControlProposal(ApiModel):
     extraction_method: str
     proposed_control: Control
     version: int = 1
+    validation_warnings: list[str] = Field(default_factory=list)
     verification_status: str = "NOT_RUN"
     verification_result: dict[str, Any] | None = None
     verified_by: str | None = None

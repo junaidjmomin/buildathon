@@ -186,6 +186,7 @@ class AgreementCompilationExecution(AgentModel):
     proposals: list[TypedControlCandidate]
     schema_valid: bool
     conflict_count: int
+    validation_warnings: list[str] = Field(default_factory=list)
     human_approval_required: bool = True
     trace: list[AgentTraceStep]
     started_at: datetime

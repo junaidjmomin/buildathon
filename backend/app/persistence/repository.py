@@ -1405,6 +1405,11 @@ class AgreementRepository:
                 updated_at=now,
             )
         )
+        # AgreementClauseRecord has a composite foreign key to its parent
+        # agreement.  Flush the parent explicitly before adding extracted
+        # clauses; relying on SQLAlchemy's unit-of-work ordering is unsafe
+        # here because the models intentionally do not expose a relationship.
+        self.session.flush()
         self.session.add_all(
             AgreementClauseRecord(
                 tenant_id=tenant_id,
@@ -1419,6 +1424,9 @@ class AgreementRepository:
                 source_type=clause.source_type,
                 created_by=clause.created_by or actor_id,
                 content_hash=sha256(clause.text.encode("utf-8")).hexdigest(),
+                clause_number=clause.clause_number or clause.reference,
+                clause_title=clause.clause_title or clause.heading,
+                source_offsets=clause.source_offsets,
                 created_at=now,
             )
             for clause in agreement.clauses
@@ -1492,6 +1500,9 @@ class AgreementRepository:
             source_type="MANUAL_ENTRY",
             created_by=actor_id,
             content_hash=content_hash,
+            clause_number=clause.reference.strip(),
+            clause_title=clause.heading.strip(),
+            source_offsets={"source": "manual"},
             created_at=datetime.now(timezone.utc),
         )
         self.session.add(created)
@@ -1499,6 +1510,73 @@ class AgreementRepository:
         agreement.updated_at = datetime.now(timezone.utc)
         self.session.flush()
         return self._clause(created)
+
+    def replace_extracted_clauses(
+        self,
+        *,
+        tenant_id: str,
+        agreement_id: str,
+        clauses: list[AgreementClause],
+        actor_id: str,
+    ) -> Agreement:
+        """Replace legacy page records with newly segmented PDF clauses."""
+
+        agreement = self.session.scalar(
+            select(AgreementRecord).where(
+                AgreementRecord.tenant_id == tenant_id,
+                AgreementRecord.id == agreement_id,
+            )
+        )
+        if agreement is None:
+            raise KeyError(agreement_id)
+        approved = self.session.scalar(
+            select(ControlProposalRecord.id).where(
+                ControlProposalRecord.tenant_id == tenant_id,
+                ControlProposalRecord.agreement_id == agreement_id,
+                ControlProposalRecord.status.in_(["APPROVED", "REJECTED"]),
+            )
+        )
+        if approved is not None:
+            raise ValueError("Cannot re-segment an agreement with immutable reviewed proposals")
+        self.session.execute(
+            delete(ControlProposalRecord).where(
+                ControlProposalRecord.tenant_id == tenant_id,
+                ControlProposalRecord.agreement_id == agreement_id,
+                ControlProposalRecord.status.in_(["DRAFT", "REVIEW_REQUIRED"]),
+            )
+        )
+        self.session.execute(
+            delete(AgreementClauseRecord).where(
+                AgreementClauseRecord.tenant_id == tenant_id,
+                AgreementClauseRecord.agreement_id == agreement_id,
+            )
+        )
+        now = datetime.now(timezone.utc)
+        self.session.add_all(
+            AgreementClauseRecord(
+                tenant_id=tenant_id,
+                agreement_id=agreement_id,
+                id=clause.id,
+                reference=clause.reference,
+                page=clause.page,
+                heading=clause.heading,
+                text=clause.text,
+                effective_from=clause.effective_from,
+                effective_to=clause.effective_to,
+                source_type=clause.source_type,
+                created_by=clause.created_by or actor_id,
+                content_hash=sha256(clause.text.encode("utf-8")).hexdigest(),
+                clause_number=clause.clause_number or clause.reference,
+                clause_title=clause.clause_title or clause.heading,
+                source_offsets=clause.source_offsets,
+                created_at=now,
+            )
+            for clause in clauses
+        )
+        agreement.status = "EXTRACTED"
+        agreement.updated_at = now
+        self.session.flush()
+        return self._agreement(agreement)
 
     def list_proposals(self, *, tenant_id: str, agreement_id: str) -> list[ControlProposal]:
         records = self.session.scalars(
@@ -1542,6 +1620,7 @@ class AgreementRepository:
                 source_excerpt=proposal.source_excerpt,
                 extraction_method=proposal.extraction_method,
                 proposed_control=proposal.proposed_control.model_dump(mode="json"),
+                validation_warnings=proposal.validation_warnings,
                 execution_id=execution_id,
                 version=1,
                 verification_status="NOT_RUN",
@@ -1609,6 +1688,7 @@ class AgreementRepository:
                     source_excerpt=proposal.source_excerpt,
                     extraction_method=proposal.extraction_method,
                     proposed_control=proposal.proposed_control.model_dump(mode="json"),
+                    validation_warnings=proposal.validation_warnings,
                     execution_id=execution_id,
                     version=1,
                     verification_status="NOT_RUN",
@@ -1781,6 +1861,9 @@ class AgreementRepository:
             effective_to=clause.effective_to,
             source_type=clause.source_type,
             created_by=clause.created_by,
+            clause_number=clause.clause_number,
+            clause_title=clause.clause_title,
+            source_offsets=clause.source_offsets,
         )
 
     @staticmethod
@@ -1797,6 +1880,7 @@ class AgreementRepository:
             extraction_method=record.extraction_method,
             proposed_control=Control.model_validate(record.proposed_control),
             version=record.version,
+            validation_warnings=record.validation_warnings or [],
             verification_status=record.verification_status,
             verification_result=record.verification_result,
             verified_by=record.verified_by,

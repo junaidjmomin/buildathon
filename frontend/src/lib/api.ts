@@ -37,7 +37,10 @@ import type {
 import { getAccessToken, isOidcEnabled } from "@/lib/auth-client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
-const REQUEST_TIMEOUT_MS = 15_000;
+// Supabase-backed live summaries may need extra time while aggregating a
+// large uploaded run. Do not turn a slow-but-successful 200 response into a
+// misleading "API unavailable" state at the 15s mark.
+const REQUEST_TIMEOUT_MS = 45_000;
 const segment = (value: string) => encodeURIComponent(value);
 
 export class ApiError extends Error {

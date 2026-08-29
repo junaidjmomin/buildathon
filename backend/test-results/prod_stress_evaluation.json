@@ -2,7 +2,7 @@
   "dataset": {
     "dataset_id": "novacart_prod_stress_v1",
     "dataset_type": "LABELED_STRESS",
-    "run_id": "RUN_CSV_AD000103DF7A09F904D0",
+    "run_id": "RUN_CSV_527D38135C22B42F4F8C",
     "labeled_rows": 1000,
     "expected_status_counts": {
       "PASS": 782,
@@ -1608,10 +1608,10 @@
     "events": 2320,
     "relationships": 2141,
     "control_evaluations": 3827,
-    "deterministic_processing_ms": 1071,
-    "persistence_ms": 1770,
-    "total_processing_ms": 2841,
-    "evaluations_per_second": 3573
+    "deterministic_processing_ms": 1400,
+    "persistence_ms": 2763,
+    "total_processing_ms": 4163,
+    "evaluations_per_second": 2733
   },
   "invariance": {
     "id_rename": {

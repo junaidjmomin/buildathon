@@ -50,6 +50,12 @@ export default function AgreementsPage() {
     onSuccess: (created) => {
       queryClient.setQueryData(["agreements"], [created]);
       queryClient.setQueryData(["agreement-proposals", created.id], []);
+      // A previous extraction attempt may have failed while the agreement was
+      // still being persisted.  Do not carry that stale error into the now
+      // successfully uploaded agreement view.
+      extract.reset();
+      verify.reset();
+      approve.reset();
     },
   });
   const addClause = useMutation({
@@ -203,14 +209,16 @@ export default function AgreementsPage() {
               <div key={clause.id} className="p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--evergreen)]">
-                    Clause {clause.reference} ·{" "}
+                    Clause {clause.clause_number ?? clause.reference} ·{" "}
                     {clause.source_type === "MANUAL_ENTRY" ? "Manual entry" : `Page ${clause.page}`}
                   </p>
                   <span className="font-mono text-[9px] text-[var(--paper-faint)]">
                     {clause.effective_from}
                   </span>
                 </div>
-                <h3 className="mt-1.5 text-xs font-semibold text-[var(--paper)]">{clause.heading}</h3>
+                <h3 className="mt-1.5 text-xs font-semibold text-[var(--paper)]">
+                  {clause.clause_title ?? clause.heading}
+                </h3>
                 <p className="mt-2 text-[11px] leading-5 text-[var(--paper-dim)]">{clause.text}</p>
               </div>
             ))}
@@ -240,6 +248,7 @@ export default function AgreementsPage() {
             const isApproving = approve.isPending && approve.variables?.proposalId === proposal.id;
             const reviewable = proposal.status === "DRAFT" || proposal.status === "REVIEW_REQUIRED";
             const verificationPassed = proposal.verification_status === "PASSED";
+            const needsReview = proposal.extraction_method === "DETERMINISTIC_CLAUSE_EXTRACTION";
             return (
               <div
                 key={proposal.id}
@@ -283,14 +292,29 @@ export default function AgreementsPage() {
                 </div>
                 <div className="mt-3 flex items-center gap-2 text-[10px] text-[var(--paper-dim)]">
                   <span className="font-semibold text-[var(--evergreen)]">
-                    Clause {clause?.reference}
+                    Clause {clause?.clause_number ?? clause?.reference} · page {clause?.page}
                   </span>
                   <ArrowRight size={11} />
                   <span className="font-mono">{control.id}</span>
                   <span className="number-tabular ml-auto font-mono">
-                    {formatPercent(proposal.confidence, 0)} extraction confidence
+                    {needsReview
+                      ? "Needs review"
+                      : `${formatPercent(proposal.confidence, 0)} extraction confidence`}
                   </span>
                 </div>
+                <p className="mt-2 text-[10px] text-[var(--paper-faint)]">
+                  Effective {control.effective_from} → {control.effective_to ?? "open"}
+                </p>
+                {proposal.validation_warnings?.length ? (
+                  <div className="mt-2 rounded-lg border border-[rgba(234,179,8,0.35)] bg-[rgba(234,179,8,0.08)] px-3 py-2 text-[10px] text-[#f4c95d]">
+                    <p className="font-semibold">Extraction validation warnings</p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                      {proposal.validation_warnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 <div className="mt-3 border-t border-[var(--line)] pt-3">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-[10px]">
                     <span className="font-semibold text-[var(--paper-dim)]">

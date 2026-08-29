@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import re
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from operator import add
 from typing import Annotated, Any, TypedDict
 from uuid import uuid4
@@ -19,6 +21,7 @@ from app.agents.models import (
     TypedControlCandidate,
 )
 from app.ai.provider import StructuredProvider
+from app.domain.models import ControlType
 
 
 class ControlWorkflowState(TypedDict, total=False):
@@ -34,6 +37,7 @@ class ControlWorkflowState(TypedDict, total=False):
     proposed_control: dict[str, Any]
     schema_valid: bool
     conflict_count: int
+    validation_warnings: list[str]
     historical_backtest: dict[str, Any]
     mutation_backtest: dict[str, Any]
     comparison: dict[str, Any]
@@ -61,6 +65,308 @@ def _step(
         occurred_at=_now(),
         details=details or {},
     ).model_dump(mode="json")
+
+
+def _date_in_text(text: str, *, phrase: str) -> date | None:
+    match = re.search(
+        rf"{phrase}\s+(\d{{1,2}})\s+([A-Za-z]+)\s+(\d{{4}})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    try:
+        month = datetime.strptime(match.group(2)[:3], "%b").month
+        return date(int(match.group(3)), month, int(match.group(1)))
+    except ValueError:
+        return None
+
+
+def _decimal_string(value: Decimal) -> str:
+    return format(value.normalize(), "f")
+
+
+def _money_string(value: Decimal) -> str:
+    return format(value.quantize(Decimal("0.01")), "f")
+
+
+def validate_candidate_evidence(
+    candidate: TypedControlCandidate, clauses: list[dict[str, Any]]
+) -> list[str]:
+    """Check that a typed candidate is supported by its cited operative clause."""
+
+    clause = next((item for item in clauses if str(item.get("id")) == candidate.clause_id), None)
+    if clause is None:
+        return [f"{candidate.logical_control_key}: cited clause is missing"]
+    text = str(clause.get("text", "")).strip()
+    warnings: list[str] = []
+    if not text:
+        warnings.append(f"{candidate.logical_control_key}: quoted source text is empty")
+    if str(clause.get("reference", "")).upper().startswith("PAGE_"):
+        warnings.append(
+            f"{candidate.logical_control_key}: provenance is page-level, not clause-level"
+        )
+    if str(clause.get("source_type", "")).upper() == "PDF_TEXT_EXTRACTION" and not clause.get(
+        "source_offsets"
+    ):
+        warnings.append(f"{candidate.logical_control_key}: source offsets are missing")
+    lower = re.sub(r"\s+", " ", text.lower()).strip()
+    required_terms: dict[ControlType, tuple[tuple[str, ...], ...]] = {
+        ControlType.MDR_RATE: (("mdr", "merchant discount"), ("%",), ("domestic card",)),
+        ControlType.GST_ON_FEE: (("gst",), ("%",), ("approved processing fee",)),
+        ControlType.SETTLEMENT_SLA: (
+            ("captured payment",),
+            ("business day",),
+            ("capture date", "capture"),
+        ),
+        ControlType.SETTLEMENT_ARITHMETIC: (
+            ("gross",),
+            ("approved",),
+            ("bank credit",),
+        ),
+        ControlType.UNSUPPORTED_FEE: (("unlisted",), ("fee", "deduction")),
+        ControlType.REFUND_INTEGRITY: (("refund",), ("once",), ("fee", "tolerance")),
+        ControlType.LIFECYCLE_VALIDITY: (
+            ("cumulative",),
+            ("refund",),
+            ("captured payment principal",),
+        ),
+    }
+    terms = (
+        (("chargeback",), ("administration fee",), ("once",))
+        if candidate.logical_control_key == "CHARGEBACK_ADMIN_FEE"
+        else required_terms.get(candidate.control_type, ())
+    )
+    for alternatives in terms:
+        if not any(term in lower for term in alternatives):
+            warnings.append(
+                f"{candidate.logical_control_key}: operative source is missing "
+                f"one of {' / '.join(alternatives)}"
+            )
+    required_parameters = {
+        ControlType.MDR_RATE: ("rate", "tolerance"),
+        ControlType.GST_ON_FEE: ("rate", "tolerance"),
+        ControlType.UNSUPPORTED_FEE: ("tolerance",),
+        ControlType.REFUND_INTEGRITY: ("maximum_deductions", "refund_fee", "tolerance"),
+        ControlType.SETTLEMENT_ARITHMETIC: ("tolerance",),
+    }
+    for parameter in required_parameters.get(candidate.control_type, ()):
+        if parameter not in candidate.parameters:
+            warnings.append(
+                f"{candidate.logical_control_key}: required parameter {parameter} is missing"
+            )
+    return warnings
+
+
+def _deterministic_candidates(clauses: list[dict[str, Any]]) -> list[TypedControlCandidate]:
+    """Extract conservative typed candidates without relying on an LLM."""
+
+    candidates: list[TypedControlCandidate] = []
+    versions: dict[str, int] = {}
+    seen: set[str] = set()
+    seen_semantic: set[str] = set()
+
+    def add(
+        clause: dict[str, Any],
+        *,
+        key: str,
+        control_type: ControlType,
+        name: str,
+        parameters: dict[str, Any],
+        conditions: list[str],
+        effective_from: date | None = None,
+        effective_to: date | None = None,
+    ) -> None:
+        clause_id = str(clause.get("id", "")).strip()
+        if not clause_id:
+            return
+        semantic_fingerprint = json.dumps(
+            {"key": key, "parameters": parameters}, sort_keys=True, separators=(",", ":")
+        )
+        if semantic_fingerprint in seen_semantic:
+            return
+        seen_semantic.add(semantic_fingerprint)
+        fingerprint = json.dumps(
+            {
+                "key": key,
+                "parameters": parameters,
+                "effective_from": (
+                    effective_from or date.fromisoformat(str(clause["effective_from"]))
+                ).isoformat(),
+                "effective_to": effective_to.isoformat() if effective_to else None,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        if fingerprint in seen:
+            return
+        seen.add(fingerprint)
+        version = versions.get(key, 0) + 1
+        versions[key] = version
+        start = effective_from or date.fromisoformat(str(clause["effective_from"]))
+        candidate = TypedControlCandidate(
+            candidate_id=f"CAND_{clause_id}_{key}",
+            logical_control_key=key,
+            control_type=control_type,
+            name=name,
+            clause_id=clause_id,
+            version=version,
+            effective_from=start,
+            effective_to=effective_to,
+            parameters=parameters,
+            conditions=conditions,
+            rationale=(
+                "Deterministically extracted from the cited agreement clause; "
+                "human approval required."
+            ),
+            confidence=Decimal("0.80"),
+        )
+        candidates.append(candidate)
+
+    for clause in clauses:
+        text = str(clause.get("text", ""))
+        lower = re.sub(r"\s+", " ", text.lower()).strip()
+        if (
+            str(clause.get("reference", clause.get("clause_number", "")))
+            .upper()
+            .startswith("UNNUMBERED_")
+        ):
+            continue
+        mdr_match = re.search(
+            r"(?:merchant\s+discount\s+rate|\bmdr\b)[^%]{0,160}?(\d+(?:\.\d+)?)\s*%",
+            text,
+            re.IGNORECASE,
+        )
+        if (
+            ("mdr" in lower or "merchant discount" in lower)
+            and mdr_match
+            and ("domestic card" in lower or "domestic cards" in lower)
+        ):
+            rate_text = mdr_match.group(1)
+            if "amendment" in lower or "on or after" in lower:
+                revised = re.search(
+                    r"revised\s+from\s+\d+(?:\.\d+)?\s*%\s+to\s+(\d+(?:\.\d+)?)\s*%",
+                    text,
+                    re.IGNORECASE,
+                )
+                new_rate = re.search(r"new\s+rate\s*:\s*(\d+(?:\.\d+)?)\s*%", text, re.IGNORECASE)
+                rate_text = (new_rate or revised).group(1) if (new_rate or revised) else rate_text
+            rate = Decimal(rate_text) / Decimal("100")
+            add(
+                clause,
+                key="DOMESTIC_CARD_MDR",
+                control_type=ControlType.MDR_RATE,
+                name="Domestic Card MDR",
+                parameters={"rate": _decimal_string(rate), "tolerance": "0.01", "currency": "INR"},
+                conditions=["captured payment", "domestic card"],
+                effective_from=_date_in_text(text, phrase=r"(?:on or after|effective from)")
+                or date.fromisoformat(str(clause["effective_from"])),
+                effective_to=_date_in_text(text, phrase=r"(?:through|until)") or None,
+            )
+        if "gst" in lower and re.search(r"(\d+(?:\.\d+)?)\s*%", text):
+            gst_match = re.search(r"(?:gst|tax).*?(\d+(?:\.\d+)?)\s*%", text, re.IGNORECASE)
+            if gst_match:
+                add(
+                    clause,
+                    key="GST_ON_VALID_FEE",
+                    control_type=ControlType.GST_ON_FEE,
+                    name="GST on Processing Fee",
+                    parameters={
+                        "rate": _decimal_string(Decimal(gst_match.group(1)) / Decimal("100")),
+                        "tolerance": "0.01",
+                        "base": "approved_processing_fee",
+                    },
+                    conditions=["approved processing fee"],
+                )
+        if "must be settled within" in lower or "settlement sla" in lower:
+            days = re.search(r"(\d+)\s+business\s+days?", lower)
+            add(
+                clause,
+                key="CAPTURE_TO_SETTLEMENT_SLA",
+                control_type=ControlType.SETTLEMENT_SLA,
+                name="Standard Settlement SLA",
+                parameters={"business_days": int(days.group(1)) if days else 2},
+                conditions=["captured payment"],
+            )
+        if (
+            "refunded principal may be deducted once" in lower
+            or "no additional refund fee" in lower
+            or "refund principal exactly once" in lower
+            or "refund processing fee" in lower
+        ):
+            add(
+                clause,
+                key="REFUND_PRINCIPAL_INTEGRITY",
+                control_type=ControlType.REFUND_INTEGRITY,
+                name="Refund Principal Integrity",
+                parameters={
+                    "maximum_deductions": 1,
+                    "refund_fee": "0.00",
+                    "tolerance": "0.01",
+                    "currency": "INR",
+                },
+                conditions=["successful refund"],
+            )
+        if (
+            "cumulative successful refund principal" in lower
+            and "captured payment principal" in lower
+        ):
+            add(
+                clause,
+                key="REFUND_AMOUNT_LIMIT",
+                control_type=ControlType.LIFECYCLE_VALIDITY,
+                name="Refund Amount Limit",
+                parameters={
+                    "maximum_cumulative_refund": "captured_payment_principal",
+                    "currency": "INR",
+                },
+                conditions=["successful refund", "captured payment"],
+            )
+        if "unlisted settlement fee" in lower or "unlisted settlement deduction" in lower:
+            add(
+                clause,
+                key="UNSUPPORTED_SETTLEMENT_FEE",
+                control_type=ControlType.UNSUPPORTED_FEE,
+                name="Unlisted Settlement Fee",
+                parameters={"expected_amount": "0.00", "tolerance": "0.01", "currency": "INR"},
+                conditions=["settlement deduction"],
+            )
+        if "bank credit" in lower and "gross" in lower and "approved" in lower:
+            add(
+                clause,
+                key="SETTLEMENT_BANK_ARITHMETIC",
+                control_type=ControlType.SETTLEMENT_ARITHMETIC,
+                name="Settlement and Bank Arithmetic",
+                parameters={"tolerance": "0.01", "currency": "INR"},
+                conditions=["processed settlement", "corresponding bank credit"],
+            )
+        if (
+            "chargeback administration fee" in lower
+            and "chargeback" in lower
+            and ("for each valid chargeback" in lower or "allowed fee" in lower)
+        ):
+            fee_match = re.search(
+                r"(?:administration fee of|allowed fee\s*:)\s*(?:inr\s*)?(\d+(?:\.\d+)?)",
+                text,
+                re.IGNORECASE,
+            )
+            if fee_match is None:
+                continue
+            add(
+                clause,
+                key="CHARGEBACK_ADMIN_FEE",
+                control_type=ControlType.UNSUPPORTED_FEE,
+                name="Chargeback Administration Fee",
+                parameters={
+                    "fee": _money_string(Decimal(fee_match.group(1))),
+                    "maximum_deductions": 1,
+                    "native_entity": "CHARGEBACK",
+                    "tolerance": "0.01",
+                    "currency": "INR",
+                },
+                conditions=["valid chargeback", "unique chargeback identifier"],
+            )
+    return candidates
 
 
 class BlindSpotRemediationController:
@@ -334,7 +640,12 @@ class AgreementControlCompiler:
         }
 
     async def _generate_controls(self, state: ControlWorkflowState) -> ControlWorkflowState:
-        fallback = ControlCandidateBatch.model_validate({"candidates": state["seed_candidates"]})
+        fallback_candidates = [
+            TypedControlCandidate.model_validate(item) for item in state.get("seed_candidates", [])
+        ]
+        if not fallback_candidates:
+            fallback_candidates = _deterministic_candidates(state.get("clauses", []))
+        fallback = ControlCandidateBatch(candidates=fallback_candidates)
         batch = fallback
         mode = "DETERMINISTIC_FALLBACK"
         if self.provider is not None:
@@ -355,6 +666,9 @@ class AgreementControlCompiler:
                 mode = "MODEL_STRUCTURED_OUTPUT"
             except Exception:
                 mode = "MODEL_DEGRADED_TO_FALLBACK"
+        if not batch.candidates and fallback.candidates:
+            batch = fallback
+            mode = "DETERMINISTIC_FALLBACK"
         return {
             "proposals": [item.model_dump(mode="json") for item in batch.candidates],
             "trace": [
@@ -368,6 +682,7 @@ class AgreementControlCompiler:
         }
 
     async def _validate_schemas(self, state: ControlWorkflowState) -> ControlWorkflowState:
+        warnings: list[str] = []
         try:
             batch = ControlCandidateBatch.model_validate({"candidates": state["proposals"]})
             clauses = {str(clause.get("id")): clause for clause in state["clauses"]}
@@ -377,6 +692,7 @@ class AgreementControlCompiler:
                 if clause is None:
                     valid = False
                     break
+                warnings.extend(validate_candidate_evidence(candidate, [clause]))
                 clause_from = clause.get("effective_from")
                 clause_to = clause.get("effective_to")
                 if clause_from and candidate.effective_from.isoformat() < str(clause_from):
@@ -392,18 +708,27 @@ class AgreementControlCompiler:
             valid = False
         return {
             "schema_valid": valid,
+            "validation_warnings": warnings,
             "trace": [
                 _step(
                     state,
                     "validate_schemas",
-                    "All draft schemas are valid." if valid else "One or more schemas are invalid.",
-                    status="COMPLETE" if valid else "REJECTED",
+                    (
+                        "All draft schemas and source evidence are valid."
+                        if valid and not warnings
+                        else f"{len(warnings)} source-evidence warning(s) require review."
+                        if valid
+                        else "One or more schemas are invalid."
+                    ),
+                    status="COMPLETE" if valid and not warnings else "REVIEW_REQUIRED",
+                    details={"warnings": warnings},
                 )
             ],
         }
 
     async def _detect_conflicts(self, state: ControlWorkflowState) -> ControlWorkflowState:
         by_key: dict[str, list[TypedControlCandidate]] = {}
+        warnings: list[str] = []
         for raw in state.get("proposals", []):
             proposal = TypedControlCandidate.model_validate(raw)
             by_key.setdefault(proposal.logical_control_key, []).append(proposal)
@@ -414,6 +739,9 @@ class AgreementControlCompiler:
             for index, proposal in enumerate(ordered):
                 if proposal.version in seen_versions:
                     conflicts += 1
+                    warnings.append(
+                        f"{proposal.logical_control_key}: duplicate version {proposal.version}"
+                    )
                 seen_versions.add(proposal.version)
                 if index == 0:
                     continue
@@ -424,20 +752,30 @@ class AgreementControlCompiler:
                 )
                 if overlaps:
                     conflicts += 1
+                    warnings.append(
+                        f"{proposal.logical_control_key}: effective periods overlap at "
+                        f"{proposal.effective_from.isoformat()}"
+                    )
         return {
             "conflict_count": conflicts,
+            "validation_warnings": [*state.get("validation_warnings", []), *warnings],
             "trace": [
                 _step(
                     state,
                     "detect_conflicts",
                     f"Detected {conflicts} candidate key conflict(s) for human resolution.",
                     status="COMPLETE" if conflicts == 0 else "REVIEW_REQUIRED",
+                    details={"warnings": warnings},
                 )
             ],
         }
 
     async def _human_approval(self, state: ControlWorkflowState) -> ControlWorkflowState:
-        ready = state.get("schema_valid", False) and state.get("conflict_count", 0) == 0
+        ready = (
+            state.get("schema_valid", False)
+            and state.get("conflict_count", 0) == 0
+            and not state.get("validation_warnings", [])
+        )
         status = "AWAITING_HUMAN_APPROVAL" if ready else "REVIEW_REQUIRED"
         return {
             "final_status": status,
@@ -480,6 +818,7 @@ class AgreementControlCompiler:
             proposals=[TypedControlCandidate.model_validate(item) for item in result["proposals"]],
             schema_valid=result["schema_valid"],
             conflict_count=result["conflict_count"],
+            validation_warnings=result.get("validation_warnings", []),
             trace=[AgentTraceStep.model_validate(item) for item in result["trace"]],
             started_at=started_at,
             completed_at=_now(),

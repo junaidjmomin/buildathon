@@ -206,6 +206,9 @@ class AgreementClauseRecord(Base):
     )
     created_by: Mapped[str | None] = mapped_column(String(160))
     content_hash: Mapped[str] = mapped_column(String(64))
+    clause_number: Mapped[str | None] = mapped_column(String(32))
+    clause_title: Mapped[str | None] = mapped_column(String(240))
+    source_offsets: Mapped[dict[str, Any] | None] = mapped_column(JSON_DOCUMENT)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
@@ -262,6 +265,7 @@ class ControlProposalRecord(Base):
     source_excerpt: Mapped[str] = mapped_column(Text)
     extraction_method: Mapped[str] = mapped_column(String(80))
     proposed_control: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT)
+    validation_warnings: Mapped[list[str] | None] = mapped_column(JSON_DOCUMENT)
     execution_id: Mapped[str | None] = mapped_column(String(120))
     version: Mapped[int] = mapped_column(Integer, default=1)
     verification_status: Mapped[str] = mapped_column(String(32), default="NOT_RUN")
