@@ -29,7 +29,7 @@ from app.domain.models import (
     Violation,
 )
 from app.ingestion.csv import parse_source_csv
-from app.main import app
+from app.main import REQUIRED_SCHEMA_REVISION, app
 from app.mutations.engine import execute_mutation_test
 from app.persistence.database import get_engine, get_session_factory
 from app.persistence.orm import (
@@ -769,6 +769,26 @@ def test_migrations_are_immutable_and_upgrade_from_empty_database(tmp_path: Path
         check=True,
         capture_output=True,
         text=True,
+    )
+
+
+def test_readiness_schema_pin_matches_alembic_head() -> None:
+    """The readiness check pins one revision; it must always equal the head.
+
+    A migration merged without bumping REQUIRED_SCHEMA_REVISION leaves every
+    deployed container permanently not-ready (503) even though migrations
+    succeeded — exactly the CI failure this guards against.
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    backend_dir = Path(__file__).parents[1]
+    script = ScriptDirectory.from_config(Config(str(backend_dir / "alembic.ini")))
+    head = script.get_current_head()
+    assert REQUIRED_SCHEMA_REVISION == head, (
+        "app.main.REQUIRED_SCHEMA_REVISION is stale: alembic head is "
+        f"{head!r} but readiness requires {REQUIRED_SCHEMA_REVISION!r}. "
+        "Update the pin so /health/ready accepts the migrated schema."
     )
 
 
