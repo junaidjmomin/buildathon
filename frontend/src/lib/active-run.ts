@@ -6,7 +6,7 @@ const ACTIVE_RUN_KEY = "sl3dge.active-run-id";
 const ACTIVE_RUN_EVENT = "sl3dge:active-run-changed";
 
 // A seeded demo selection is session-scoped only. Persisting it made the
-// NovaCart demo resurface as the default workspace on every fresh page load,
+// seeded data resurface as the default workspace on every fresh page load,
 // even after real uploaded runs existed.
 let sessionOverride: string | null = null;
 

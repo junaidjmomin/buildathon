@@ -1,7 +1,0 @@
-settlement_id,expected_result,violation_type,clause_ref,expected_impact,notes
-SET_CLAUSE_0005,VIOLATION,SETTLEMENT_BANK_ARITHMETIC,6.2,10.00,Bank credit intentionally INR 10.00 below expected settlement.
-SET_CLAUSE_0035,VIOLATION,SETTLEMENT_BANK_ARITHMETIC,6.2,10.00,Bank credit intentionally INR 10.00 below expected settlement.
-SET_CLAUSE_0048,VIOLATION,SETTLEMENT_BANK_ARITHMETIC,6.2,10.00,Bank credit intentionally INR 10.00 below expected settlement.
-SET_CLAUSE_0002,VIOLATION,MISSING_BANK_SETTLEMENT,6.4,0.00,Settlement has no corresponding bank credit.
-SET_CLAUSE_0018,VIOLATION,MISSING_BANK_SETTLEMENT,6.4,0.00,Settlement has no corresponding bank credit.
-SET_CLAUSE_0029,VIOLATION,MISSING_BANK_SETTLEMENT,6.4,0.00,Settlement has no corresponding bank credit.

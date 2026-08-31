@@ -7,6 +7,22 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _sqlalchemy_psycopg_url(value: str) -> str:
+    """Select Psycopg 3 for provider-issued PostgreSQL URLs.
+
+    Supabase and several other providers expose a generic ``postgresql://``
+    connection string. SQLAlchemy interprets that as the legacy psycopg2
+    dialect unless the driver is explicit, while this project installs
+    Psycopg 3.
+    """
+
+    if value.startswith("postgresql://"):
+        return value.replace("postgresql://", "postgresql+psycopg://", 1)
+    if value.startswith("postgres://"):
+        return value.replace("postgres://", "postgresql+psycopg://", 1)
+    return value
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -107,8 +123,12 @@ class Settings(BaseSettings):
     oidc_roles_claim: str = Field(default="roles", alias="OIDC_ROLES_CLAIM")
 
     @property
+    def sqlalchemy_database_url(self) -> str:
+        return _sqlalchemy_psycopg_url(self.database_url)
+
+    @property
     def effective_migration_url(self) -> str:
-        return self.migration_database_url or self.database_url
+        return _sqlalchemy_psycopg_url(self.migration_database_url or self.database_url)
 
     @property
     def parsed_cors_origins(self) -> list[str]:

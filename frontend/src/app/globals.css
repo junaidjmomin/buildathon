@@ -1,42 +1,70 @@
 @import "tailwindcss";
 
 /*
- * sl3dge "Control Room" theme — dark, terminal-grade surfaces for reviewing
- * financial evidence. All component colors come from these tokens; do not
- * hard-code hex values in components.
+ * sl3dge evidence workspace
+ *
+ * Existing screens intentionally consume this compact token set. Keeping the
+ * semantic contract here lets every surface move together without embedding
+ * merchant, run, or financial data in presentation code.
  */
 :root {
-  /* Surfaces */
-  --ink-900: #0a1210; /* app background */
-  --ink-800: #101b18; /* panels */
-  --ink-700: #182724; /* raised cards, sidebar */
-  --ink-600: #1f312c; /* hover surfaces, table headers */
-  --line: #24352f; /* borders, dividers */
-  --line-strong: #2f453d;
+  color-scheme: light;
 
-  /* Text */
-  --paper: #e8ede9; /* primary text */
-  --paper-dim: #93a39b; /* secondary text */
-  --paper-faint: #82918a; /* metadata, captions (AA on all surfaces) */
+  /* Local system stacks keep rendering deterministic and avoid a build-time
+     dependency on a third-party font host. */
+  --font-interface: "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, -apple-system,
+    BlinkMacSystemFont, sans-serif;
+  --font-data: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 
-  /* Status & accents */
-  --evergreen: #2fbd7f; /* verify / pass / primary action */
-  --evergreen-deep: #174b3b;
-  --amber: #e3b341; /* pending, unresolved */
-  --crimson: #e2604f; /* violations, errors */
-  --crimson-deep: #5a241d;
-  --sky: #5fb6d9; /* informational, links */
+  /* Local-first stacks keep rendering deterministic and network-independent. */
+  --font-interface: "Aptos", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-data: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 
-  /* Motion */
-  --motion-fast: 150ms;
-  --motion-content: 200ms;
+  /* Workspace surfaces */
+  --ink-900: #f3f1eb;
+  --ink-800: #fffefa;
+  --ink-700: #f6f3ec;
+  --ink-600: #ece8de;
+  --line: #ded8cc;
+  --line-strong: #c6beb0;
+
+  /* Content */
+  --paper: #182522;
+  --paper-dim: #52615b;
+  --paper-faint: #68766f;
+
+  /* Actions and evidence states */
+  --evergreen: #0b705b;
+  --evergreen-deep: #084d40;
+  --evergreen-soft: #e3f0eb;
+  --evergreen-line: #a9cfc2;
+  --amber: #956208;
+  --amber-soft: #fbf0d7;
+  --amber-line: #ddc38c;
+  --crimson: #b13d37;
+  --crimson-deep: #762923;
+  --crimson-soft: #fae9e6;
+  --crimson-line: #e5b5af;
+  --sky: #246b88;
+  --sky-soft: #e5f0f4;
+  --sky-line: #b2ced9;
+
+  /* Navigation is deliberately distinct from the working canvas. */
+  --nav-900: #102420;
+  --nav-800: #162d28;
+  --nav-line: #29413b;
+  --nav-text: #f2f5f1;
+  --nav-muted: #a9b8b2;
+  --nav-active: #1d3c35;
+  --nav-accent: #82cdb7;
+
+  /* Depth and motion */
+  --shadow-panel: 0 1px 2px rgba(24, 37, 34, 0.04), 0 8px 24px rgba(24, 37, 34, 0.035);
+  --shadow-drawer: 12px 0 40px rgba(8, 24, 20, 0.2);
+  --overlay: rgba(16, 36, 32, 0.48);
+  --motion-fast: 140ms;
+  --motion-content: 190ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* Native select menus otherwise inherit a light OS menu with near-white text. */
-select option {
-  background: #102522;
-  color: #edf5ef;
 }
 
 @theme inline {
@@ -55,66 +83,164 @@ select option {
   --color-amber: var(--amber);
   --color-crimson: var(--crimson);
   --color-sky: var(--sky);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-interface);
+  --font-mono: var(--font-data);
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
+html {
+  min-width: 320px;
+  scroll-padding-top: 5rem;
+  background: var(--ink-900);
+}
+
 body {
+  min-width: 320px;
   margin: 0;
-  background:
-    radial-gradient(ellipse 60rem 40rem at 85% -10%, rgba(47, 189, 127, 0.06), transparent),
-    var(--ink-900);
+  background: var(--ink-900);
   color: var(--paper);
-  font-family: var(--font-geist-sans), Arial, sans-serif;
+  font-family: var(--font-interface);
+  font-feature-settings: "kern" 1, "ss01" 1;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+}
+
+button,
+select,
+label[for],
+input[type="file"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+select {
+  color-scheme: light;
+}
+
+select option {
+  background: var(--ink-800);
+  color: var(--paper);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--paper-faint);
+  opacity: 1;
 }
 
 ::selection {
-  background: rgba(47, 189, 127, 0.32);
+  background: #c9e5db;
+  color: var(--evergreen-deep);
 }
 
-/* Inputs restyle focus via focus:border-*; everything else (buttons, links,
-   selects) relies on this keyboard-only indicator. */
 :focus-visible {
   outline: 2px solid var(--evergreen);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
-/* Transitions are limited to transform/opacity/color so they never trigger
-   layout; users who prefer reduced motion get none. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 1px;
+}
+
+/* Legacy action markup uses dark text from the former neon-green theme. */
+:where(button, a)[class*="bg-[var(--evergreen)]"] {
+  color: #ffffff !important;
+}
+
+a,
+button {
+  text-underline-offset: 0.18em;
+}
+
+.mobile-nav-trigger {
+  background: var(--ink-800);
+  color: var(--paper);
+}
+
+.mobile-nav-trigger:hover {
+  background: var(--ink-700);
+}
+
+.mobile-nav-surface {
+  color: var(--nav-text);
+}
+
+table {
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+th {
+  font-weight: 600;
+  text-align: left;
+}
+
+th,
+td {
+  vertical-align: middle;
+}
+
+/* Flat, quiet containment: borders carry hierarchy, not effects. */
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 0.625rem;
+  background: var(--ink-800);
+  box-shadow: var(--shadow-panel);
+}
+
+.number-tabular {
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.skeleton {
+  border-radius: 0.375rem;
+  background: var(--ink-600);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.52;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
+    scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }
 
-.panel {
-  border: 1px solid var(--line);
-  background: var(--ink-800);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 0 12px 40px rgba(0, 0, 0, 0.25);
-}
+@media print {
+  :root {
+    --ink-900: #ffffff;
+    --ink-800: #ffffff;
+    --ink-700: #f5f5f2;
+    --ink-600: #eeeeea;
+  }
 
-.number-tabular {
-  font-variant-numeric: tabular-nums;
-}
+  body {
+    background: #ffffff;
+  }
 
-/* Skeleton shimmer for pending states; sits on the darkest surface. */
-.skeleton {
-  border-radius: 0.5rem;
-  background: linear-gradient(100deg, var(--ink-700) 40%, var(--ink-600) 50%, var(--ink-700) 60%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
-}
-
-@keyframes skeleton-shimmer {
-  to {
-    background-position: -200% 0;
+  .panel {
+    box-shadow: none;
   }
 }

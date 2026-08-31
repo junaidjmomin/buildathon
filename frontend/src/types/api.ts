@@ -111,6 +111,7 @@ export interface RunListItem {
 export interface Violation {
   id: string;
   payment_id: string;
+  target_type: string;
   category: string;
   expected: string;
   actual: string;

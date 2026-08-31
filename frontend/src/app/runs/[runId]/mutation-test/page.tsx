@@ -1,15 +1,12 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Beaker,
   Check,
   CircleAlert,
-  EyeOff,
-  LoaderCircle,
   RefreshCw,
   ShieldCheck,
-  Target,
   TrendingUp,
   X,
 } from "lucide-react";
@@ -17,20 +14,21 @@ import { useParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 import { Badge, PageHeader } from "@/components/ui/primitives";
+import {
+  EmptySection,
+  InlineNotice,
+  SectionHeader,
+  SummaryStrip,
+} from "@/components/ui/workspace";
 import { api } from "@/lib/api";
 import { formatPercent } from "@/lib/format";
+import type { Control, MutationTestSummary } from "@/types/api";
 
-const LABELS: Record<string, string> = {
-  MDR_RATE_INCREASE: "MDR rate increase",
-  GST_BASE_CORRUPTION: "GST base corruption",
-  DUPLICATE_REFUND_DEDUCTION: "Duplicate refund",
-  SETTLEMENT_DELAY: "Settlement delay",
-  UNSUPPORTED_FEE: "Unsupported fee",
-  FAILED_PAYMENT_SETTLED: "Failed payment settled",
-  REFUND_EXCEEDS_PAYMENT: "Refund exceeds payment",
-  DUPLICATE_CHARGEBACK_FEE: "Duplicate chargeback fee",
-  PAYMENT_METHOD_RECLASSIFICATION: "Method reclassification",
-};
+const humanize = (value: string) =>
+  value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/(^|\s)\S/g, (character) => character.toUpperCase());
 
 export default function MutationTestPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -42,278 +40,301 @@ export default function MutationTestPage() {
       autoRunStarted.current = true;
       mutation.mutate();
     }
-    // Run one isolated suite on first entry.
+    // Run one isolated suite on first entry in demo mode.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <main className="mx-auto max-w-[1240px] px-5 py-7 md:px-8 md:py-9">
-      <div className="mb-7 flex flex-col justify-between gap-5 md:flex-row md:items-end">
+    <main className="mx-auto max-w-[1240px] px-5 py-8 md:px-8 md:py-10">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
         <PageHeader
+          back={{ href: "/", label: "Control run" }}
           eyebrow={
             <>
-              <Beaker size={14} /> Financial mutation testing
+              <Beaker size={14} /> Control quality
             </>
           }
-          title="Test the controls themselves"
-          subtitle="Inject realistic faults into a derived copy, rerun approved controls, and expose what the control suite cannot see."
-          back={{ href: "/", label: "Back to control run" }}
+          title="Mutation test the control suite"
+          subtitle={
+            <>
+              Run <span className="font-mono text-[var(--paper)]">{runId}</span> · Inject
+              isolated faults into a derived copy and record which failure modes remain unseen.
+            </>
+          }
         />
         <button
-          onClick={() => mutation.mutate()}
+          aria-busy={mutation.isPending}
+          className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-4 py-2.5 text-xs font-semibold text-[var(--ink-800)] transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
           disabled={mutation.isPending}
-          className="flex items-center justify-center gap-2 rounded-xl bg-[var(--evergreen)] px-4 py-3 text-sm font-medium text-[#06120c] transition duration-150 disabled:opacity-60"
+          onClick={() => mutation.mutate()}
+          type="button"
         >
-          <RefreshCw size={15} className={mutation.isPending ? "animate-spin" : ""} /> Run suite again
+          <RefreshCw aria-hidden="true" className={mutation.isPending ? "animate-spin" : ""} size={14} />
+          {mutation.data ? "Run new suite" : "Run mutation suite"}
         </button>
       </div>
 
-      {mutation.isPending && (
-        <div className="panel grid min-h-80 place-items-center rounded-2xl text-center">
+      {mutation.isPending ? (
+        <section className="panel grid min-h-72 place-items-center rounded-xl px-5 text-center" role="status">
           <div>
-            <LoaderCircle className="mx-auto mb-3 animate-spin text-[var(--evergreen)]" />
-            <p className="text-sm font-medium text-[var(--paper)]">Injecting 50 isolated mutations</p>
+            <RefreshCw className="mx-auto animate-spin text-[var(--evergreen)]" size={22} />
+            <p className="mt-3 text-sm font-medium text-[var(--paper)]">Executing isolated mutations</p>
             <p className="mt-1 text-xs text-[var(--paper-dim)]">Canonical run data remains read-only.</p>
           </div>
-        </div>
+        </section>
+      ) : mutation.isError ? (
+        <InlineNotice tone="negative">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <span>{mutation.error.message}</span>
+            <button className="shrink-0 font-semibold underline underline-offset-2" onClick={() => mutation.mutate()} type="button">
+              Retry suite
+            </button>
+          </div>
+        </InlineNotice>
+      ) : mutation.data ? (
+        <MutationResults data={mutation.data} runId={runId} />
+      ) : (
+        <section className="panel overflow-hidden rounded-xl">
+          <EmptySection
+            body="Start an isolated test when you are ready to create a new control-quality result. Source data is never mutated."
+            title="No mutation result recorded in this session"
+          />
+        </section>
       )}
-      {mutation.isError && (
-        <div className="panel rounded-2xl p-8 text-center">
-          <CircleAlert className="mx-auto mb-3 text-[var(--crimson)]" />
-          <p className="font-medium text-[var(--paper)]">Mutation suite could not be executed.</p>
-        </div>
-      )}
-      {!mutation.data && !mutation.isPending && !mutation.isError && (
-        <div className="panel rounded-2xl p-8 text-center">
-          <Beaker className="mx-auto mb-3 text-[var(--evergreen)]" />
-          <p className="font-medium text-[var(--paper)]">Mutation testing is an explicit production action.</p>
-          <p className="mt-2 text-xs text-[var(--paper-dim)]">
-            Start the isolated suite when you are ready to record a new control-quality result.
-          </p>
-        </div>
-      )}
-
-      {mutation.data && <MutationResults data={mutation.data} runId={runId} />}
     </main>
   );
 }
 
-function MutationResults({ data, runId }: { data: Awaited<ReturnType<typeof api.runMutationTest>>; runId: string }) {
+function MutationResults({ data, runId }: { data: MutationTestSummary; runId: string }) {
   const missed = data.results.filter((result) => !result.detected);
+  const missedControlTypes = new Set(missed.map((result) => result.expected_control_type));
+  const controls = useQuery({ queryKey: ["controls"], queryFn: api.controls });
+  const candidates = (controls.data ?? []).filter(
+    (control) => control.status !== "APPROVED" && missedControlTypes.has(control.control_type),
+  );
+
   return (
     <div className="space-y-6">
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Metric icon={Beaker} label="Mutations injected" value={String(data.mutation_count)} />
-        <Metric icon={ShieldCheck} label="Detected" value={String(data.detected_count)} tone="green" />
-        <Metric icon={EyeOff} label="Missed" value={String(data.missed_count)} tone="orange" />
-        <Metric icon={Target} label="Detection rate" value={formatPercent(data.mutation_detection_rate, 0)} tone="green" />
-        <Metric icon={CircleAlert} label="False positives" value={String(data.false_positive_count)} />
-      </section>
+      <SummaryStrip
+        columns="five"
+        label="Mutation suite result"
+        items={[
+          { label: "Injected", value: data.mutation_count.toLocaleString("en-IN") },
+          { label: "Detected", value: data.detected_count.toLocaleString("en-IN"), tone: "positive" },
+          {
+            label: "Missed",
+            value: data.missed_count.toLocaleString("en-IN"),
+            tone: data.missed_count ? "negative" : "positive",
+          },
+          {
+            label: "Detection rate",
+            value: formatPercent(data.mutation_detection_rate, 0),
+            tone: data.missed_count ? "warning" : "positive",
+          },
+          {
+            label: "False positives",
+            value: data.false_positive_count.toLocaleString("en-IN"),
+            tone: data.false_positive_count ? "negative" : "positive",
+          },
+        ]}
+      />
 
-      <section className="rounded-2xl border border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.08)] p-4">
-        <div className="flex items-center gap-3">
-          <span className="grid h-9 w-9 place-items-center rounded-lg bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]">
-            <Check size={17} />
+      <InlineNotice tone={data.canonical_data_unchanged ? "positive" : "negative"}>
+        <span className="flex items-start gap-2">
+          {data.canonical_data_unchanged ? (
+            <Check aria-hidden="true" className="mt-0.5 shrink-0" size={14} />
+          ) : (
+            <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={14} />
+          )}
+          <span>
+            <strong>{data.canonical_data_unchanged ? "Canonical dataset unchanged." : "Canonical dataset check failed."}</strong>{" "}
+            Each mutation is expected to run against a derived copy of the source run.
           </span>
-          <div>
-            <p className="text-sm font-semibold text-[var(--paper)]">Canonical dataset unchanged</p>
-            <p className="mt-0.5 text-xs text-[var(--paper-dim)]">
-              Every fault ran against a deep derived copy. The source run hash-equivalent serialization is intact.
-            </p>
-          </div>
-        </div>
-      </section>
+        </span>
+      </InlineNotice>
 
-      <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="panel overflow-hidden rounded-2xl">
-          <div className="border-b border-[var(--line)] px-5 py-4">
-            <h2 className="text-sm font-semibold text-[var(--paper)]">Coverage by fault type</h2>
-            <p className="mt-1 text-xs text-[var(--paper-faint)]">Actual control-engine outcome for each injected class</p>
-          </div>
-          <div className="divide-y divide-[var(--line)]">
-            {data.coverage.map((item) => {
-              const rate = item.injected ? (item.detected / item.injected) * 100 : 0;
-              return (
-                <div key={item.mutation_type} className="px-5 py-3.5">
-                  <div className="mb-2 flex items-center justify-between gap-4 text-xs">
-                    <span className="font-medium text-[var(--paper)]">{LABELS[item.mutation_type] ?? item.mutation_type}</span>
-                    <span
-                      className={`number-tabular font-mono font-semibold ${
-                        rate === 100 ? "text-[var(--evergreen)]" : "text-[var(--crimson)]"
-                      }`}
-                    >
-                      {item.detected}/{item.injected} · {rate.toFixed(0)}%
-                    </span>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
+        <section className="panel overflow-hidden rounded-xl">
+          <SectionHeader
+            title="Detection coverage by fault type"
+            description="Exact detected and injected counts from this suite."
+            meta={`${data.coverage.length.toLocaleString("en-IN")} fault types`}
+          />
+          {data.coverage.length ? (
+            <div className="divide-y divide-[var(--line)]">
+              {data.coverage.map((item) => {
+                const rate = item.injected ? (item.detected / item.injected) * 100 : 0;
+                const complete = item.detected === item.injected;
+                return (
+                  <div className="px-5 py-4" key={item.mutation_type}>
+                    <div className="mb-2 flex items-center justify-between gap-4 text-xs">
+                      <span className="font-medium text-[var(--paper)]">{humanize(item.mutation_type)}</span>
+                      <span
+                        className={`number-tabular font-mono font-semibold ${
+                          complete ? "text-[var(--evergreen)]" : "text-[var(--crimson)]"
+                        }`}
+                      >
+                        {item.detected}/{item.injected} · {rate.toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-[var(--ink-700)]">
+                      <div
+                        className={`h-full rounded-full ${complete ? "bg-[var(--evergreen)]" : "bg-[var(--crimson)]"}`}
+                        style={{ width: `${rate}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-[var(--ink-700)]">
-                    <div
-                      className={`h-full rounded-full ${rate === 100 ? "bg-[var(--evergreen)]" : "bg-[var(--crimson)]"}`}
-                      style={{ width: `${rate}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-[var(--paper)]">Control blind spots</h2>
-              <p className="mt-1 text-xs text-[var(--paper-faint)]">Missed mutations requiring governance</p>
+                );
+              })}
             </div>
-            <Badge status="UNRESOLVED" label={`${missed.length} OPEN`} />
-          </div>
-          <div className="space-y-3">
-            {missed.map((item) => (
-              <div key={item.id} className="rounded-xl border border-[rgba(226,96,79,0.35)] bg-[rgba(226,96,79,0.08)] p-4">
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.13em] text-[var(--crimson)]">
-                      {item.id} · Control blind spot
-                    </p>
-                    <h3 className="mt-1 text-sm font-semibold text-[var(--paper)]">{LABELS[item.mutation_type]}</h3>
-                  </div>
-                  <X size={16} className="text-[var(--crimson)]" />
-                </div>
-                <p className="text-xs leading-5 text-[var(--paper-dim)]">{item.description}</p>
-                <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--line)] pt-3 text-[10px]">
-                  <div>
-                    <dt className="text-[var(--paper-faint)]">Expected control</dt>
-                    <dd className="number-tabular mt-1 font-mono font-semibold text-[var(--paper)]">
-                      {item.expected_control_type}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[var(--paper-faint)]">Why missed</dt>
-                    <dd className="number-tabular mt-1 font-mono font-semibold text-[var(--paper)]">{item.blind_spot_reason}</dd>
-                  </div>
-                </dl>
+          ) : (
+            <EmptySection body="This result did not include fault-type coverage." title="No coverage breakdown" />
+          )}
+        </section>
+
+        <div className="space-y-5">
+          <section className="panel overflow-hidden rounded-xl">
+            <SectionHeader
+              title="Open control blind spots"
+              description="Missed mutations that require a control or evidence decision."
+              meta={<Badge label={`${missed.length} open`} status={missed.length ? "UNRESOLVED" : "PASS"} />}
+            />
+            {missed.length ? (
+              <div className="divide-y divide-[var(--line)]">
+                {missed.map((item) => (
+                  <article className="px-5 py-4" key={item.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--crimson)]">
+                          {item.id} · {humanize(item.mutation_type)}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-[var(--paper)]">{item.description}</p>
+                      </div>
+                      <X aria-hidden="true" className="shrink-0 text-[var(--crimson)]" size={15} />
+                    </div>
+                    <dl className="mt-3 grid gap-3 border-t border-[var(--line)] pt-3 text-[10px] sm:grid-cols-2">
+                      <div>
+                        <dt className="text-[var(--paper-faint)]">Expected control type</dt>
+                        <dd className="mt-1 font-mono font-semibold text-[var(--paper)]">
+                          {humanize(item.expected_control_type)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-[var(--paper-faint)]">Why it was missed</dt>
+                        <dd className="mt-1 font-mono font-semibold text-[var(--paper)]">
+                          {item.blind_spot_reason ? humanize(item.blind_spot_reason) : "No reason supplied"}
+                        </dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
               </div>
-            ))}
-          </div>
-          <CandidateBacktest runId={runId} />
+            ) : (
+              <EmptySection
+                body="Every injected failure mode was detected by the current control suite."
+                title="No blind spots detected"
+              />
+            )}
+          </section>
+
+          {controls.isPending ? (
+            <InlineNotice>Checking for draft controls that match the missed fault types…</InlineNotice>
+          ) : controls.isError ? (
+            <InlineNotice tone="negative">Candidate controls could not be loaded.</InlineNotice>
+          ) : candidates.length ? (
+            candidates.map((candidate) => <CandidateBacktest candidate={candidate} key={candidate.id} runId={runId} />)
+          ) : missed.length ? (
+            <InlineNotice>
+              No draft control currently matches the expected control types above. Add a sourced proposal from an agreement before backtesting.
+            </InlineNotice>
+          ) : null}
         </div>
-      </section>
+      </div>
     </div>
   );
 }
 
-function CandidateBacktest({ runId }: { runId: string }) {
-  const controlId = "CTRL_UNSUPPORTED_FEE_CANDIDATE";
-  const controls = useQuery({ queryKey: ["controls"], queryFn: api.controls });
-  const backtest = useMutation({ mutationFn: () => api.backtestControl(controlId, runId) });
-  const approve = useMutation({ mutationFn: () => api.approveControl(controlId) });
-  const candidateAvailable = controls.data?.some((control) => control.id === controlId) ?? false;
-  if (controls.isError || (!controls.isPending && !candidateAvailable)) {
-    return (
-      <div className="mt-4 rounded-xl border border-[var(--line)] bg-[var(--ink-700)] p-4">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[var(--paper-faint)]">Candidate control</p>
-        <p className="mt-2 text-xs leading-5 text-[var(--paper-dim)]">
-          No unsupported-fee candidate is registered for this run. Add and approve a control from an agreement before
-          backtesting it.
+function CandidateBacktest({ candidate, runId }: { candidate: Control; runId: string }) {
+  const queryClient = useQueryClient();
+  const backtest = useMutation({ mutationFn: () => api.backtestControl(candidate.id, runId) });
+  const approve = useMutation({
+    mutationFn: () => api.approveControl(candidate.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["controls"] }),
+  });
+
+  return (
+    <section className="panel overflow-hidden rounded-xl">
+      <SectionHeader
+        title={candidate.name}
+        description={`${candidate.expected} · ${candidate.scope}`}
+        meta={<Badge label={approve.isSuccess ? "Approved" : candidate.status} status={approve.isSuccess ? "PASS" : "DRAFT"} />}
+      />
+      <div className="p-5">
+        <p className="font-mono text-[10px] text-[var(--paper-faint)]">
+          {candidate.source_clause} · {candidate.id}
         </p>
-      </div>
-    );
-  }
-  return (
-    <div className="mt-4 rounded-xl border border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.08)] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[var(--evergreen)]">
-            Draft candidate · Agreement clause 4.6
-          </p>
-          <h3 className="mt-1 text-sm font-semibold text-[var(--paper)]">Flag every unlisted settlement fee</h3>
-        </div>
-        <Badge status={approve.isSuccess ? "PASS" : "DRAFT"} label={approve.isSuccess ? "APPROVED" : "DRAFT"} />
-      </div>
-      {!backtest.data && (
-        <>
-          <p className="mt-2 text-xs leading-5 text-[var(--paper-dim)]">
-            Test this candidate against historical clean data and the full mutation suite before activation.
-          </p>
-          <button
-            onClick={() => backtest.mutate()}
-            disabled={backtest.isPending}
-            className="mt-3 flex items-center gap-2 rounded-lg bg-[var(--evergreen)] px-3 py-2 text-xs font-semibold text-[#06120c] transition duration-150 disabled:opacity-60"
-          >
-            {backtest.isPending ? <LoaderCircle size={13} className="animate-spin" /> : <TrendingUp size={13} />} Backtest
-            candidate
-          </button>
-        </>
-      )}
-      {backtest.data && (
-        <div className="mt-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-[var(--line)] bg-[var(--ink-700)] p-3">
-              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--paper-faint)]">Before</p>
-              <p className="number-tabular mt-1 font-mono text-xl font-semibold text-[var(--paper)]">
-                {backtest.data.before.detected_count}/{backtest.data.before.mutation_count}
-              </p>
-              <p className="text-[10px] text-[var(--paper-dim)]">mutations detected</p>
-            </div>
-            <div className="rounded-lg border border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.12)] p-3">
-              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--evergreen)]">With candidate</p>
-              <p className="number-tabular mt-1 font-mono text-xl font-semibold text-[var(--evergreen)]">
-                {backtest.data.after.detected_count}/{backtest.data.after.mutation_count}
-              </p>
-              <p className="text-[10px] text-[var(--paper-dim)]">mutations detected</p>
-            </div>
-          </div>
-          <div className="number-tabular mt-3 flex justify-between rounded-lg bg-[var(--ink-700)] px-3 py-2 font-mono text-[10px] text-[var(--paper-dim)]">
-            <span>
-              Detection coverage <strong className="text-[var(--evergreen)]">+{formatPercent(backtest.data.detection_rate_delta, 0)}</strong>
-            </span>
-            <span>
-              False-positive delta <strong className="text-[var(--paper)]">{backtest.data.false_positive_delta}</strong>
-            </span>
-          </div>
-          {!approve.isSuccess && (
-            <button
-              onClick={() => approve.mutate()}
-              disabled={approve.isPending}
-              className="mt-3 w-full rounded-lg bg-[var(--evergreen)] px-3 py-2.5 text-xs font-semibold text-[#06120c] transition duration-150 disabled:opacity-60"
-            >
-              Approve control
-            </button>
-          )}
-          {approve.isSuccess && (
-            <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-[var(--evergreen)]">
-              <Check size={13} /> Approved explicitly. Future suites will apply this control.
+        {!backtest.data ? (
+          <div className="mt-4">
+            <p className="text-xs leading-5 text-[var(--paper-dim)]">
+              Compare this sourced candidate against clean historical data and the current mutation suite before activation.
             </p>
-          )}
-          {approve.isError && <p role="alert" className="mt-3 text-xs text-[var(--crimson)]">Approval failed: {approve.error.message}</p>}
-        </div>
-      )}
-      {backtest.isError && <p role="alert" className="mt-3 text-xs text-[var(--crimson)]">Backtest failed: {backtest.error.message}</p>}
-    </div>
-  );
-}
-
-function Metric({
-  icon: Icon,
-  label,
-  value,
-  tone = "default",
-}: {
-  icon: typeof Beaker;
-  label: string;
-  value: string;
-  tone?: "default" | "green" | "orange";
-}) {
-  const colors = {
-    default: "bg-[var(--ink-700)] text-[var(--paper-dim)]",
-    green: "bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]",
-    orange: "bg-[rgba(226,96,79,0.14)] text-[var(--crimson)]",
-  };
-  return (
-    <div className="panel rounded-2xl p-5">
-      <span className={`mb-4 grid h-8 w-8 place-items-center rounded-lg ${colors[tone]}`}>
-        <Icon size={15} />
-      </span>
-      <p className="number-tabular font-mono text-2xl font-semibold tracking-[-0.04em] text-[var(--paper)]">{value}</p>
-      <p className="mt-1.5 text-xs text-[var(--paper-dim)]">{label}</p>
-    </div>
+            <button
+              aria-busy={backtest.isPending}
+              className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[var(--evergreen)] px-3.5 py-2.5 text-xs font-semibold text-[var(--ink-800)] transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+              disabled={backtest.isPending}
+              onClick={() => backtest.mutate()}
+              type="button"
+            >
+              <TrendingUp aria-hidden="true" size={13} />
+              {backtest.isPending ? "Running backtest…" : "Backtest candidate"}
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4">
+            <SummaryStrip
+              columns="three"
+              label={`${candidate.name} backtest result`}
+              items={[
+                {
+                  label: "Before",
+                  value: `${backtest.data.before.detected_count}/${backtest.data.before.mutation_count}`,
+                  detail: "mutations detected",
+                },
+                {
+                  label: "With candidate",
+                  value: `${backtest.data.after.detected_count}/${backtest.data.after.mutation_count}`,
+                  detail: "mutations detected",
+                  tone: "positive",
+                },
+                {
+                  label: "Coverage delta",
+                  value: formatPercent(backtest.data.detection_rate_delta, 0),
+                  detail: `${backtest.data.false_positive_delta} false-positive delta`,
+                  tone: "positive",
+                },
+              ]}
+            />
+            {!approve.isSuccess ? (
+              <button
+                aria-busy={approve.isPending}
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-3.5 py-2.5 text-xs font-semibold text-[var(--ink-800)] transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+                disabled={approve.isPending}
+                onClick={() => approve.mutate()}
+                type="button"
+              >
+                <ShieldCheck aria-hidden="true" size={13} />
+                {approve.isPending ? "Approving…" : "Approve control"}
+              </button>
+            ) : (
+              <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-[var(--evergreen)]" role="status">
+                <Check aria-hidden="true" size={13} /> Approved explicitly for future suites.
+              </p>
+            )}
+          </div>
+        )}
+        {backtest.isError ? <InlineNotice className="mt-3" tone="negative">{backtest.error.message}</InlineNotice> : null}
+        {approve.isError ? <InlineNotice className="mt-3" tone="negative">{approve.error.message}</InlineNotice> : null}
+      </div>
+    </section>
   );
 }

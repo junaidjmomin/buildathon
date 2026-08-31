@@ -13,16 +13,17 @@ from app.core.config import get_settings
 @lru_cache
 def get_engine() -> Engine | None:
     settings = get_settings()
-    if not settings.database_url:
+    database_url = settings.sqlalchemy_database_url
+    if not database_url:
         return None
     connect_args = {}
-    if settings.database_disable_prepared_statements and settings.database_url.startswith(
+    if settings.database_disable_prepared_statements and database_url.startswith(
         "postgresql+psycopg"
     ):
         # Safe for Supabase transaction-mode poolers; session/direct URLs may opt back in.
         connect_args["prepare_threshold"] = None
     return create_engine(
-        settings.database_url,
+        database_url,
         pool_pre_ping=True,
         pool_size=settings.database_pool_size,
         max_overflow=settings.database_max_overflow,

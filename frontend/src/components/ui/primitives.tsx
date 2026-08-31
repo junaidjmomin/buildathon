@@ -1,7 +1,8 @@
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
-/** Shared visual primitives for the Control Room theme. Every page composes
- *  these instead of restyling panels, badges, and headers inline. */
+/** Shared, data-agnostic primitives for the sl3dge evidence workspace. */
 
 export function Panel({
   children,
@@ -12,25 +13,27 @@ export function Panel({
   className?: string;
   as?: "section" | "div" | "article";
 }) {
-  return <As className={`panel rounded-2xl ${className}`}>{children}</As>;
+  return <As className={`panel rounded-[10px] ${className}`}>{children}</As>;
 }
 
 type Status = "PASS" | "VIOLATION" | "UNRESOLVED" | "PENDING" | "INFO" | "DRAFT";
 
 const badgeStyles: Record<Status, string> = {
-  PASS: "bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)] border-[rgba(47,189,127,0.35)]",
-  VIOLATION: "bg-[rgba(226,96,79,0.14)] text-[var(--crimson)] border-[rgba(226,96,79,0.35)]",
-  UNRESOLVED: "bg-[rgba(227,179,65,0.14)] text-[var(--amber)] border-[rgba(227,179,65,0.35)]",
-  PENDING: "bg-[rgba(227,179,65,0.14)] text-[var(--amber)] border-[rgba(227,179,65,0.35)]",
-  INFO: "bg-[rgba(95,182,217,0.14)] text-[var(--sky)] border-[rgba(95,182,217,0.35)]",
-  DRAFT: "bg-[rgba(147,163,155,0.14)] text-[var(--paper-dim)] border-[rgba(147,163,155,0.35)]",
+  PASS: "border-[var(--evergreen-line)] bg-[var(--evergreen-soft)] text-[var(--evergreen-deep)]",
+  VIOLATION: "border-[var(--crimson-line)] bg-[var(--crimson-soft)] text-[var(--crimson-deep)]",
+  UNRESOLVED: "border-[var(--amber-line)] bg-[var(--amber-soft)] text-[var(--amber)]",
+  PENDING: "border-[var(--amber-line)] bg-[var(--amber-soft)] text-[var(--amber)]",
+  INFO: "border-[var(--sky-line)] bg-[var(--sky-soft)] text-[var(--sky)]",
+  DRAFT: "border-[var(--line-strong)] bg-[var(--ink-700)] text-[var(--paper-dim)]",
 };
 
 export function Badge({ status, label }: { status: Status; label?: string }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${badgeStyles[status]}`}
+      className={`inline-flex min-h-6 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.07em] ${badgeStyles[status]}`}
+      data-status={status}
     >
+      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
       {label ?? status}
     </span>
   );
@@ -48,20 +51,25 @@ export function PageHeader({
   back?: { href: string; label: string };
 }) {
   return (
-    <header className="mb-7">
+    <header className="mb-7 max-w-4xl">
       {back ? (
-        <a
+        <Link
+          className="mb-4 inline-flex min-h-8 items-center gap-1.5 rounded-sm text-xs font-medium text-[var(--paper-dim)] transition-colors hover:text-[var(--evergreen)]"
           href={back.href}
-          className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--paper-dim)] transition-colors hover:text-[var(--paper)]"
         >
-          ← {back.label}
-        </a>
+          <ArrowLeft aria-hidden="true" size={14} />
+          {back.label}
+        </Link>
       ) : null}
-      <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--evergreen)]">
+      <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--evergreen)]">
         {eyebrow}
       </p>
-      <h1 className="text-3xl font-semibold tracking-[-0.035em] text-[var(--paper)]">{title}</h1>
-      {subtitle ? <p className="mt-2 text-sm text-[var(--paper-dim)]">{subtitle}</p> : null}
+      <h1 className="text-[clamp(1.75rem,3vw,2.25rem)] font-semibold leading-[1.15] tracking-[-0.035em] text-[var(--paper)]">
+        {title}
+      </h1>
+      {subtitle ? (
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--paper-dim)]">{subtitle}</p>
+      ) : null}
     </header>
   );
 }
@@ -83,12 +91,17 @@ export function StatCard({
     violation: "text-[var(--crimson)]",
     warning: "text-[var(--amber)]",
   }[tone];
+
   return (
-    <div className="panel rounded-2xl p-5">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--paper-faint)]">
+    <div className="panel rounded-[10px] p-5">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.11em] text-[var(--paper-faint)]">
         {label}
       </p>
-      <p className={`number-tabular mt-2 font-mono text-2xl font-semibold ${toneClass}`}>{value}</p>
+      <p
+        className={`number-tabular mt-2 font-mono text-2xl font-semibold tracking-[-0.03em] ${toneClass}`}
+      >
+        {value}
+      </p>
       {detail ? <p className="mt-1.5 text-xs leading-5 text-[var(--paper-dim)]">{detail}</p> : null}
     </div>
   );
@@ -109,6 +122,7 @@ export function MoneyText({
     violation: "text-[var(--crimson)]",
     warning: "text-[var(--amber)]",
   }[tone];
+
   return (
     <span className={`number-tabular font-mono font-semibold ${toneClass} ${className}`}>
       {amount}
@@ -126,28 +140,25 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="panel rounded-2xl p-8">
+    <div className="rounded-[10px] border border-dashed border-[var(--line-strong)] bg-[var(--ink-800)] p-8">
       <h2 className="text-sm font-semibold text-[var(--paper)]">{title}</h2>
-      <p className="mt-2 text-sm leading-6 text-[var(--paper-dim)]">{body}</p>
-      {action ? <div className="mt-4">{action}</div> : null}
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--paper-dim)]">{body}</p>
+      {action ? <div className="mt-5">{action}</div> : null}
     </div>
   );
 }
 
-export function ErrorState({
-  what,
-  onRetry,
-}: {
-  what: string;
-  onRetry: () => void;
-}) {
+export function ErrorState({ what, onRetry }: { what: string; onRetry: () => void }) {
   return (
-    <div className="panel rounded-2xl p-8 text-sm text-[var(--crimson)]" role="alert">
-      {what} could not be loaded.{" "}
+    <div
+      className="rounded-[10px] border border-[var(--crimson-line)] bg-[var(--crimson-soft)] p-6 text-sm text-[var(--crimson-deep)]"
+      role="alert"
+    >
+      <p className="font-medium">{what} could not be loaded.</p>
       <button
-        type="button"
+        className="mt-3 rounded-sm font-semibold text-[var(--crimson-deep)] underline decoration-[var(--crimson-line)] underline-offset-4"
         onClick={onRetry}
-        className="font-semibold underline underline-offset-2"
+        type="button"
       >
         Retry
       </button>
@@ -159,13 +170,7 @@ export function Skeleton({ className = "" }: { className?: string }) {
   return <div aria-hidden="true" className={`skeleton ${className}`} />;
 }
 
-export function PageSkeleton({
-  cards = 4,
-  rows = 4,
-}: {
-  cards?: number;
-  rows?: number;
-}) {
+export function PageSkeleton({ cards = 4, rows = 4 }: { cards?: number; rows?: number }) {
   return (
     <div aria-busy="true" role="status">
       <span className="sr-only">Loading…</span>

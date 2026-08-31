@@ -34,7 +34,6 @@ from tests.support.scoring import (
 )
 
 STRESS = load_dataset_fixture("prod_stress")
-REPORT_PATH = Path(__file__).parents[1] / "test-results" / "prod_stress_evaluation.json"
 
 
 @dataclass(frozen=True)
@@ -328,10 +327,10 @@ def test_conclusions_are_invariant_under_dataset_metadata(scored: Scored) -> Non
 # --------------------------------------------------------------------------- #
 
 
-def test_evaluation_report_is_written(scored: Scored) -> None:
-    REPORT_PATH.parent.mkdir(exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(scored.report, indent=2, sort_keys=False))
-    reloaded = json.loads(REPORT_PATH.read_text())
+def test_evaluation_report_is_written(scored: Scored, tmp_path: Path) -> None:
+    report_path = tmp_path / "prod_stress_evaluation.json"
+    report_path.write_text(json.dumps(scored.report, indent=2, sort_keys=False))
+    reloaded = json.loads(report_path.read_text())
     for key in (
         "dataset",
         "payment_primary_detection",

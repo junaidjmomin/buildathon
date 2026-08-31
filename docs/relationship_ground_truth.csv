@@ -1,3 +1,0 @@
-relationship_id,left_entity,right_entity,expected_result,clause_ref,notes
-REL_AMB_A,SET_AMB_CLAUSE_A,BANK_CLAUSE_00001,UNRESOLVED,6.3,Equal-value settlement/bank candidates without unique references; do not force a match.
-REL_AMB_B,SET_AMB_CLAUSE_B,BANK_CLAUSE_00002,UNRESOLVED,6.3,Equal-value settlement/bank candidates without unique references; do not force a match.

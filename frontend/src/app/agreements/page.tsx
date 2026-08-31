@@ -14,6 +14,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 import { Badge, ErrorState, PageHeader } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
@@ -23,8 +24,10 @@ const DEMO_MODE = process.env.NEXT_PUBLIC_APP_MODE !== "production";
 
 export default function AgreementsPage() {
   const queryClient = useQueryClient();
+  const [selectedAgreementId, setSelectedAgreementId] = useState<string | null>(null);
   const agreements = useQuery({ queryKey: ["agreements"], queryFn: api.agreements });
-  const agreement = agreements.data?.[0];
+  const agreement =
+    agreements.data?.find((item) => item.id === selectedAgreementId) ?? agreements.data?.[0];
   const proposals = useQuery({
     queryKey: ["agreement-proposals", agreement?.id],
     queryFn: () => api.agreementProposals(agreement!.id),
@@ -48,8 +51,12 @@ export default function AgreementsPage() {
   const upload = useMutation({
     mutationFn: api.uploadAgreement,
     onSuccess: (created) => {
-      queryClient.setQueryData(["agreements"], [created]);
+      queryClient.setQueryData(
+        ["agreements"],
+        [created, ...(agreements.data ?? []).filter((item) => item.id !== created.id)],
+      );
       queryClient.setQueryData(["agreement-proposals", created.id], []);
+      setSelectedAgreementId(created.id);
       // A previous extraction attempt may have failed while the agreement was
       // still being persisted.  Do not carry that stale error into the now
       // successfully uploaded agreement view.
@@ -107,9 +114,12 @@ export default function AgreementsPage() {
   }
 
   const clauses = new Map(agreement.clauses.map((clause) => [clause.id, clause]));
-  const mdrVersions = proposals.data
-    .filter((proposal) => proposal.proposed_control.logical_control_key === "DOMESTIC_CARD_MDR")
-    .sort((a, b) => a.proposed_control.version - b.proposed_control.version);
+  const controlVersions = proposals.data.slice().sort((a, b) => {
+    const keyOrder = a.proposed_control.logical_control_key.localeCompare(
+      b.proposed_control.logical_control_key,
+    );
+    return keyOrder || a.proposed_control.version - b.proposed_control.version;
+  });
 
   return (
     <main className="mx-auto max-w-[1320px] px-5 py-8 md:px-8 md:py-10">
@@ -120,29 +130,58 @@ export default function AgreementsPage() {
               <FileCheck2 size={14} /> Contract control compiler
             </>
           }
-          title="Clause to executable control"
-          subtitle="The model proposes structure. Source clauses, effective dates and explicit approval remain inspectable."
+          title="Turn clauses into governed controls"
+          subtitle="Source text, extracted proposals, deterministic checks and explicit approval remain separate and inspectable."
         />
-        <button
-          onClick={() => extract.mutate()}
-          disabled={extract.isPending}
-          className="flex items-center gap-2 rounded-xl bg-[var(--evergreen)] px-4 py-3 text-sm font-semibold text-[#06120c] transition-opacity duration-150 disabled:opacity-60"
-        >
-          {extract.isPending ? (
-            <LoaderCircle size={15} className="animate-spin" />
-          ) : (
-            <ScanText size={15} />
-          )}{" "}
-          Extract structured controls
-        </button>
+        <div className="flex w-full flex-col gap-3 md:w-auto md:items-end">
+          {agreements.data && agreements.data.length > 1 ? (
+            <label className="grid w-full gap-1.5 text-xs font-medium text-[var(--paper-dim)] md:w-72">
+              Active agreement
+              <select
+                className="h-10 w-full rounded-lg border border-[var(--line)] bg-[var(--ink-800)] px-3 text-xs font-semibold text-[var(--paper)]"
+                onChange={(event) => {
+                  setSelectedAgreementId(event.currentTarget.value);
+                  extract.reset();
+                  verify.reset();
+                  approve.reset();
+                }}
+                value={agreement.id}
+              >
+                {agreements.data.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title} · {item.merchant}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <button
+            onClick={() => extract.mutate()}
+            disabled={extract.isPending}
+            className="flex items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--evergreen-deep)] disabled:opacity-60"
+            type="button"
+          >
+            {extract.isPending ? (
+              <LoaderCircle size={15} className="animate-spin" />
+            ) : (
+              <ScanText size={15} />
+            )}{" "}
+            Extract structured controls
+          </button>
+        </div>
       </section>
 
-      <AgreementIntake agreementId={agreement.id} addClause={addClause} upload={upload} />
+      <AgreementIntake
+        agreementId={agreement.id}
+        agreementSourceType={agreement.source_type}
+        addClause={addClause}
+        upload={upload}
+      />
 
       {extract.isError ? (
         <p
           role="alert"
-          className="mb-5 rounded-xl border border-[rgba(226,96,79,0.35)] bg-[rgba(226,96,79,0.14)] px-4 py-3 text-xs text-[var(--crimson)]"
+          className="mb-5 rounded-lg border border-[var(--crimson-line)] bg-[var(--crimson-soft)] px-4 py-3 text-xs text-[var(--crimson-deep)]"
         >
           {extract.error.message}
         </p>
@@ -150,7 +189,7 @@ export default function AgreementsPage() {
       {verify.isError || approve.isError ? (
         <p
           role="alert"
-          className="mb-5 rounded-xl border border-[rgba(226,96,79,0.35)] bg-[rgba(226,96,79,0.14)] px-4 py-3 text-xs text-[var(--crimson)]"
+          className="mb-5 rounded-lg border border-[var(--crimson-line)] bg-[var(--crimson-soft)] px-4 py-3 text-xs text-[var(--crimson-deep)]"
         >
           {(verify.error ?? approve.error)?.message}
         </p>
@@ -159,7 +198,7 @@ export default function AgreementsPage() {
       <section className="panel mb-6 mt-6 rounded-2xl p-5">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
           <div className="flex items-start gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]">
+            <span className="grid h-10 w-10 place-items-center rounded-lg bg-[var(--evergreen-soft)] text-[var(--evergreen)]">
               <FileText size={18} />
             </span>
             <div>
@@ -181,7 +220,9 @@ export default function AgreementsPage() {
         <div className="mt-4 grid gap-3 border-t border-[var(--line)] pt-4 text-[10px] text-[var(--paper-faint)] sm:grid-cols-3">
           <div>
             <span className="block uppercase tracking-[0.1em]">Source</span>
-            <strong className="mt-1 block text-xs text-[var(--paper)]">{agreement.source_type}</strong>
+            <strong className="mt-1 block text-xs text-[var(--paper)]">
+              {agreement.source_type === "SEEDED_TEXT" ? "Agreement Extraction" : agreement.source_type === "PDF_UPLOAD" ? "PDF Upload" : agreement.source_type}
+            </strong>
           </div>
           <div>
             <span className="block uppercase tracking-[0.1em]">Clauses indexed</span>
@@ -235,12 +276,9 @@ export default function AgreementsPage() {
               {proposals.data.length} extracted
             </span>
           </div>
-          {DEMO_MODE ? (
-            <p className="rounded-xl border border-[var(--line)] bg-[var(--ink-700)] px-4 py-3 text-[11px] leading-5 text-[var(--paper-dim)]">
-              Verification and maker-checker approval are enabled for durable production proposals.
-              Seeded demo controls remain read-only.
-            </p>
-          ) : null}
+          <p className="rounded-xl border border-[var(--line)] bg-[var(--ink-700)] px-4 py-3 text-[11px] leading-5 text-[var(--paper-dim)]">
+            Verify proposals deterministically to unlock approval controls. Approved controls are compiled into active financial control rules.
+          </p>
           {proposals.data.map((proposal) => {
             const control = proposal.proposed_control;
             const clause = clauses.get(proposal.clause_id);
@@ -254,7 +292,7 @@ export default function AgreementsPage() {
                 key={proposal.id}
                 className={`rounded-xl border p-4 ${
                   proposal.status === "DRAFT"
-                    ? "border-[rgba(226,96,79,0.35)] bg-[rgba(226,96,79,0.08)]"
+                    ? "border-[var(--amber-line)] bg-[var(--amber-soft)]"
                     : "border-[var(--line)] bg-[var(--ink-800)]"
                 }`}
               >
@@ -276,16 +314,16 @@ export default function AgreementsPage() {
                     <Badge status={proposal.status as "DRAFT"} label={proposal.status} />
                   )}
                 </div>
-                <div className="mt-3 grid gap-3 rounded-lg bg-[var(--ink-700)] p-3 text-[10px] sm:grid-cols-2">
-                  <div>
+                <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg bg-[var(--ink-700)] p-3 text-[10px]">
+                  <div className="min-w-0">
                     <span className="text-[var(--paper-faint)]">Parameters</span>
-                    <p className="mt-1 font-mono font-semibold text-[var(--paper)]">
+                    <p className="mt-1 break-all font-mono font-semibold text-[var(--paper)]">
                       {JSON.stringify(control.parameters)}
                     </p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <span className="text-[var(--paper-faint)]">Applicability</span>
-                    <p className="mt-1 font-mono font-semibold text-[var(--paper)]">
+                    <p className="mt-1 break-words font-mono font-semibold text-[var(--paper)]">
                       {control.conditions.join(" · ")}
                     </p>
                   </div>
@@ -306,7 +344,7 @@ export default function AgreementsPage() {
                   Effective {control.effective_from} → {control.effective_to ?? "open"}
                 </p>
                 {proposal.validation_warnings?.length ? (
-                  <div className="mt-2 rounded-lg border border-[rgba(234,179,8,0.35)] bg-[rgba(234,179,8,0.08)] px-3 py-2 text-[10px] text-[#f4c95d]">
+                  <div className="mt-2 rounded-lg border border-[var(--amber-line)] bg-[var(--amber-soft)] px-3 py-2 text-[10px] text-[var(--amber)]">
                     <p className="font-semibold">Extraction validation warnings</p>
                     <ul className="mt-1 list-disc space-y-0.5 pl-4">
                       {proposal.validation_warnings.map((warning) => (
@@ -352,7 +390,7 @@ export default function AgreementsPage() {
                       </p>
                     </div>
                   ) : null}
-                  {!DEMO_MODE && reviewable ? (
+                  {reviewable ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -373,7 +411,7 @@ export default function AgreementsPage() {
                           approve.mutate({ proposalId: proposal.id, expectedVersion: proposal.version })
                         }
                         disabled={!verificationPassed || verify.isPending || approve.isPending}
-                        className="flex items-center gap-1.5 rounded-lg bg-[var(--evergreen)] px-3 py-2 text-[10px] font-semibold text-[#06120c] transition-opacity duration-150 disabled:opacity-40"
+                        className="flex items-center gap-1.5 rounded-lg bg-[var(--evergreen)] px-3 py-2 text-[10px] font-semibold text-white transition-colors hover:bg-[var(--evergreen-deep)] disabled:opacity-40"
                       >
                         {isApproving ? (
                           <LoaderCircle size={12} className="animate-spin" />
@@ -384,7 +422,7 @@ export default function AgreementsPage() {
                       </button>
                     </div>
                   ) : null}
-                  {!DEMO_MODE && verificationPassed && reviewable ? (
+                  {verificationPassed && reviewable ? (
                     <p className="mt-2 text-[9px] leading-4 text-[var(--paper-faint)]">
                       Maker-checker rule: approval must be completed by a different signed-in reviewer.
                     </p>
@@ -408,7 +446,7 @@ export default function AgreementsPage() {
           timeline
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {mdrVersions.map((proposal) => {
+          {controlVersions.map((proposal) => {
             const control = proposal.proposed_control;
             return (
               <div
@@ -418,7 +456,7 @@ export default function AgreementsPage() {
                 <div className="flex justify-between gap-3">
                   <div>
                     <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--paper-faint)]">
-                      Version {control.version}
+                      {control.logical_control_key.replaceAll("_", " ")} · version {control.version}
                     </p>
                     <p className="number-tabular mt-1 font-mono text-lg font-semibold text-[var(--paper)]">
                       {control.expected}
@@ -437,8 +475,8 @@ export default function AgreementsPage() {
           })}
         </div>
         <p className="mt-4 flex items-center gap-2 border-t border-[var(--line)] pt-4 text-[11px] text-[var(--paper-dim)]">
-          <ShieldCheck size={14} className="text-[var(--evergreen)]" /> Completed August runs continue
-          to use v1; the September amendment creates v2 instead of rewriting history.
+          <ShieldCheck size={14} className="text-[var(--evergreen)]" /> New amendments create a
+          version; they never rewrite the control definition used by a completed run.
         </p>
       </section>
     </main>
@@ -469,19 +507,21 @@ type ClauseMutation = {
 function AgreementIntake({
   upload,
   agreementId,
+  agreementSourceType,
   addClause,
 }: {
   upload: IntakeMutation;
   agreementId?: string;
+  agreementSourceType?: string;
   addClause?: ClauseMutation;
 }) {
-  const seededAgreement = DEMO_MODE && agreementId === "AGR_NOVACART_2026";
+  const seededAgreement = agreementSourceType === "SEEDED_TEXT";
   const manualDisabled = !agreementId || seededAgreement;
   return (
     <section className="mb-6 grid gap-5 lg:grid-cols-2">
       <div className="panel rounded-2xl p-5 md:p-6">
         <div className="flex items-start gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[var(--evergreen-soft)] text-[var(--evergreen)]">
             <UploadCloud size={19} />
           </span>
           <div>
@@ -545,7 +585,7 @@ function AgreementIntake({
               type="file"
               accept="application/pdf,.pdf"
               required
-              className="rounded-xl border border-dashed border-[var(--line-strong)] bg-[var(--ink-700)] px-3 py-4 text-xs text-[var(--paper-dim)] file:mr-3 file:rounded-lg file:border-0 file:bg-[rgba(47,189,127,0.14)] file:px-3 file:py-2 file:font-semibold file:text-[var(--evergreen)]"
+              className="rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--ink-700)] px-3 py-4 text-xs text-[var(--paper-dim)] file:mr-3 file:rounded-md file:border-0 file:bg-[var(--evergreen-soft)] file:px-3 file:py-2 file:font-semibold file:text-[var(--evergreen)]"
             />
           </label>
           {upload.isError ? (
@@ -556,7 +596,7 @@ function AgreementIntake({
           <button
             type="submit"
             disabled={upload.isPending}
-            className="flex items-center justify-center gap-2 rounded-xl bg-[var(--evergreen)] px-4 py-3 text-sm font-semibold text-[#06120c] transition-opacity duration-150 disabled:opacity-60 sm:col-span-2"
+            className="flex items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[var(--evergreen-deep)] disabled:opacity-60 sm:col-span-2"
           >
             {upload.isPending ? (
               <LoaderCircle size={15} className="animate-spin" />
@@ -585,9 +625,7 @@ function AgreementIntake({
         </div>
         {manualDisabled ? (
           <p className="mt-4 rounded-xl border border-[var(--line)] bg-[var(--ink-700)] px-3 py-2.5 text-[11px] leading-5 text-[var(--paper-dim)]">
-            {seededAgreement
-              ? "The seeded agreement is immutable. Upload your PDF first; the newly uploaded agreement will support manual clauses immediately."
-              : "Upload an agreement PDF first; manual clauses must belong to an agreement."}
+            {"Upload an agreement PDF first; manual clauses must belong to an agreement."}
           </p>
         ) : null}
         <form

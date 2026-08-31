@@ -1,29 +1,54 @@
-import { ArrowLeft, SearchX } from "lucide-react";
+import { FileQuestion, House } from "lucide-react";
 import Link from "next/link";
+
+import { EvidenceMap } from "@/components/brand-assets";
 
 export default function NotFound() {
   return (
-    <main className="grid min-h-[calc(100vh-4rem)] place-items-center px-5 py-12">
-      <section aria-labelledby="not-found-title" className="panel w-full max-w-xl rounded-2xl p-7 text-center sm:p-10">
-        <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]">
-          <SearchX aria-hidden="true" size={22} />
-        </span>
-        <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--evergreen)]">
-          404 · Resource not found
-        </p>
-        <h1 id="not-found-title" className="mt-2 text-2xl font-semibold tracking-[-0.035em] text-[var(--paper)]">
-          This evidence view does not exist
-        </h1>
-        <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[var(--paper-dim)]">
-          The link may be outdated, or the requested run, control, or case is not available in this workspace.
-        </p>
-        <Link
-          className="mt-7 inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-4 py-2.5 text-sm font-semibold text-[#06120c] transition duration-150 hover:brightness-110"
-          href="/"
+    <main className="grid min-h-[calc(100dvh-4rem)] place-items-center px-4 py-8 sm:px-6 lg:px-8">
+      <section
+        aria-describedby="not-found-description"
+        aria-labelledby="not-found-title"
+        className="panel grid w-full max-w-[920px] overflow-hidden rounded-xl lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]"
+      >
+        <div className="p-6 sm:p-8 lg:p-10">
+          <span className="grid h-11 w-11 place-items-center rounded-lg border border-[var(--sky-line)] bg-[var(--sky-soft)] text-[var(--sky)]">
+            <FileQuestion aria-hidden="true" size={20} strokeWidth={1.9} />
+          </span>
+          <p className="mt-6 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--sky)]">
+            404 · Page not found
+          </p>
+          <h1
+            className="mt-2 text-[clamp(1.75rem,4vw,2.25rem)] font-semibold leading-tight tracking-[-0.04em] text-[var(--paper)]"
+            id="not-found-title"
+          >
+            We can&apos;t find this page
+          </h1>
+          <p
+            className="mt-3 max-w-xl text-sm leading-6 text-[var(--paper-dim)]"
+            id="not-found-description"
+          >
+            The address may be outdated, or this resource is no longer available in the current workspace. Use
+            the overview to open a current run, control, or evidence view.
+          </p>
+
+          <Link
+            className="mt-7 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--evergreen-deep)] sm:w-auto"
+            href="/"
+          >
+            <House aria-hidden="true" size={16} />
+            Go to overview
+          </Link>
+        </div>
+
+        <div
+          aria-hidden="true"
+          className="hidden border-l border-[var(--line)] bg-[var(--ink-700)] p-3 lg:block"
         >
-          <ArrowLeft aria-hidden="true" size={15} />
-          Return to control overview
-        </Link>
+          <div className="h-full min-h-80 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--ink-800)]">
+            <EvidenceMap className="h-full w-full object-cover" decorative />
+          </div>
+        </div>
       </section>
     </main>
   );

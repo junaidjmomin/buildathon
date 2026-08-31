@@ -1,11 +1,17 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Check, Clock3, LoaderCircle, X } from "lucide-react";
+import { Activity, ArrowRight, Check, Clock3, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import { ErrorState, PageHeader } from "@/components/ui/primitives";
+import {
+  InlineNotice,
+  SectionHeader,
+  SummaryStrip,
+  WorkspaceLoading,
+} from "@/components/ui/workspace";
 import { api } from "@/lib/api";
 
 export default function RunOperationsPage() {
@@ -16,57 +22,128 @@ export default function RunOperationsPage() {
   });
 
   if (metrics.isPending) {
-    return <div className="grid min-h-[calc(100vh-64px)] place-items-center"><LoaderCircle className="animate-spin text-[var(--evergreen)]" /></div>;
+    return <WorkspaceLoading label="Loading run operations" />;
   }
   if (metrics.isError || !metrics.data) {
-    return <main className="mx-auto max-w-3xl px-5 py-10 md:px-8"><ErrorState what="Run operational metrics" onRetry={() => void metrics.refetch()} /></main>;
+    return (
+      <main className="mx-auto max-w-3xl px-5 py-10 md:px-8">
+        <ErrorState what="Run operational metrics" onRetry={() => void metrics.refetch()} />
+      </main>
+    );
   }
+
   const data = metrics.data;
   const durations = Object.entries(data.stage_durations_ms);
   const maxDuration = Math.max(...durations.map(([, value]) => value), 1);
+  const completed = data.failed_stage_count === 0 && data.completed_stage_count === data.stage_count;
 
   return (
-    <main className="mx-auto max-w-[1100px] px-5 py-8 md:px-8 md:py-10">
+    <main className="mx-auto max-w-[1160px] px-5 py-8 md:px-8 md:py-10">
       <PageHeader
-        eyebrow={<><Activity size={14} /> Run operations</>}
-        title="Is the control run healthy?"
-        subtitle="Stage-level timings and durable counters make throughput and partial failures visible without changing financial results."
-        back={{ href: "/", label: "Back to control run" }}
+        back={{ href: "/", label: "Control run" }}
+        eyebrow={
+          <>
+            <Activity size={14} /> Run operations
+          </>
+        }
+        title="Pipeline health and throughput"
+        subtitle={
+          <>
+            Run <span className="font-mono text-[var(--paper)]">{runId}</span> · Persisted stage
+            timings and output counters
+          </>
+        }
       />
 
-      <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Metric label="Stages" value={`${data.completed_stage_count}/${data.stage_count}`} />
-        <Metric label="Failed stages" value={String(data.failed_stage_count)} tone={data.failed_stage_count ? "bad" : "good"} />
-        <Metric label="Total processing" value={`${data.total_processing_ms} ms`} />
-        <Metric label="Events created" value={data.events_created.toLocaleString("en-IN")} />
-        <Metric label="Evaluations" value={data.evaluations_created.toLocaleString("en-IN")} />
+      <SummaryStrip
+        className="mb-6"
+        columns="five"
+        label="Run health summary"
+        items={[
+          {
+            label: "Run state",
+            value: completed ? "Complete" : data.failed_stage_count ? "Attention" : "In progress",
+            detail: `${data.completed_stage_count} of ${data.stage_count} stages`,
+            tone: completed ? "positive" : data.failed_stage_count ? "negative" : "warning",
+          },
+          {
+            label: "Failed stages",
+            value: data.failed_stage_count.toLocaleString("en-IN"),
+            tone: data.failed_stage_count ? "negative" : "positive",
+          },
+          {
+            label: "Total processing",
+            value: `${data.total_processing_ms.toLocaleString("en-IN")} ms`,
+          },
+          {
+            label: "Events created",
+            value: data.events_created.toLocaleString("en-IN"),
+          },
+          {
+            label: "Evaluations",
+            value: data.evaluations_created.toLocaleString("en-IN"),
+          },
+        ]}
+      />
+
+      {data.failed_stage_count > 0 ? (
+        <InlineNotice className="mb-5" tone="negative">
+          <span className="flex items-start gap-2">
+            <X className="mt-0.5 shrink-0" size={14} />
+            {data.failed_stage_count.toLocaleString("en-IN")} pipeline stage
+            {data.failed_stage_count === 1 ? "" : "s"} failed. Review the persisted backend stage
+            log before retrying this run.
+          </span>
+        </InlineNotice>
+      ) : null}
+
+      <section className="panel overflow-hidden rounded-xl">
+        <SectionHeader
+          title="Pipeline stage timings"
+          description="Relative bars make bottlenecks visible; the exact persisted duration remains the source of truth."
+          meta={`${durations.length.toLocaleString("en-IN")} recorded`}
+        />
+        {durations.length ? (
+          <ol className="divide-y divide-[var(--line)]" aria-label="Pipeline stage durations">
+            {durations.map(([stage, duration], index) => (
+              <li className="grid gap-3 px-5 py-4 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:items-center" key={stage}>
+                <span className="number-tabular font-mono text-[10px] text-[var(--paper-faint)]">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-xs font-medium text-[var(--paper)]">
+                    <Check aria-hidden="true" className="shrink-0 text-[var(--evergreen)]" size={14} />
+                    <span className="truncate">{stage.replaceAll("_", " ")}</span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--ink-700)]">
+                    <div
+                      className="h-full rounded-full bg-[var(--evergreen)]"
+                      style={{ width: `${Math.max(2, (duration / maxDuration) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+                <span className="number-tabular flex items-center gap-1 font-mono text-xs text-[var(--paper-dim)]">
+                  <Clock3 aria-hidden="true" size={12} />
+                  {duration.toLocaleString("en-IN")} ms
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="px-5 py-10 text-center text-xs text-[var(--paper-dim)]">
+            No stage timings were recorded for this run.
+          </p>
+        )}
       </section>
 
-      <section className="panel overflow-hidden rounded-2xl">
-        <div className="border-b border-[var(--line)] px-5 py-4">
-          <h2 className="text-sm font-semibold text-[var(--paper)]">Pipeline stages</h2>
-          <p className="mt-1 text-xs text-[var(--paper-faint)]">Durations are read from the run’s persisted stage log.</p>
-        </div>
-        <div className="divide-y divide-[var(--line)]">
-          {durations.length ? durations.map(([stage, duration]) => (
-            <div key={stage} className="px-5 py-4">
-              <div className="flex items-center justify-between gap-4 text-xs">
-                <div className="flex items-center gap-2 font-medium text-[var(--paper)]"><Check size={14} className="text-[var(--evergreen)]" />{stage}</div>
-                <span className="number-tabular flex items-center gap-1 font-mono text-[var(--paper-dim)]"><Clock3 size={12} />{duration} ms</span>
-              </div>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--ink-700)]"><div className="h-full rounded-full bg-[var(--evergreen)]" style={{ width: `${Math.max(2, (duration / maxDuration) * 100)}%` }} /></div>
-            </div>
-          )) : <div className="px-5 py-10 text-center text-xs text-[var(--paper-dim)]">No stage timings were recorded for this run.</div>}
-        </div>
-      </section>
-
-      {data.failed_stage_count > 0 && <div className="mt-5 flex items-center gap-2 rounded-xl border border-[rgba(226,96,79,0.35)] bg-[rgba(226,96,79,0.08)] px-4 py-3 text-xs text-[var(--crimson)]"><X size={14} /> One or more stages failed. Retry the run after checking the backend stage log.</div>}
-      <Link href={`/runs/${runId}/coverage`} className="mt-5 inline-flex rounded-lg border border-[var(--line-strong)] px-3 py-2 text-xs font-semibold text-[var(--paper)] transition-colors hover:border-[var(--evergreen)]">Inspect control coverage</Link>
+      <div className="mt-5 flex justify-end">
+        <Link
+          className="inline-flex items-center gap-2 rounded-lg border border-[var(--line-strong)] bg-[var(--ink-800)] px-3.5 py-2.5 text-xs font-semibold text-[var(--paper)] transition-colors hover:border-[var(--evergreen)] hover:text-[var(--evergreen)]"
+          href={`/runs/${runId}/coverage`}
+        >
+          Inspect control coverage <ArrowRight aria-hidden="true" size={14} />
+        </Link>
+      </div>
     </main>
   );
-}
-
-function Metric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "good" | "bad" }) {
-  const color = tone === "good" ? "text-[var(--evergreen)]" : tone === "bad" ? "text-[var(--crimson)]" : "text-[var(--paper)]";
-  return <div className="panel rounded-2xl p-5"><p className={`number-tabular font-mono text-2xl font-semibold ${color}`}>{value}</p><p className="mt-1.5 text-xs text-[var(--paper-dim)]">{label}</p></div>;
 }

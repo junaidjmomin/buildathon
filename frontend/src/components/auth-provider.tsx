@@ -16,8 +16,10 @@ import {
   beginSignOut,
   completeSignIn,
   completeSilentSignIn,
+  getCanonicalAppUrl,
   getUserManager,
   isOidcEnabled,
+  recoverCompletedSignIn,
 } from "@/lib/auth-client";
 
 type AuthContextValue = {
@@ -40,6 +42,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let active = true;
     let manager: ReturnType<typeof getUserManager>;
     try {
+      const canonicalAppUrl = getCanonicalAppUrl();
+      if (canonicalAppUrl) {
+        window.location.replace(canonicalAppUrl);
+        return () => {
+          active = false;
+        };
+      }
       manager = getUserManager();
     } catch {
       queueMicrotask(() => {
@@ -74,6 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         if (window.location.pathname === "/auth/silent-callback") {
           await completeSilentSignIn();
+          if (window.top === window.self) window.location.replace("/");
           return;
         }
         const stored = await manager.getUser();
@@ -81,6 +91,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(stored && !stored.expired ? stored : null);
         if (stored?.expired) await manager.removeUser();
       } catch (caught) {
+        if (window.location.pathname === "/auth/callback") {
+          const recovered = await recoverCompletedSignIn().catch(() => null);
+          if (recovered && active) {
+            setUser(recovered.user);
+            window.location.replace(recovered.returnTo);
+            return;
+          }
+        }
         // A rejected callback leaves the oidc-client transaction in
         // sessionStorage. Clear it so the next attempt starts a fresh state
         // transaction instead of looping back through the same error.
@@ -93,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setError(
             process.env.NEXT_PUBLIC_APP_MODE === "production"
               ? "Sign-in could not be completed. Retry through organization SSO."
-              : `Sign-in callback failed: ${detail}. Start again from this same browser origin (localhost or 127.0.0.1).`,
+              : `Sign-in callback failed: ${detail}. Start again from the application sign-in page.`,
           );
         }
       } finally {
@@ -109,8 +127,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [enabled]);
 
-  const signIn = useCallback(async () => beginSignIn(), []);
-  const signOut = useCallback(async () => beginSignOut(), []);
+  const signIn = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      await beginSignIn();
+    } catch (caught) {
+      setLoading(false);
+      setError(authActionError("Sign-in could not be started", caught));
+    }
+  }, []);
+  const signOut = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      await beginSignOut();
+    } catch (caught) {
+      setLoading(false);
+      setError(authActionError("Sign-out could not be completed", caught));
+    }
+  }, []);
   const value = useMemo<AuthContextValue>(
     () => ({
       enabled,
@@ -148,6 +184,14 @@ function windowPathIsCallback(): boolean {
     (window.location.pathname === "/auth/callback" ||
       window.location.pathname === "/auth/silent-callback")
   );
+}
+
+function authActionError(prefix: string, caught: unknown): string {
+  if (process.env.NEXT_PUBLIC_APP_MODE === "production") {
+    return `${prefix}. Retry or contact your workspace administrator.`;
+  }
+  const detail = caught instanceof Error ? caught.message : "Unknown authentication error";
+  return `${prefix}: ${detail}.`;
 }
 
 function AuthGate({

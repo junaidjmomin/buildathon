@@ -32,6 +32,7 @@ exclude = ["alembic*", "tests*"]
 
 [project.optional-dependencies]
 dev = [
+  "httpx2>=2,<3",
   "pytest>=9,<10",
   "ruff>=0.6,<1",
 ]

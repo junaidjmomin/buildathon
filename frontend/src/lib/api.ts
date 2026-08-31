@@ -34,7 +34,7 @@ import type {
   Violation,
   ViolationLineageResponse,
 } from "@/types/api";
-import { getAccessToken, isOidcEnabled } from "@/lib/auth-client";
+import { clearAuthSession, getAccessToken, isOidcEnabled } from "@/lib/auth-client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 // Supabase-backed live summaries may need extra time while aggregating a
@@ -89,6 +89,12 @@ async function request<T>(
     window.clearTimeout(timeout);
   }
   if (!response.ok) {
+    if (response.status === 401 && isOidcEnabled()) {
+      // A backend-rejected token is no longer a usable frontend session.
+      // Removing it emits UserUnloaded, returning the app to the sign-in gate
+      // instead of leaving every query in a permanent retry loop.
+      await clearAuthSession().catch(() => undefined);
+    }
     const contentType = response.headers.get("content-type") ?? "";
     const payload = contentType.includes("application/json")
       ? await response.json()

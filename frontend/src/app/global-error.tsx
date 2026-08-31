@@ -1,7 +1,12 @@
 "use client";
 
+import { CircleAlert, House, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
+
+import { BrandMark, EvidenceMap } from "@/components/brand-assets";
+
+import "./globals.css";
 
 export default function GlobalError({
   error,
@@ -17,31 +22,99 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <html lang="en">
-      <head>
-        <title>sl3dge · Recovery required</title>
-      </head>
-      <body style={styles.body}>
-        <main style={styles.main}>
-          <section aria-labelledby="global-error-title" role="alert" style={styles.panel}>
-            <div aria-hidden="true" style={styles.icon}>
-              !
-            </div>
-            <p style={styles.eyebrow}>Safe recovery mode</p>
-            <h1 id="global-error-title" style={styles.heading}>
-              sl3dge could not start
-            </h1>
-            <p style={styles.copy}>
-              The application shell encountered an unexpected error. No financial decision was changed.
-            </p>
-            {error.digest ? <p style={styles.reference}>Reference: {error.digest}</p> : null}
-            <div style={styles.actions}>
-              <button onClick={() => retry()} style={styles.primaryButton} type="button">
-                Try again
-              </button>
-              <Link href="/" style={styles.secondaryButton}>
-                Control overview
+    <html className="h-full antialiased" lang="en">
+      <body className="min-h-full">
+        <title>Application recovery | sl3dge</title>
+        <main className="grid min-h-dvh place-items-center px-4 py-8 sm:px-6">
+          <section
+            aria-describedby="global-error-description"
+            aria-labelledby="global-error-title"
+            className="panel grid w-full max-w-[960px] overflow-hidden rounded-xl lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]"
+          >
+            <div className="p-6 sm:p-8 lg:p-10">
+              <Link
+                aria-label="sl3dge overview"
+                className="inline-flex items-center gap-3 rounded-md"
+                href="/"
+              >
+                <span className="grid h-10 w-10 place-items-center overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--ink-700)]">
+                  <BrandMark className="h-9 w-9 object-contain" size={36} />
+                </span>
+                <span>
+                  <span className="block text-lg font-semibold leading-5 tracking-[-0.04em] text-[var(--paper)]">
+                    sl3dge
+                  </span>
+                  <span className="mt-1 block text-[9px] font-medium uppercase tracking-[0.15em] text-[var(--paper-faint)]">
+                    Financial evidence
+                  </span>
+                </span>
               </Link>
+
+              <div className="mt-9" aria-live="assertive" role="alert">
+                <span className="grid h-11 w-11 place-items-center rounded-lg border border-[var(--crimson-line)] bg-[var(--crimson-soft)] text-[var(--crimson-deep)]">
+                  <CircleAlert aria-hidden="true" size={20} strokeWidth={1.9} />
+                </span>
+                <p className="mt-6 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--crimson)]">
+                  Application recovery
+                </p>
+                <h1
+                  className="mt-2 text-[clamp(1.75rem,4vw,2.25rem)] font-semibold leading-tight tracking-[-0.04em] text-[var(--paper)]"
+                  id="global-error-title"
+                >
+                  The workspace couldn&apos;t start
+                </h1>
+                <p
+                  className="mt-3 max-w-xl text-sm leading-6 text-[var(--paper-dim)]"
+                  id="global-error-description"
+                >
+                  A required part of the application did not load. Try starting it again, or reopen the overview
+                  to begin a fresh session.
+                </p>
+              </div>
+
+              {error.digest ? (
+                <div className="mt-5 rounded-lg border border-[var(--line)] bg-[var(--ink-700)] px-4 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.11em] text-[var(--paper-faint)]">
+                    Support reference
+                  </p>
+                  <code className="mt-1.5 block break-all font-mono text-[11px] text-[var(--paper-dim)]">
+                    {error.digest}
+                  </code>
+                </div>
+              ) : null}
+
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                <button
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--evergreen-deep)]"
+                  onClick={() => retry()}
+                  type="button"
+                >
+                  <RotateCcw aria-hidden="true" size={16} />
+                  Start again
+                </button>
+                <Link
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--line-strong)] bg-[var(--ink-800)] px-4 py-2.5 text-sm font-semibold text-[var(--paper)] transition-colors hover:bg-[var(--ink-700)]"
+                  href="/"
+                >
+                  <House aria-hidden="true" size={16} />
+                  Reopen overview
+                </Link>
+              </div>
+
+              {error.digest ? (
+                <p className="mt-5 text-xs leading-5 text-[var(--paper-faint)]">
+                  If the workspace still does not start, share the support reference with your administrator.
+                </p>
+              ) : null}
+            </div>
+
+            <div
+              aria-hidden="true"
+              className="hidden border-l border-[var(--line)] bg-[var(--ink-700)] p-3 lg:block"
+            >
+              <div className="h-full min-h-[520px] overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--ink-800)]">
+                <EvidenceMap className="h-full w-full object-cover" decorative eager />
+              </div>
             </div>
           </section>
         </main>
@@ -49,96 +122,3 @@ export default function GlobalError({
     </html>
   );
 }
-
-const styles = {
-  body: {
-    background: "#0a1210",
-    color: "#e8ede9",
-    fontFamily: "Arial, sans-serif",
-    margin: 0,
-  },
-  main: {
-    alignItems: "center",
-    display: "flex",
-    justifyContent: "center",
-    minHeight: "100vh",
-    padding: "32px 20px",
-  },
-  panel: {
-    background: "#101b18",
-    border: "1px solid #dde1d9",
-    borderRadius: "16px",
-    boxShadow: "0 10px 35px rgba(0, 0, 0, 0.35)",
-    boxSizing: "border-box" as const,
-    maxWidth: "560px",
-    padding: "40px",
-    textAlign: "center" as const,
-    width: "100%",
-  },
-  icon: {
-    alignItems: "center",
-    background: "rgba(226, 96, 79, 0.14)",
-    borderRadius: "12px",
-    color: "#e2604f",
-    display: "flex",
-    fontSize: "20px",
-    fontWeight: 700,
-    height: "48px",
-    justifyContent: "center",
-    margin: "0 auto",
-    width: "48px",
-  },
-  eyebrow: {
-    color: "#e2604f",
-    fontSize: "10px",
-    fontWeight: 700,
-    letterSpacing: "0.15em",
-    margin: "20px 0 0",
-    textTransform: "uppercase" as const,
-  },
-  heading: {
-    fontSize: "26px",
-    letterSpacing: "-0.035em",
-    margin: "8px 0 0",
-  },
-  copy: {
-    color: "#93a39b",
-    fontSize: "14px",
-    lineHeight: 1.6,
-    margin: "12px auto 0",
-    maxWidth: "420px",
-  },
-  reference: {
-    color: "#5f6f68",
-    fontFamily: "monospace",
-    fontSize: "10px",
-    margin: "16px 0 0",
-  },
-  actions: {
-    display: "flex",
-    flexWrap: "wrap" as const,
-    gap: "12px",
-    justifyContent: "center",
-    marginTop: "28px",
-  },
-  primaryButton: {
-    background: "#2fbd7f",
-    border: "1px solid #112a2b",
-    borderRadius: "8px",
-    color: "#101b18",
-    cursor: "pointer",
-    fontSize: "14px",
-    fontWeight: 600,
-    padding: "10px 16px",
-  },
-  secondaryButton: {
-    background: "#101b18",
-    border: "1px solid #cfd9d1",
-    borderRadius: "8px",
-    color: "#e8ede9",
-    fontSize: "14px",
-    fontWeight: 600,
-    padding: "10px 16px",
-    textDecoration: "none",
-  },
-};

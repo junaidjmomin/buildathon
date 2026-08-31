@@ -20,5 +20,6 @@ Requires-Dist: python-multipart<1,>=0.0.9
 Requires-Dist: sqlalchemy<3,>=2.0
 Requires-Dist: uvicorn[standard]<1,>=0.30
 Provides-Extra: dev
-Requires-Dist: pytest<9,>=8.2; extra == "dev"
+Requires-Dist: httpx2<3,>=2; extra == "dev"
+Requires-Dist: pytest<10,>=9; extra == "dev"
 Requires-Dist: ruff<1,>=0.6; extra == "dev"

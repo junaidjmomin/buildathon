@@ -1,0 +1,293 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">sl3dge verification-first architecture</title>
+  <desc id="desc">Architecture diagram showing financial sources entering a deterministic event graph and approved control engine, agreement clauses becoming governed controls, violations feeding a bounded investigation agent, and mutation testing verifying the control suite.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07120f"/>
+      <stop offset="0.55" stop-color="#0a1713"/>
+      <stop offset="1" stop-color="#07110f"/>
+    </linearGradient>
+    <linearGradient id="greenPanel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10251f"/>
+      <stop offset="1" stop-color="#0c1d18"/>
+    </linearGradient>
+    <linearGradient id="violetPanel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a1728"/>
+      <stop offset="1" stop-color="#111421"/>
+    </linearGradient>
+    <linearGradient id="amberPanel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#282014"/>
+      <stop offset="1" stop-color="#19170f"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#9cc7b8" stroke-opacity="0.035" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#33d391"/>
+    </marker>
+    <marker id="arrowViolet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#a78bfa"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#f2be52"/>
+    </marker>
+    <style>
+      .font { font-family: Inter, "Segoe UI", Arial, sans-serif; }
+      .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+      .title { fill: #f4f2e9; font-size: 44px; font-weight: 720; letter-spacing: -1.6px; }
+      .subtitle { fill: #9bb1a9; font-size: 20px; font-weight: 450; }
+      .zone { fill: #33d391; font-size: 14px; font-weight: 750; letter-spacing: 2.2px; }
+      .zone-violet { fill: #b7a7ff; font-size: 14px; font-weight: 750; letter-spacing: 2.2px; }
+      .zone-amber { fill: #f2be52; font-size: 14px; font-weight: 750; letter-spacing: 2.2px; }
+      .box-title { fill: #f4f2e9; font-size: 21px; font-weight: 680; }
+      .box-copy { fill: #a8bbb4; font-size: 15px; font-weight: 450; }
+      .small { fill: #82978f; font-size: 13px; font-weight: 500; }
+      .chip { fill: #d8e4df; font-size: 12px; font-weight: 650; }
+      .number { fill: #f4f2e9; font-size: 18px; font-weight: 680; }
+      .line-green { fill: none; stroke: #33d391; stroke-width: 3; marker-end: url(#arrowGreen); }
+      .line-violet { fill: none; stroke: #a78bfa; stroke-width: 3; marker-end: url(#arrowViolet); }
+      .line-amber { fill: none; stroke: #f2be52; stroke-width: 3; marker-end: url(#arrowAmber); }
+      .line-muted { fill: none; stroke: #6e837b; stroke-width: 2; stroke-dasharray: 7 8; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#background)"/>
+  <rect width="1920" height="1080" fill="url(#grid)"/>
+  <circle cx="1680" cy="40" r="380" fill="#33d391" opacity="0.025"/>
+  <circle cx="1410" cy="970" r="360" fill="#a78bfa" opacity="0.022"/>
+
+  <!-- Header -->
+  <g class="font">
+    <rect x="58" y="39" width="52" height="52" rx="15" fill="#113c30" stroke="#33d391" stroke-opacity="0.6"/>
+    <path d="M74 73a12 12 0 1 1 21 0" fill="none" stroke="#33d391" stroke-width="3" stroke-linecap="round"/>
+    <path d="M85 71l7-9" stroke="#33d391" stroke-width="3" stroke-linecap="round"/>
+    <text x="126" y="68" class="title">sl3dge</text>
+    <text x="126" y="90" class="zone">VERIFICATION-FIRST FINANCE CONTROLLER</text>
+    <text x="1860" y="61" text-anchor="end" class="subtitle">AI proposes. Controls calculate. Evidence decides.</text>
+    <text x="1860" y="88" text-anchor="end" class="small">Deterministic financial truth • bounded agent authority • human governance</text>
+  </g>
+
+  <!-- Sources -->
+  <g class="font" filter="url(#shadow)">
+    <rect x="58" y="155" width="280" height="582" rx="26" fill="#0d1a17" stroke="#2a3e37" stroke-width="2"/>
+    <text x="84" y="190" class="zone">FINANCIAL SOURCES</text>
+
+    <rect x="82" y="218" width="232" height="112" rx="18" fill="#11241e" stroke="#2e5145"/>
+    <circle cx="112" cy="252" r="16" fill="#173e31"/><path d="M104 252h16M112 244v16" stroke="#33d391" stroke-width="2"/>
+    <text x="140" y="252" class="box-title" font-size="18">Razorpay APIs</text>
+    <text x="140" y="278" class="small">Payments • refunds</text>
+    <text x="140" y="298" class="small">settlements • recon</text>
+
+    <rect x="82" y="350" width="232" height="112" rx="18" fill="#11241e" stroke="#2e5145"/>
+    <circle cx="112" cy="384" r="16" fill="#173e31"/><path d="M105 377h14v14h-14zM108 382h8M108 386h8" fill="none" stroke="#33d391" stroke-width="1.8"/>
+    <text x="140" y="384" class="box-title" font-size="18">Source files</text>
+    <text x="140" y="410" class="small">Multi-CSV classification</text>
+    <text x="140" y="430" class="small">Bank and finance exports</text>
+
+    <rect x="82" y="482" width="232" height="112" rx="18" fill="#11241e" stroke="#2e5145"/>
+    <circle cx="112" cy="516" r="16" fill="#173e31"/><path d="M106 507h10l4 4v14h-14zM116 507v5h5" fill="none" stroke="#33d391" stroke-width="1.8"/>
+    <text x="140" y="516" class="box-title" font-size="18">Agreements</text>
+    <text x="140" y="542" class="small">Merchant PDF clauses</text>
+    <text x="140" y="562" class="small">Amendments and dates</text>
+
+    <rect x="82" y="620" width="232" height="88" rx="18" fill="#0c211a" stroke="#33d391" stroke-opacity="0.45"/>
+    <text x="100" y="650" class="zone" font-size="12">BROWSER TRUST BOUNDARY</text>
+    <text x="100" y="679" class="box-title" font-size="17">Next.js workspace</text>
+    <text x="100" y="699" class="small">Calls FastAPI only</text>
+  </g>
+
+  <!-- Deterministic zone -->
+  <g class="font">
+    <rect x="382" y="138" width="940" height="690" rx="30" fill="#0a1713" fill-opacity="0.86" stroke="#33d391" stroke-width="2.5" stroke-opacity="0.72"/>
+    <rect x="405" y="122" width="428" height="35" rx="17" fill="#10382c" stroke="#33d391" stroke-opacity="0.6"/>
+    <text x="425" y="145" class="zone">DETERMINISTIC FINANCIAL TRUTH BOUNDARY</text>
+    <text x="1288" y="161" text-anchor="end" class="small mono">FastAPI control plane</text>
+
+    <!-- ingestion -->
+    <g filter="url(#shadow)">
+      <rect x="426" y="191" width="358" height="170" rx="22" fill="url(#greenPanel)" stroke="#2d5a4b"/>
+      <text x="452" y="224" class="zone">01 • INGEST + NORMALIZE</text>
+      <text x="452" y="261" class="box-title">Canonical financial events</text>
+      <text x="452" y="289" class="box-copy">Deterministic schema classifier</text>
+      <text x="452" y="314" class="box-copy">Decimal-safe amounts and rates</text>
+      <rect x="452" y="328" width="126" height="22" rx="11" fill="#183b30"/><text x="515" y="343" text-anchor="middle" class="chip">No LLM matching</text>
+      <rect x="588" y="328" width="162" height="22" rx="11" fill="#183b30"/><text x="669" y="343" text-anchor="middle" class="chip">Explicit provenance</text>
+    </g>
+
+    <!-- graph -->
+    <g filter="url(#shadow)">
+      <rect x="833" y="191" width="445" height="170" rx="22" fill="url(#greenPanel)" stroke="#2d5a4b"/>
+      <text x="859" y="224" class="zone">02 • EVENT GRAPH</text>
+      <text x="859" y="261" class="box-title">Payments → settlements → bank</text>
+      <text x="859" y="289" class="box-copy">Exact, reference and scored fuzzy edges</text>
+      <text x="859" y="314" class="box-copy">Confidence + evidence on every relationship</text>
+      <rect x="859" y="328" width="171" height="22" rx="11" fill="#332716" stroke="#f2be52" stroke-opacity="0.35"/>
+      <text x="945" y="343" text-anchor="middle" class="chip" fill="#f2be52">Ambiguous → UNRESOLVED</text>
+    </g>
+
+    <!-- agreement compiler -->
+    <g filter="url(#shadow)">
+      <rect x="426" y="404" width="358" height="190" rx="22" fill="url(#amberPanel)" stroke="#80652e"/>
+      <text x="452" y="437" class="zone-amber">03 • AGREEMENT COMPILER</text>
+      <text x="452" y="474" class="box-title">Clause → typed control</text>
+      <text x="452" y="502" class="box-copy">Exact text • page • source offsets</text>
+      <text x="452" y="527" class="box-copy">Rates • tolerances • effective dates</text>
+      <rect x="452" y="548" width="85" height="25" rx="12" fill="#362914"/><text x="494" y="565" text-anchor="middle" class="chip">DRAFT</text>
+      <rect x="546" y="548" width="112" height="25" rx="12" fill="#362914"/><text x="602" y="565" text-anchor="middle" class="chip">VERIFIED</text>
+      <rect x="667" y="548" width="92" height="25" rx="12" fill="#173e31"/><text x="713" y="565" text-anchor="middle" class="chip">APPROVED</text>
+    </g>
+
+    <!-- controls -->
+    <g filter="url(#shadow)">
+      <rect x="833" y="404" width="445" height="190" rx="22" fill="url(#greenPanel)" stroke="#33d391" stroke-opacity="0.58"/>
+      <text x="859" y="437" class="zone">04 • APPROVED CONTROLS</text>
+      <text x="859" y="474" class="box-title">Calculate expected behavior</text>
+      <text x="859" y="502" class="box-copy">MDR • GST • SLA • refunds • arithmetic</text>
+      <text x="859" y="527" class="box-copy">Effective-dated and Decimal-safe</text>
+      <rect x="859" y="548" width="179" height="25" rx="12" fill="#173e31"/><text x="948" y="565" text-anchor="middle" class="chip">EXPECTED vs ACTUAL</text>
+      <rect x="1048" y="548" width="198" height="25" rx="12" fill="#173e31"/><text x="1147" y="565" text-anchor="middle" class="chip">PASS / VIOLATION</text>
+    </g>
+
+    <!-- governance -->
+    <g filter="url(#shadow)">
+      <rect x="426" y="637" width="358" height="148" rx="22" fill="url(#amberPanel)" stroke="#80652e"/>
+      <text x="452" y="670" class="zone-amber">05 • HUMAN GOVERNANCE</text>
+      <text x="452" y="706" class="box-title">Maker-checker approval</text>
+      <text x="452" y="734" class="box-copy">AI cannot silently activate policy</text>
+      <text x="452" y="759" class="small">Immutable review + approval trail</text>
+    </g>
+
+    <!-- outputs -->
+    <g filter="url(#shadow)">
+      <rect x="833" y="637" width="445" height="148" rx="22" fill="url(#greenPanel)" stroke="#2d5a4b"/>
+      <text x="859" y="670" class="zone">06 • EVIDENCE OUTPUTS</text>
+      <text x="859" y="706" class="box-title">Violations • lineage • root causes</text>
+      <text x="859" y="734" class="box-copy">Expected, actual, difference, impact</text>
+      <text x="859" y="759" class="small">Every finding rooted and auditable</text>
+    </g>
+
+    <!-- internal arrows -->
+    <path d="M784 276H833" class="line-green"/>
+    <path d="M1055 361V404" class="line-green"/>
+    <path d="M784 499H833" class="line-amber"/>
+    <path d="M605 594V637" class="line-amber"/>
+    <path d="M784 711H833" class="line-amber"/>
+    <path d="M1055 594V637" class="line-green"/>
+  </g>
+
+  <!-- source arrows -->
+  <path d="M314 274H367Q382 274 382 259V252H426" class="line-green"/>
+  <path d="M314 406H367Q382 406 382 337V317H426" class="line-green"/>
+  <path d="M314 538H381Q406 538 426 510" class="line-amber"/>
+  <path d="M314 666H350Q367 666 367 630V180Q367 164 382 164" class="line-muted"/>
+
+  <!-- Agent zone -->
+  <g class="font">
+    <rect x="1366" y="138" width="496" height="690" rx="30" fill="#0d111b" fill-opacity="0.92" stroke="#a78bfa" stroke-width="2.5" stroke-opacity="0.72"/>
+    <rect x="1390" y="122" width="306" height="35" rx="17" fill="#27203d" stroke="#a78bfa" stroke-opacity="0.6"/>
+    <text x="1411" y="145" class="zone-violet">BOUNDED AGENT AUTHORITY</text>
+    <text x="1831" y="161" text-anchor="end" class="small mono">LangGraph • Groq optional</text>
+
+    <g filter="url(#shadow)">
+      <rect x="1410" y="191" width="408" height="351" rx="22" fill="url(#violetPanel)" stroke="#594d85"/>
+      <text x="1438" y="225" class="zone-violet">INVESTIGATION AGENT</text>
+      <text x="1438" y="263" class="box-title">Investigates why</text>
+      <text x="1438" y="290" class="box-copy">Cannot create financial truth</text>
+
+      <circle cx="1453" cy="327" r="15" fill="#332858"/><text x="1453" y="332" text-anchor="middle" class="chip">1</text>
+      <text x="1481" y="333" class="box-copy">Collect evidence</text>
+      <path d="M1453 345V366" stroke="#7365a7" stroke-width="2"/>
+      <circle cx="1453" cy="384" r="15" fill="#332858"/><text x="1453" y="389" text-anchor="middle" class="chip">2</text>
+      <text x="1481" y="390" class="box-copy">Load source + contract context</text>
+      <path d="M1453 402V423" stroke="#7365a7" stroke-width="2"/>
+      <circle cx="1453" cy="441" r="15" fill="#332858"/><text x="1453" y="446" text-anchor="middle" class="chip">3</text>
+      <text x="1481" y="447" class="box-copy">Propose structured hypothesis</text>
+      <path d="M1453 459V480" stroke="#7365a7" stroke-width="2"/>
+      <circle cx="1453" cy="498" r="15" fill="#332858"/><text x="1453" y="503" text-anchor="middle" class="chip">4</text>
+      <text x="1481" y="504" class="box-copy">Recommend bounded next action</text>
+    </g>
+
+    <g filter="url(#shadow)">
+      <rect x="1410" y="582" width="408" height="203" rx="22" fill="url(#greenPanel)" stroke="#33d391" stroke-width="2"/>
+      <text x="1438" y="616" class="zone">DETERMINISTIC VERIFIER</text>
+      <text x="1438" y="655" class="box-title">Evidence controls the verdict</text>
+      <text x="1438" y="683" class="box-copy">Tests every model hypothesis</text>
+      <rect x="1438" y="710" width="95" height="28" rx="14" fill="#173e31"/><text x="1485" y="729" text-anchor="middle" class="chip">PROVEN</text>
+      <rect x="1544" y="710" width="103" height="28" rx="14" fill="#3a1e20"/><text x="1595" y="729" text-anchor="middle" class="chip">REJECTED</text>
+      <rect x="1658" y="710" width="132" height="28" rx="14" fill="#382d17"/><text x="1724" y="729" text-anchor="middle" class="chip">UNRESOLVED</text>
+      <text x="1438" y="763" class="small">Model provider failure → deterministic fallback</text>
+    </g>
+  </g>
+
+  <!-- truth-to-agent arrows -->
+  <path d="M1278 711H1340Q1352 711 1352 699V370Q1352 350 1366 350H1410" class="line-violet"/>
+  <path d="M1614 542V582" class="line-violet"/>
+  <path d="M1410 685H1345Q1322 685 1322 722H1278" class="line-green"/>
+  <text x="1339" y="338" text-anchor="end" class="small font" fill="#b7a7ff">evidence context</text>
+  <text x="1339" y="674" text-anchor="end" class="small font" fill="#33d391">verified verdict</text>
+
+  <!-- Persistence -->
+  <g class="font" filter="url(#shadow)">
+    <rect x="58" y="775" width="280" height="221" rx="26" fill="#0d1a17" stroke="#2a3e37" stroke-width="2"/>
+    <text x="84" y="810" class="zone">DURABLE EVIDENCE</text>
+    <text x="84" y="850" class="box-title">Supabase</text>
+    <text x="84" y="878" class="box-copy">PostgreSQL</text>
+    <text x="84" y="902" class="small">Runs • events • controls</text>
+    <text x="84" y="923" class="small">violations • lineage • audits</text>
+    <text x="84" y="955" class="box-copy">Private Storage</text>
+    <text x="84" y="979" class="small">Agreements • source files • evidence</text>
+  </g>
+  <path d="M382 779H365Q338 779 338 836" class="line-muted"/>
+
+  <!-- Mutation loop -->
+  <g class="font">
+    <rect x="382" y="863" width="1480" height="133" rx="27" fill="#0d1714" stroke="#33d391" stroke-width="2" stroke-opacity="0.48"/>
+    <text x="411" y="895" class="zone">CONTROL QUALITY LOOP — VERIFY THE VERIFIER</text>
+
+    <rect x="411" y="918" width="218" height="52" rx="16" fill="#142a23" stroke="#2d5a4b"/>
+    <text x="520" y="940" text-anchor="middle" class="box-title" font-size="16">Inject isolated faults</text>
+    <text x="520" y="960" text-anchor="middle" class="small">Canonical data unchanged</text>
+
+    <rect x="679" y="918" width="198" height="52" rx="16" fill="#142a23" stroke="#2d5a4b"/>
+    <text x="778" y="940" text-anchor="middle" class="box-title" font-size="16">Measure coverage</text>
+    <text x="778" y="960" text-anchor="middle" class="small">Detected vs missed</text>
+
+    <rect x="927" y="918" width="198" height="52" rx="16" fill="#2b2113" stroke="#80652e"/>
+    <text x="1026" y="940" text-anchor="middle" class="box-title" font-size="16">Expose blind spots</text>
+    <text x="1026" y="960" text-anchor="middle" class="small">No applicable control</text>
+
+    <rect x="1175" y="918" width="222" height="52" rx="16" fill="#211b31" stroke="#594d85"/>
+    <text x="1286" y="940" text-anchor="middle" class="box-title" font-size="16">Propose candidate</text>
+    <text x="1286" y="960" text-anchor="middle" class="small">Agreement-grounded DRAFT</text>
+
+    <rect x="1447" y="918" width="194" height="52" rx="16" fill="#142a23" stroke="#2d5a4b"/>
+    <text x="1544" y="940" text-anchor="middle" class="box-title" font-size="16">Backtest</text>
+    <text x="1544" y="960" text-anchor="middle" class="small">Coverage + false positives</text>
+
+    <rect x="1691" y="918" width="142" height="52" rx="16" fill="#2b2113" stroke="#f2be52" stroke-opacity="0.65"/>
+    <text x="1762" y="940" text-anchor="middle" class="box-title" font-size="16">Approve</text>
+    <text x="1762" y="960" text-anchor="middle" class="small">Human only</text>
+
+    <path d="M629 944H679" class="line-green"/>
+    <path d="M877 944H927" class="line-green"/>
+    <path d="M1125 944H1175" class="line-violet"/>
+    <path d="M1397 944H1447" class="line-green"/>
+    <path d="M1641 944H1691" class="line-amber"/>
+    <path d="M1762 918V850Q1762 830 1742 830H801Q775 830 775 802V785" class="line-amber"/>
+  </g>
+
+  <!-- Footer legend -->
+  <g class="font">
+    <circle cx="72" cy="1036" r="6" fill="#33d391"/><text x="86" y="1041" class="small">Deterministic authority</text>
+    <circle cx="252" cy="1036" r="6" fill="#a78bfa"/><text x="266" y="1041" class="small">AI proposal only</text>
+    <circle cx="411" cy="1036" r="6" fill="#f2be52"/><text x="425" y="1041" class="small">Human governance</text>
+    <text x="1860" y="1041" text-anchor="end" class="small mono">Reconciliation asks whether records match. sl3dge asks whether they should.</text>
+  </g>
+</svg>

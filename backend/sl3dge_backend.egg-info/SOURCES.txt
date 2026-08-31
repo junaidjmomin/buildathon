@@ -13,6 +13,7 @@ app/api/router.py
 app/controls/__init__.py
 app/controls/dsl.py
 app/controls/engine.py
+app/controls/lineage.py
 app/controls/live.py
 app/controls/verification.py
 app/core/__init__.py
@@ -47,6 +48,7 @@ app/security/auth.py
 app/services/__init__.py
 app/services/demo.py
 app/services/governance.py
+app/services/live_payment_views.py
 app/storage/__init__.py
 app/storage/service.py
 app/storage/supabase.py
@@ -63,6 +65,7 @@ sl3dge_backend.egg-info/top_level.txt
 tests/test_agents.py
 tests/test_agreements.py
 tests/test_auth.py
+tests/test_clause_driven_evaluation.py
 tests/test_csv_pipeline.py
 tests/test_demo.py
 tests/test_infrastructure.py
@@ -71,3 +74,7 @@ tests/test_money.py
 tests/test_postgres_rls.py
 tests/test_production_route_guards.py
 tests/test_razorpay_mapper.py
+tests/test_semantic_invariants.py
+tests/test_source_run_api.py
+tests/test_stress_dataset.py
+tests/test_stress_evaluation.py

@@ -386,6 +386,36 @@ def test_production_configuration_fails_closed_without_identity_and_infrastructu
         settings.validate_runtime()
 
 
+@pytest.mark.parametrize("scheme", ["postgresql", "postgres"])
+def test_provider_postgres_urls_select_the_installed_psycopg3_driver(scheme: str) -> None:
+    settings = Settings(
+        DATABASE_URL=f"{scheme}://application@pooler.example.test:6543/postgres",
+        MIGRATION_DATABASE_URL=f"{scheme}://migrator@database.example.test:5432/postgres",
+    )
+
+    assert settings.sqlalchemy_database_url == (
+        "postgresql+psycopg://application@pooler.example.test:6543/postgres"
+    )
+    assert settings.effective_migration_url == (
+        "postgresql+psycopg://migrator@database.example.test:5432/postgres"
+    )
+
+
+def test_readiness_treats_engine_configuration_failure_as_dependency_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_to_create_engine() -> None:
+        raise RuntimeError("database driver is unavailable")
+
+    monkeypatch.setattr("app.main.get_engine", fail_to_create_engine)
+
+    response = TestClient(app).get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+    assert response.json()["error"]["message"] == "Database is unavailable"
+
+
 def test_storage_requires_backend_credentials() -> None:
     storage = SupabaseStorage(Settings(SUPABASE_URL="", SUPABASE_SERVICE_ROLE_KEY=""))
     try:

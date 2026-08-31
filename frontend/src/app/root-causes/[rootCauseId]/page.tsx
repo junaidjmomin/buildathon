@@ -2,24 +2,26 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  ArrowLeft,
-  BrainCircuit,
   Check,
-  CircleDollarSign,
   GitBranch,
-  LoaderCircle,
   RefreshCw,
-  Scale,
-  ShieldAlert,
+  SearchCheck,
   TriangleAlert,
   X,
 } from "lucide-react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 
+import { Badge, ErrorState, PageHeader } from "@/components/ui/primitives";
+import {
+  EmptySection,
+  InlineNotice,
+  SectionHeader,
+  SummaryStrip,
+  WorkspaceLoading,
+} from "@/components/ui/workspace";
 import { ApiError, api } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
-import type { AgentTraceStep } from "@/types/api";
+import type { AgentTraceStep, InvestigationExecution } from "@/types/api";
 
 export default function RootCausePage() {
   const { rootCauseId } = useParams<{ rootCauseId: string }>();
@@ -27,251 +29,208 @@ export default function RootCausePage() {
     queryKey: ["root-cause", rootCauseId],
     queryFn: () => api.rootCause(rootCauseId),
   });
-  const investigation = useMutation({
-    mutationFn: () => api.investigateRootCause(rootCauseId),
-  });
+  const investigation = useMutation({ mutationFn: () => api.investigateRootCause(rootCauseId) });
 
   if (root.isPending) {
-    return (
-      <div className="grid min-h-[calc(100vh-64px)] place-items-center">
-        <LoaderCircle
-          aria-label="Loading root cause"
-          className="animate-spin text-[var(--evergreen)]"
-        />
-      </div>
-    );
+    return <WorkspaceLoading label="Loading root cause evidence" />;
   }
-  if (!root.data) {
+  if (root.isError || !root.data) {
     return (
-      <main className="p-8" role="alert">
-        Root cause could not be loaded.
+      <main className="mx-auto max-w-3xl px-5 py-10 md:px-8">
+        <ErrorState what="Root cause" onRetry={() => root.refetch()} />
       </main>
     );
   }
+
   const data = root.data;
   const execution = investigation.data;
 
   return (
     <main className="mx-auto max-w-[1180px] px-5 py-8 md:px-8 md:py-10">
-      <Link
-        href="/"
-        className="mb-6 inline-flex items-center gap-2 text-xs font-medium text-[var(--paper-dim)] transition-colors duration-150 hover:text-[var(--paper)]"
-      >
-        <ArrowLeft size={14} /> Back to control run
-      </Link>
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+        <PageHeader
+          back={{ href: "/root-causes", label: "Root causes" }}
+          eyebrow={
+            <>
+              <GitBranch size={14} /> Root-cause evidence
+            </>
+          }
+          title={data.title}
+          subtitle={
+            <>
+              {data.category.replaceAll("_", " ")} · <span className="font-mono">{data.id}</span>
+            </>
+          }
+        />
+        <Badge
+          label={data.verification_status.replaceAll("_", " ")}
+          status={
+            data.verification_status === "PROVEN"
+              ? "PASS"
+              : data.verification_status === "REJECTED"
+                ? "VIOLATION"
+                : "UNRESOLVED"
+          }
+        />
+      </div>
 
-      <section className="mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <div>
-          <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--evergreen)]">
-            <GitBranch size={14} /> Systemic root cause
-          </p>
-          <h1 className="text-3xl font-semibold tracking-[-0.035em] text-[var(--paper)]">{data.title}</h1>
-          <p className="mt-2 text-sm text-[var(--paper-dim)]">
-            {data.category} · <span className="font-mono">{data.id}</span>
-          </p>
-        </div>
-        <div className="rounded-xl border border-[rgba(226,96,79,0.35)] bg-[rgba(226,96,79,0.14)] px-5 py-3 text-right">
-          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--crimson)]">
-            Verified impact
-          </p>
-          <p className="number-tabular mt-1 font-mono text-2xl font-semibold text-[var(--crimson)]">
-            {formatMoney(data.verified_impact)}
-          </p>
-        </div>
-      </section>
+      <SummaryStrip
+        className="mb-6"
+        columns="five"
+        label="Root cause impact summary"
+        items={[
+          { label: "Verified impact", value: formatMoney(data.verified_impact), tone: "negative" },
+          { label: "Affected payments", value: data.affected_count.toLocaleString("en-IN") },
+          { label: "Primary violations", value: data.primary_violation_count.toLocaleString("en-IN") },
+          { label: "Downstream effects", value: data.downstream_effect_count.toLocaleString("en-IN") },
+          { label: "Expected → observed", value: `${data.expected_value} → ${data.observed_value}` },
+        ]}
+      />
 
-      <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric
-          icon={ShieldAlert}
-          label="Affected payments"
-          value={String(data.affected_count)}
+      <section className="panel mb-6 overflow-hidden rounded-xl">
+        <SectionHeader
+          title="Investigation workflow"
+          description="Collect evidence, form bounded hypotheses, and submit each conclusion to deterministic verification. The workflow cannot modify controls or financial truth."
+          meta={execution ? <Badge label={execution.status} status={execution.status === "PROVEN" ? "PASS" : "UNRESOLVED"} /> : null}
         />
-        <Metric
-          icon={GitBranch}
-          label="Primary violations"
-          value={String(data.primary_violation_count)}
-        />
-        <Metric
-          icon={GitBranch}
-          label="Downstream effects"
-          value={String(data.downstream_effect_count)}
-        />
-        <Metric
-          icon={CircleDollarSign}
-          label="Expected → observed"
-          value={`${data.expected_value} → ${data.observed_value}`}
-        />
-      </section>
-
-      <section className="panel mb-5 rounded-2xl p-5">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--paper)]">
-              <BrainCircuit size={17} className="text-[var(--evergreen)]" />
-              {execution?.orchestration_used ? `${execution.orchestration_provider} orchestration` : "Deterministic investigation"}
-            </h2>
-            <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--paper-dim)]">
-              Orchestrates evidence collection, structured hypotheses, deterministic
-              verification, bounded retries, and human workflow. It cannot change financial
-              truth or controls.
-            </p>
+        <div className="flex flex-col justify-between gap-4 px-5 py-4 sm:flex-row sm:items-center">
+          <div className="min-w-0 text-xs text-[var(--paper-dim)]">
+            {execution ? (
+              <p>
+                Last execution <span className="font-mono text-[var(--paper)]">{execution.execution_id}</span> ·{" "}
+                {execution.completed_at}
+              </p>
+            ) : (
+              <p>No investigation execution has been started in this session.</p>
+            )}
           </div>
           <button
-            type="button"
-            onClick={() => investigation.mutate()}
+            aria-busy={investigation.isPending}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-4 py-2.5 text-xs font-semibold text-[var(--ink-800)] transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
             disabled={investigation.isPending}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-4 py-2.5 text-xs font-semibold text-[#06120c] transition-opacity duration-150 disabled:cursor-wait disabled:opacity-60"
+            onClick={() => investigation.mutate()}
+            type="button"
           >
-            {investigation.isPending ? (
-              <LoaderCircle size={14} className="animate-spin" />
-            ) : execution ? (
-              <RefreshCw size={14} />
-            ) : (
-              <BrainCircuit size={14} />
-            )}
-            {execution ? "Run a fresh investigation" : "Run bounded investigation"}
+            {execution ? <RefreshCw aria-hidden="true" size={14} /> : <SearchCheck aria-hidden="true" size={14} />}
+            {investigation.isPending ? "Investigating…" : execution ? "Run fresh investigation" : "Start investigation"}
           </button>
         </div>
-        {investigation.error ? (
-          <p className="mt-4 text-xs text-[var(--crimson)]" role="alert">
-            {investigation.error instanceof ApiError
-              ? investigation.error.message
-              : "The investigation could not be started."}
-          </p>
-        ) : null}
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="panel overflow-hidden rounded-2xl">
-          <div className="border-b border-[var(--line)] px-5 py-4">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--paper)]">
-              <GitBranch size={16} className="text-[var(--evergreen)]" /> Execution trace
-            </h2>
-            <p className="mt-1 text-xs text-[var(--paper-dim)]">
-              Explicit nodes, branches, retries, and authority boundaries
-            </p>
-          </div>
-          <div className="p-5">
-            {!execution ? (
-              <EmptyTrace pending={investigation.isPending} />
-            ) : (
-              <ol className="space-y-3" aria-label="Agent execution trace">
-                {execution.trace.map((step, index) => (
-                  <TraceRow key={`${step.sequence}-${step.node}-${index}`} step={step} />
-                ))}
-              </ol>
-            )}
-          </div>
-        </div>
+      {investigation.error ? (
+        <InlineNotice className="mb-6" tone="negative">
+          {investigation.error instanceof ApiError
+            ? investigation.error.message
+            : "The investigation could not be started."}
+        </InlineNotice>
+      ) : null}
 
-        <div className="panel overflow-hidden rounded-2xl">
-          <div className="border-b border-[var(--line)] px-5 py-4">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--paper)]">
-              <Scale size={16} className="text-[var(--evergreen)]" /> Hypotheses and verdict
-            </h2>
-            <p className="mt-1 text-xs text-[var(--paper-dim)]">
-              Model proposals remain subordinate to deterministic verification
-            </p>
-          </div>
-          <div className="p-5">
-            {!execution ? (
-              <div className="grid min-h-64 place-items-center text-center">
-                <div>
-                  <Scale className="mx-auto mb-3 text-[var(--paper-faint)]" />
-                  <p className="text-sm font-medium text-[var(--paper)]">No agent conclusion</p>
-                  <p className="mt-1 text-xs text-[var(--paper-dim)]">Nothing is inferred in advance.</p>
-                </div>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)]">
+        <section className="panel overflow-hidden rounded-xl">
+          <SectionHeader
+            title="Execution trace"
+            description="Ordered transitions, retries, and evidence boundaries from the investigation run."
+            meta={execution ? `${execution.trace.length.toLocaleString("en-IN")} steps` : null}
+          />
+          {investigation.isPending && !execution ? (
+            <div aria-live="polite" className="grid min-h-64 place-items-center px-5 text-center" role="status">
+              <div>
+                <RefreshCw className="mx-auto animate-spin text-[var(--evergreen)]" size={20} />
+                <p className="mt-3 text-sm font-medium text-[var(--paper)]">Executing bounded workflow</p>
+                <p className="mt-1 text-xs text-[var(--paper-dim)]">The ordered trace will appear here.</p>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center gap-2 text-[10px]">
-                  <span className="rounded-full border border-[rgba(95,182,217,0.35)] bg-[rgba(95,182,217,0.14)] px-2.5 py-1 font-semibold text-[var(--sky)]">
-                    {execution.llm_used
-                      ? `${execution.llm_provider ?? "LLM"} · ${execution.llm_model ?? "configured model"}`
-                      : "Deterministic fallback"}
-                  </span>
-                  <span className="number-tabular font-mono text-[var(--paper-dim)]">
-                    {execution.attempt_count} attempt
-                    {execution.attempt_count === 1 ? "" : "s"}
-                  </span>
-                </div>
-                {execution.hypotheses.map((hypothesis, index) => (
-                  <article
-                    key={hypothesis.hypothesis_id}
-                    className="rounded-xl border border-[var(--line)] bg-[var(--ink-700)] p-4"
-                  >
-                    <p className="text-[9px] font-bold uppercase tracking-[0.13em] text-[var(--paper-faint)]">
-                      Attempt {index + 1} · {hypothesis.kind.replaceAll("_", " ")}
-                    </p>
-                    <p className="mt-2 text-sm font-medium leading-6 text-[var(--paper)]">
-                      “{hypothesis.statement}”
-                    </p>
-                    <p className="mt-2 text-[10px] leading-5 text-[var(--paper-dim)]">
-                      {hypothesis.rationale}
-                    </p>
-                  </article>
-                ))}
-                {execution.verification ? (
-                  <div
-                    className={`rounded-xl border p-4 ${
-                      execution.status === "PROVEN"
-                        ? "border-[rgba(47,189,127,0.35)] bg-[rgba(47,189,127,0.14)]"
-                        : "border-[rgba(226,96,79,0.35)] bg-[rgba(226,96,79,0.14)]"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[9px] font-bold uppercase tracking-[0.13em] text-[var(--paper-faint)]">
-                          Deterministic final result
-                        </p>
-                        <p className={`mt-1 text-xl font-semibold ${execution.status === "PROVEN" ? "text-[var(--evergreen)]" : "text-[var(--crimson)]"}`}>{execution.status}</p>
-                      </div>
-                      {execution.status === "PROVEN" ? (
-                        <Check size={22} className="text-[var(--evergreen)]" />
-                      ) : (
-                        <TriangleAlert size={22} className="text-[var(--crimson)]" />
-                      )}
-                    </div>
-                    <p className="mt-3 text-xs font-semibold text-[var(--paper)]">
-                      {execution.verification.classification.replaceAll("_", " ")}
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-[var(--paper-dim)]">
-                      {execution.verification.conclusion}
-                    </p>
-                    {execution.case_id ? (
-                      <p className="mt-3 text-[10px] font-semibold text-[var(--evergreen)]">
-                        Evidence case: <span className="font-mono">{execution.case_id}</span>
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
+            </div>
+          ) : execution?.trace.length ? (
+            <ol aria-label="Investigation execution trace" className="divide-y divide-[var(--line)]">
+              {execution.trace.map((step, index) => (
+                <TraceRow key={`${step.sequence}-${step.node}-${index}`} step={step} />
+              ))}
+            </ol>
+          ) : (
+            <EmptySection
+              body="Start an investigation to inspect every evidence and verification transition."
+              title="Trace not started"
+            />
+          )}
+        </section>
+
+        <section className="panel self-start overflow-hidden rounded-xl">
+          <SectionHeader
+            title="Hypotheses and verified conclusion"
+            description="Generated hypotheses stay visually separate from the deterministic verdict."
+            meta={execution ? `${execution.attempt_count} attempt${execution.attempt_count === 1 ? "" : "s"}` : null}
+          />
+          {execution ? <InvestigationConclusion execution={execution} /> : (
+            <EmptySection
+              body="No conclusion is inferred before an investigation has produced and verified evidence."
+              title="No investigation conclusion"
+            />
+          )}
+        </section>
+      </div>
     </main>
   );
 }
 
-function EmptyTrace({ pending }: { pending: boolean }) {
+function InvestigationConclusion({ execution }: { execution: InvestigationExecution }) {
   return (
-    <div className="grid min-h-64 place-items-center text-center" aria-live="polite">
-      <div>
-        {pending ? (
-          <LoaderCircle className="mx-auto mb-3 animate-spin text-[var(--evergreen)]" />
-        ) : (
-          <GitBranch className="mx-auto mb-3 text-[var(--paper-faint)]" />
-        )}
-        <p className="text-sm font-medium text-[var(--paper)]">
-          {pending ? "Executing bounded graph" : "Trace not started"}
-        </p>
-        <p className="mt-1 text-xs text-[var(--paper-dim)]">
-          {pending
-            ? "Every transition will be shown here."
-            : "Start an investigation to inspect each node."}
-        </p>
+    <div>
+      <div className="border-b border-[var(--line)] px-5 py-3 text-[10px] text-[var(--paper-dim)]">
+        <span className="font-semibold text-[var(--paper)]">Runtime:</span>{" "}
+        {execution.llm_used
+          ? `${execution.llm_provider ?? "Configured provider"} · ${execution.llm_model ?? "configured model"}`
+          : "Deterministic fallback"}
       </div>
+      {execution.hypotheses.length ? (
+        <div className="divide-y divide-[var(--line)]">
+          {execution.hypotheses.map((hypothesis, index) => (
+            <article className="px-5 py-4" key={hypothesis.hypothesis_id}>
+              <p className="text-[9px] font-semibold uppercase tracking-[0.11em] text-[var(--paper-faint)]">
+                Hypothesis {index + 1} · {hypothesis.kind.replaceAll("_", " ")}
+              </p>
+              <p className="mt-2 text-sm font-medium leading-5 text-[var(--paper)]">{hypothesis.statement}</p>
+              <p className="mt-2 text-xs leading-5 text-[var(--paper-dim)]">{hypothesis.rationale}</p>
+              <p className="mt-2 font-mono text-[9px] text-[var(--paper-faint)]">
+                {hypothesis.evidence_ids.length.toLocaleString("en-IN")} evidence references · confidence {hypothesis.confidence}
+              </p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="px-5 py-4 text-xs text-[var(--paper-dim)]">No hypotheses were returned.</p>
+      )}
+      {execution.verification ? (
+        <div className="border-t-2 border-[var(--line-strong)] bg-[var(--ink-700)] px-5 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--paper-faint)]">
+                Deterministic verdict
+              </p>
+              <p
+                className={`mt-1 text-lg font-semibold ${
+                  execution.status === "PROVEN" ? "text-[var(--evergreen)]" : "text-[var(--amber)]"
+                }`}
+              >
+                {execution.status}
+              </p>
+            </div>
+            {execution.status === "PROVEN" ? (
+              <Check aria-hidden="true" className="text-[var(--evergreen)]" size={20} />
+            ) : (
+              <TriangleAlert aria-hidden="true" className="text-[var(--amber)]" size={20} />
+            )}
+          </div>
+          <p className="mt-3 text-xs font-semibold text-[var(--paper)]">
+            {execution.verification.classification.replaceAll("_", " ")}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--paper-dim)]">{execution.verification.conclusion}</p>
+          {execution.case_id ? (
+            <p className="mt-3 font-mono text-[10px] text-[var(--paper-faint)]">Evidence case {execution.case_id}</p>
+          ) : null}
+        </div>
+      ) : (
+        <InlineNotice className="m-5" tone="warning">No deterministic verification result was returned.</InlineNotice>
+      )}
     </div>
   );
 }
@@ -280,46 +239,28 @@ function TraceRow({ step }: { step: AgentTraceStep }) {
   const rejected = step.message.includes("REJECTED") || step.status === "REJECTED";
   const unresolved = step.status === "UNRESOLVED";
   return (
-    <li className={`flex gap-3 rounded-xl border p-3 ${rejected || unresolved ? "border-[rgba(226,96,79,0.35)] bg-[var(--ink-700)]" : "border-[var(--line)] bg-[var(--ink-700)]"}`}>
+    <li className="grid grid-cols-[2rem_minmax(0,1fr)_auto] gap-3 px-5 py-4">
       <span
-        className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ${
-          rejected || unresolved
-            ? "bg-[rgba(226,96,79,0.14)] text-[var(--crimson)]"
-            : "bg-[rgba(47,189,127,0.14)] text-[var(--evergreen)]"
+        className={`grid h-7 w-7 place-items-center rounded-full border ${
+          rejected
+            ? "border-[var(--crimson)] text-[var(--crimson)]"
+            : unresolved
+              ? "border-[var(--amber)] text-[var(--amber)]"
+              : "border-[var(--evergreen)] text-[var(--evergreen)]"
         }`}
       >
-        {rejected ? (
-          <X size={12} />
-        ) : unresolved ? (
-          <TriangleAlert size={12} />
-        ) : (
-          <Check size={12} />
-        )}
+        {rejected ? <X aria-hidden="true" size={12} /> : unresolved ? <TriangleAlert aria-hidden="true" size={12} /> : <Check aria-hidden="true" size={12} />}
       </span>
       <div className="min-w-0">
-        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--paper-faint)]">
+        <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.11em] text-[var(--paper-faint)]">
           {step.sequence}. {step.node.replaceAll("_", " ")}
         </p>
         <p className="mt-1 text-xs leading-5 text-[var(--paper-dim)]">{step.message}</p>
       </div>
+      <Badge
+        label={step.status.replaceAll("_", " ")}
+        status={rejected ? "VIOLATION" : unresolved ? "UNRESOLVED" : "PASS"}
+      />
     </li>
-  );
-}
-
-function Metric({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof ShieldAlert;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="panel rounded-xl p-4">
-      <Icon size={15} className="mb-4 text-[var(--evergreen)]" />
-      <p className="number-tabular font-mono text-lg font-semibold tracking-[-0.025em] text-[var(--paper)]">{value}</p>
-      <p className="mt-1 text-[11px] text-[var(--paper-dim)]">{label}</p>
-    </div>
   );
 }

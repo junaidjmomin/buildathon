@@ -50,7 +50,12 @@ def liveness() -> dict[str, str]:
 
 @app.get("/health/ready", include_in_schema=False)
 def readiness() -> dict[str, str]:
-    engine = get_engine()
+    try:
+        engine = get_engine()
+    except Exception as exc:
+        # Driver/import/configuration failures are dependency failures too;
+        # readiness must report 503 instead of escaping as an internal 500.
+        raise HTTPException(status_code=503, detail="Database is unavailable") from exc
     if engine is None:
         if settings.environment in {"staging", "production"}:
             raise HTTPException(status_code=503, detail="Database is not configured")

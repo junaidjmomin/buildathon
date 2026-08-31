@@ -4,6 +4,8 @@ import { CircleAlert, House, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
 
+import { EvidenceMap } from "@/components/brand-assets";
+
 export default function ErrorBoundary({
   error,
   retry,
@@ -18,45 +20,78 @@ export default function ErrorBoundary({
   }, [error]);
 
   return (
-    <main className="grid min-h-[calc(100vh-4rem)] place-items-center px-5 py-12">
+    <main className="grid min-h-[calc(100dvh-4rem)] place-items-center px-4 py-8 sm:px-6 lg:px-8">
       <section
+        aria-describedby="route-error-description"
         aria-labelledby="route-error-title"
-        className="panel w-full max-w-xl rounded-2xl p-7 text-center sm:p-10"
-        role="alert"
+        className="panel grid w-full max-w-[920px] overflow-hidden rounded-xl lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]"
       >
-        <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-[rgba(226,96,79,0.14)] text-[var(--crimson)]">
-          <CircleAlert aria-hidden="true" size={22} />
-        </span>
-        <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--crimson)]">
-          Safe recovery mode
-        </p>
-        <h1 id="route-error-title" className="mt-2 text-2xl font-semibold tracking-[-0.035em] text-[var(--paper)]">
-          This view could not be loaded
-        </h1>
-        <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[var(--paper-dim)]">
-          No financial decision was changed. Retry the request, or return to the control overview.
-        </p>
-        {error.digest ? (
-          <p className="mt-4 font-mono text-[10px] text-[var(--paper-faint)]">
-            Reference: {error.digest}
-          </p>
-        ) : null}
-        <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
-          <button
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-4 py-2.5 text-sm font-semibold text-[#06120c] transition duration-150 hover:brightness-110"
-            onClick={() => retry()}
-            type="button"
-          >
-            <RotateCcw aria-hidden="true" size={15} />
-            Try again
-          </button>
-          <Link
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--line-strong)] px-4 py-2.5 text-sm font-semibold text-[var(--paper)] transition-colors duration-150 hover:border-[var(--evergreen)]"
-            href="/"
-          >
-            <House aria-hidden="true" size={15} />
-            Control overview
-          </Link>
+        <div className="p-6 sm:p-8 lg:p-10">
+          <div aria-live="assertive" role="alert">
+            <span className="grid h-11 w-11 place-items-center rounded-lg border border-[var(--crimson-line)] bg-[var(--crimson-soft)] text-[var(--crimson-deep)]">
+              <CircleAlert aria-hidden="true" size={20} strokeWidth={1.9} />
+            </span>
+            <p className="mt-6 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--crimson)]">
+              Page load interrupted
+            </p>
+            <h1
+              className="mt-2 text-[clamp(1.75rem,4vw,2.25rem)] font-semibold leading-tight tracking-[-0.04em] text-[var(--paper)]"
+              id="route-error-title"
+            >
+              We couldn&apos;t load this page
+            </h1>
+            <p
+              className="mt-3 max-w-xl text-sm leading-6 text-[var(--paper-dim)]"
+              id="route-error-description"
+            >
+              The workspace stopped before this page finished loading. Try the request again, or return to the
+              overview and continue from there.
+            </p>
+          </div>
+
+          {error.digest ? (
+            <div className="mt-5 rounded-lg border border-[var(--line)] bg-[var(--ink-700)] px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.11em] text-[var(--paper-faint)]">
+                Support reference
+              </p>
+              <code className="mt-1.5 block break-all font-mono text-[11px] text-[var(--paper-dim)]">
+                {error.digest}
+              </code>
+            </div>
+          ) : null}
+
+          <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+            <button
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--evergreen-deep)]"
+              onClick={() => retry()}
+              type="button"
+            >
+              <RotateCcw aria-hidden="true" size={16} />
+              Try loading again
+            </button>
+            <Link
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--line-strong)] bg-[var(--ink-800)] px-4 py-2.5 text-sm font-semibold text-[var(--paper)] transition-colors hover:bg-[var(--ink-700)]"
+              href="/"
+            >
+              <House aria-hidden="true" size={16} />
+              Go to overview
+            </Link>
+          </div>
+
+          {error.digest ? (
+            <p className="mt-5 text-xs leading-5 text-[var(--paper-faint)]">
+              If this keeps happening, share the support reference with your workspace administrator.
+            </p>
+          ) : null}
+        </div>
+
+        <div
+          aria-hidden="true"
+          className="hidden border-l border-[var(--line)] bg-[var(--ink-700)] p-3 lg:block"
+        >
+          <div className="h-full min-h-80 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--ink-800)]">
+            <EvidenceMap className="h-full w-full object-cover" decorative />
+          </div>
         </div>
       </section>
     </main>

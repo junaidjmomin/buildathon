@@ -39,7 +39,6 @@ from tests.support.scoring import (
 )
 
 CLAUSE = load_dataset_fixture("clause_driven")
-REPORT_PATH = Path(__file__).parents[1] / "test-results" / "clause_driven_evaluation.json"
 EVALUATION_FILENAMES = frozenset(CLAUSE.evaluation_files)
 MONEY_ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
@@ -887,7 +886,9 @@ def scored_clause_dataset(tmp_path_factory: pytest.TempPathFactory) -> dict[str,
 
     truth_path = CLAUSE.ground_truth
     assert truth_path is not None
-    database = tmp_path_factory.mktemp("clause-driven") / "clause-driven.db"
+    working_directory = tmp_path_factory.mktemp("clause-driven")
+    database = working_directory / "clause-driven.db"
+    report_path = working_directory / "clause_driven_evaluation.json"
     source_files = runner.read_bundle(CLAUSE.source_paths)
     with runner.api_client(database) as client:
         baseline_id = runner.execute_bundle(
@@ -1089,9 +1090,13 @@ def scored_clause_dataset(tmp_path_factory: pytest.TempPathFactory) -> dict[str,
         "ground_truth_evaluation_is_post_run_only": True,
         "source_bundle_is_six_files_only": True,
     }
-    REPORT_PATH.parent.mkdir(exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(_jsonable(base_report), indent=2), encoding="utf-8")
-    return {"observation": baseline, "truth": truth, "report": base_report}
+    report_path.write_text(json.dumps(_jsonable(base_report), indent=2), encoding="utf-8")
+    return {
+        "observation": baseline,
+        "truth": truth,
+        "report": base_report,
+        "report_path": report_path,
+    }
 
 
 def test_clause_manifest_and_engine_input_are_isolated(
@@ -1141,7 +1146,7 @@ def test_clause_invariance_is_a_hard_guardrail(scored_clause_dataset: dict[str, 
 def test_clause_report_is_machine_readable_and_decimal_safe(
     scored_clause_dataset: dict[str, Any],
 ) -> None:
-    report = json.loads(REPORT_PATH.read_text(encoding="utf-8"))
+    report = json.loads(scored_clause_dataset["report_path"].read_text(encoding="utf-8"))
     for key in (
         "dataset",
         "manifest_integrity",

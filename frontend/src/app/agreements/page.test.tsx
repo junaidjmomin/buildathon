@@ -91,7 +91,7 @@ describe("agreements page", () => {
   });
 
   it("disables manual clause entry for the immutable seeded agreement", async () => {
-    apiMocks.agreements.mockResolvedValue([agreement({ id: "AGR_NOVACART_2026" })]);
+    apiMocks.agreements.mockResolvedValue([agreement({ source_type: "SEEDED_TEXT" })]);
     renderPage();
     const reference = await screen.findByPlaceholderText("e.g. 4.2(a)");
     expect(reference).toBeDisabled();

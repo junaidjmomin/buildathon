@@ -4,7 +4,8 @@ This is the Next.js App Router interface for sl3dge. It uses FastAPI as its only
 finance/data API; it must never receive Supabase service credentials, Razorpay
 keys, or Groq keys.
 
-Create `frontend/.env.local` with public values only:
+Create `frontend/.env.local` with public values only when you need to override
+the repository-root `.env`:
 
 ```dotenv
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
@@ -27,6 +28,11 @@ to the SPA application ID, and audience to the sl3dge API identifier. Register
 pnpm install --frozen-lockfile
 pnpm dev
 ```
+
+For local development, `pnpm dev` falls back to the repository-root `.env`
+when `.env.local` is absent and passes only `NEXT_PUBLIC_*` values to Next.js.
+This keeps the frontend and backend auth modes aligned without exposing backend
+secrets to the frontend process.
 
 Quality gates:
 
