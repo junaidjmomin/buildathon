@@ -26,7 +26,9 @@ const nextConfig: NextConfig = {
   // Let the alternate loopback origin load enough client code to perform the
   // canonical localhost redirect before OIDC state is created.
   allowedDevOrigins: ["127.0.0.1"],
-  output: "standalone",
+  // Docker copies the standalone server, while Vercel performs its own file
+  // tracing and expects the standard Next.js build artifacts.
+  ...(process.env.VERCEL ? {} : { output: "standalone" as const }),
   poweredByHeader: false,
   async headers() {
     const securityHeaders = [
