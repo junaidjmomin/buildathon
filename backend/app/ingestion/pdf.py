@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+import unicodedata
+from collections import Counter
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from io import BytesIO
 
@@ -31,10 +33,13 @@ class ExtractedAgreementClause:
     end_offset: int
     effective_from: date
     effective_to: date | None = None
+    end_page_number: int | None = None
 
 
 _CLAUSE_HEADER = re.compile(
-    r"^\s*(?P<number>(?:\d+\.\d+|A\d+\.\d+))\s+(?P<title>[^|\n].*?)\s*$",
+    r"^\s*(?:(?P<prefix>clause|section|article)\s+)?"
+    r"(?P<number>(?:[A-Z]\d+(?:\.\d+)*|\d+(?:\.\d+)*|[IVXLCDM]+))"
+    r"(?P<marker>[.)])?\s*(?:(?:[:\-–—])\s*)?(?P<title>.*?)\s*$",
     re.IGNORECASE,
 )
 _PAGE_FOOTER = re.compile(
@@ -42,6 +47,107 @@ _PAGE_FOOTER = re.compile(
     r"not a real Razorpay contract\s*\|?\s*Page\s+\d+\s*$",
     re.IGNORECASE,
 )
+
+
+def _normalize_text(value: str) -> str:
+    """Normalize PDF glyph text without changing its page-local line structure."""
+
+    normalized = unicodedata.normalize("NFKC", value).replace("\x00", "")
+    normalized = normalized.replace("\u00a0", " ").replace("\u00ad", "")
+    return "\n".join(line.rstrip() for line in normalized.splitlines()).strip()
+
+
+def _margin_signature(line: str) -> str:
+    normalized = re.sub(r"\d+", "#", " ".join(line.casefold().split()))
+    return normalized.strip(" |·-")
+
+
+def _remove_repeated_margins(
+    pages: list[ExtractedAgreementPage],
+) -> list[ExtractedAgreementPage]:
+    """Remove repeated short headers and footers before computing evidence offsets."""
+
+    if len(pages) < 2:
+        return pages
+    candidates: Counter[str] = Counter()
+    per_page: list[tuple[list[str], set[str]]] = []
+    for page in pages:
+        lines = page.text.splitlines()
+        margin_lines = [*lines[:3], *lines[-3:]]
+        signatures = {
+            signature
+            for line in margin_lines
+            if len(line.strip()) <= 180 and (signature := _margin_signature(line))
+        }
+        candidates.update(signatures)
+        per_page.append((lines, signatures))
+    threshold = max(2, (len(pages) + 1) // 2)
+    repeated = {signature for signature, count in candidates.items() if count >= threshold}
+    if not repeated:
+        return pages
+    cleaned: list[ExtractedAgreementPage] = []
+    for page, (lines, _) in zip(pages, per_page, strict=True):
+        last_index = len(lines) - 1
+        kept = [
+            line
+            for index, line in enumerate(lines)
+            if not (
+                (index < 3 or index > last_index - 3)
+                and _margin_signature(line) in repeated
+            )
+        ]
+        cleaned.append(
+            ExtractedAgreementPage(page_number=page.page_number, text="\n".join(kept).strip())
+        )
+    return cleaned
+
+
+def _looks_like_title(value: str) -> bool:
+    title = " ".join(value.split())
+    return 1 < len(title) <= 240 and bool(re.search(r"[A-Za-z]", title))
+
+
+def _clause_headings(lines: list[str]) -> list[tuple[int, str, str]]:
+    """Return line index, normalized clause number and title for common legal headings."""
+
+    headings: list[tuple[int, str, str]] = []
+    for index, line in enumerate(lines):
+        match = _CLAUSE_HEADER.match(line.strip())
+        if match is None:
+            continue
+        number = match.group("number").upper()
+        marker = match.group("marker")
+        prefix = match.group("prefix")
+        # A bare integer is usually a page number or amount. Require explicit
+        # legal-heading syntax before treating it as a clause.
+        if not (prefix or marker or "." in number or number[:1].isalpha()):
+            continue
+        title = " ".join(match.group("title").split())
+        if not title and index + 1 < len(lines) and _looks_like_title(lines[index + 1]):
+            title = " ".join(lines[index + 1].split())
+        if not _looks_like_title(title):
+            continue
+        headings.append((index, number, title))
+    return headings
+
+
+def _append_continuation(
+    clauses: list[ExtractedAgreementClause],
+    *,
+    text: str,
+    page_number: int,
+) -> bool:
+    continuation = text.strip()
+    if not clauses or not continuation:
+        return False
+    previous = clauses[-1]
+    clauses[-1] = replace(
+        previous,
+        text=f"{previous.text}\n{continuation}",
+        end_page_number=page_number,
+        end_offset=len(continuation),
+    )
+    return True
 
 
 def infer_agreement_effective_from(pages: list[ExtractedAgreementPage], *, fallback: date) -> date:
@@ -85,15 +191,14 @@ def segment_agreement_clauses(
         for line in lines:
             offsets.append(cursor)
             cursor += len(line) + 1
-        matches = [
-            (index, match)
-            for index, line in enumerate(lines)
-            if (match := _CLAUSE_HEADER.match(line.strip())) is not None
-        ]
+        matches = _clause_headings(lines)
         if not matches:
-            # Some agreements contain prose without numbered headings. Keep the
-            # text ingestible, but make the uncertainty explicit instead of
-            # pretending the page itself is a clause.
+            if _append_continuation(
+                clauses,
+                text=page_text,
+                page_number=page.page_number,
+            ):
+                continue
             clauses.append(
                 ExtractedAgreementClause(
                     clause_number=f"UNNUMBERED_{page.page_number}",
@@ -103,10 +208,30 @@ def segment_agreement_clauses(
                     start_offset=0,
                     end_offset=len(page_text),
                     effective_from=agreement_effective_from,
+                    end_page_number=page.page_number,
                 )
             )
             continue
-        for match_index, (start_index, match) in enumerate(matches):
+        first_start = matches[0][0]
+        leading_text = "\n".join(lines[:first_start]).strip()
+        if leading_text and not _append_continuation(
+            clauses,
+            text=leading_text,
+            page_number=page.page_number,
+        ):
+            clauses.append(
+                ExtractedAgreementClause(
+                    clause_number=f"UNNUMBERED_{page.page_number}",
+                    clause_title="Unnumbered extracted text",
+                    text=leading_text,
+                    page_number=page.page_number,
+                    start_offset=0,
+                    end_offset=len(leading_text),
+                    effective_from=agreement_effective_from,
+                    end_page_number=page.page_number,
+                )
+            )
+        for match_index, (start_index, clause_number, clause_title) in enumerate(matches):
             end_index = (
                 matches[match_index + 1][0] if match_index + 1 < len(matches) else len(lines)
             )
@@ -116,7 +241,6 @@ def segment_agreement_clauses(
                 continue
             start_offset = offsets[start_index]
             end_offset = start_offset + len(chunk)
-            clause_number = match.group("number").upper()
             effective_from = agreement_effective_from
             date_match = re.search(
                 r"(?:effective\s+(?:date|from)|captured\s+(?:from|on\s+or\s+after))\s+"
@@ -135,12 +259,13 @@ def segment_agreement_clauses(
             clauses.append(
                 ExtractedAgreementClause(
                     clause_number=clause_number,
-                    clause_title=match.group("title").strip(),
+                    clause_title=clause_title,
                     text=chunk,
                     page_number=page.page_number,
                     start_offset=start_offset,
                     end_offset=end_offset,
                     effective_from=effective_from,
+                    end_page_number=page.page_number,
                 )
             )
     return clauses
@@ -153,12 +278,19 @@ def extract_agreement_pages(
     max_page_content_bytes: int,
     max_extracted_chars: int,
 ) -> list[ExtractedAgreementPage]:
-    if not content.startswith(b"%PDF-"):
+    header_offset = content.find(b"%PDF-", 0, min(len(content), 1024))
+    if header_offset < 0:
         raise AgreementPdfError("Agreement file is not a valid PDF")
+    pdf_content = content[header_offset:]
     try:
-        reader = PdfReader(BytesIO(content), strict=True)
+        reader = PdfReader(BytesIO(pdf_content), strict=True)
     except (PdfReadError, ValueError, TypeError) as exc:
-        raise AgreementPdfError("Agreement PDF could not be parsed safely") from exc
+        try:
+            # Many digitally generated PDFs contain repairable cross-reference
+            # defects. pypdf's non-strict mode recovers these without OCR.
+            reader = PdfReader(BytesIO(pdf_content), strict=False)
+        except (PdfReadError, ValueError, TypeError) as fallback_exc:
+            raise AgreementPdfError("Agreement PDF could not be parsed safely") from fallback_exc
     if reader.is_encrypted:
         raise AgreementPdfError("Encrypted agreement PDFs are not supported")
     if not reader.pages:
@@ -176,22 +308,22 @@ def extract_agreement_pages(
                     f"Agreement PDF page {page_number} exceeds the decompressed content limit"
                 )
             raw_text = page.extract_text(extraction_mode="layout") or ""
+            if not raw_text.strip():
+                raw_text = page.extract_text() or ""
         except AgreementPdfError:
             raise
         except Exception as exc:
             raise AgreementPdfError(
                 f"Agreement PDF page {page_number} could not be extracted"
             ) from exc
-        text = "\n".join(
-            line.rstrip() for line in raw_text.replace("\x00", "").splitlines()
-        ).strip()
+        text = _normalize_text(raw_text)
         extracted_chars += len(text)
         if extracted_chars > max_extracted_chars:
             raise AgreementPdfError("Agreement PDF exceeds the extracted-text limit")
         if text:
             result.append(ExtractedAgreementPage(page_number=page_number, text=text))
-    if not result:
+    if not result or sum(character.isalnum() for page in result for character in page.text) < 20:
         raise AgreementPdfError(
-            "No text could be extracted; scanned agreements require an approved OCR workflow"
+            "The PDF does not contain enough extractable text for agreement ingestion"
         )
-    return result
+    return _remove_repeated_margins(result)

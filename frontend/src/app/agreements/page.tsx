@@ -20,8 +20,6 @@ import { Badge, ErrorState, PageHeader } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
 import { formatPercent } from "@/lib/format";
 
-const DEMO_MODE = process.env.NEXT_PUBLIC_APP_MODE !== "production";
-
 export default function AgreementsPage() {
   const queryClient = useQueryClient();
   const [selectedAgreementId, setSelectedAgreementId] = useState<string | null>(null);
@@ -34,8 +32,9 @@ export default function AgreementsPage() {
     enabled: Boolean(agreement),
   });
   const extract = useMutation({
-    mutationFn: () => api.extractAgreementControls(agreement!.id),
-    onSuccess: (data) => queryClient.setQueryData(["agreement-proposals", agreement?.id], data),
+    mutationFn: (agreementId: string) => api.extractAgreementControls(agreementId),
+    onSuccess: (data, agreementId) =>
+      queryClient.setQueryData(["agreement-proposals", agreementId], data),
   });
   const refreshProposals = () =>
     queryClient.invalidateQueries({ queryKey: ["agreement-proposals", agreement?.id] });
@@ -63,6 +62,7 @@ export default function AgreementsPage() {
       extract.reset();
       verify.reset();
       approve.reset();
+      extract.mutate(created.id);
     },
   });
   const addClause = useMutation({
@@ -156,7 +156,7 @@ export default function AgreementsPage() {
             </label>
           ) : null}
           <button
-            onClick={() => extract.mutate()}
+            onClick={() => extract.mutate(agreement.id)}
             disabled={extract.isPending}
             className="flex items-center justify-center gap-2 rounded-lg bg-[var(--evergreen)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--evergreen-deep)] disabled:opacity-60"
             type="button"
@@ -277,7 +277,7 @@ export default function AgreementsPage() {
             </span>
           </div>
           <p className="rounded-xl border border-[var(--line)] bg-[var(--ink-700)] px-4 py-3 text-[11px] leading-5 text-[var(--paper-dim)]">
-            Verify proposals deterministically to unlock approval controls. Approved controls are compiled into active financial control rules.
+            Deterministic verification is required first. Only a workspace admin can approve and activate a control.
           </p>
           {proposals.data.map((proposal) => {
             const control = proposal.proposed_control;
@@ -418,7 +418,7 @@ export default function AgreementsPage() {
                         ) : (
                           <Check size={12} />
                         )}{" "}
-                        Approve control
+                        Admin approve control
                       </button>
                     </div>
                   ) : null}
@@ -429,7 +429,7 @@ export default function AgreementsPage() {
                   ) : null}
                   {proposal.status === "APPROVED" ? (
                     <p className="mt-2 text-[9px] text-[var(--evergreen)]">
-                      Approved by {proposal.approved_by ?? "authorized reviewer"} with immutable source
+                      Approved by {proposal.approved_by ?? "workspace admin"} with immutable source
                       provenance.
                     </p>
                   ) : null}
@@ -603,7 +603,7 @@ function AgreementIntake({
             ) : (
               <UploadCloud size={15} />
             )}{" "}
-            Upload and extract PDF
+            Upload and ingest PDF
           </button>
         </form>
       </div>

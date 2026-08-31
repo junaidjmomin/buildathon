@@ -98,6 +98,48 @@ def test_pdf_agreement_extraction_rejects_non_pdf_and_tight_limits() -> None:
         )
 
 
+def test_pdf_agreement_extraction_accepts_a_valid_header_after_leading_bytes() -> None:
+    pages = extract_agreement_pages(
+        b"\xef\xbb\xbf\n" + base64.b64decode(AGREEMENT_PDF_BASE64),
+        max_pages=10,
+        max_page_content_bytes=100_000,
+        max_extracted_chars=10_000,
+    )
+    assert pages[0].page_number == 1
+    assert "Merchant Services Agreement" in pages[0].text
+
+
+def test_clause_segmentation_supports_common_headings_and_cross_page_continuations() -> None:
+    segmented = segment_agreement_clauses(
+        [
+            api_router.ExtractedAgreementPage(
+                page_number=1,
+                text="1. Definitions\nAgreement means these terms.\nThe definition continues",
+            ),
+            api_router.ExtractedAgreementPage(
+                page_number=2,
+                text=(
+                    "on the following page.\n"
+                    "Clause 2: Processing Fees\nThe fee is 1.55 percent.\n"
+                    "3.1\nSettlement Timing\nSettlement occurs within two business days."
+                ),
+            ),
+            api_router.ExtractedAgreementPage(
+                page_number=3,
+                text="ARTICLE IV — Term\nThis agreement remains effective until terminated.",
+            ),
+        ],
+        agreement_effective_from=date(2026, 1, 1),
+    )
+    by_number = {clause.clause_number: clause for clause in segmented}
+    assert set(by_number) == {"1", "2", "3.1", "IV"}
+    assert "following page" in by_number["1"].text
+    assert by_number["1"].end_page_number == 2
+    assert by_number["2"].clause_title == "Processing Fees"
+    assert by_number["3.1"].clause_title == "Settlement Timing"
+    assert by_number["IV"].clause_title == "Term"
+
+
 def test_synthetic_agreement_segments_operating_clauses_and_controls() -> None:
     pages = extract_agreement_pages(
         SYNTHETIC_AGREEMENT_PDF.read_bytes(),
@@ -360,7 +402,7 @@ def test_agreement_and_draft_proposals_are_durable_and_tenant_scoped() -> None:
         verification = repository.verify_proposal(
             tenant_id="merchant_a",
             proposal_id=proposal.id,
-            actor_id="analyst-a",
+            actor_id="admin-a",
         )
         assert verification.status == "PASSED"
         assert verification.version == 2
@@ -374,19 +416,11 @@ def test_agreement_and_draft_proposals_are_durable_and_tenant_scoped() -> None:
                 expected_version=1,
                 actor_id="checker-a",
             )
-        with pytest.raises(ValueError, match="different verifier and approver"):
-            repository.approve_proposal(
-                tenant_id="merchant_a",
-                proposal_id=proposal.id,
-                expected_version=2,
-                actor_id="analyst-a",
-            )
-
         approved = repository.approve_proposal(
             tenant_id="merchant_a",
             proposal_id=proposal.id,
             expected_version=2,
-            actor_id="checker-a",
+            actor_id="admin-a",
         )
         reviewed = repository.get_proposal(
             tenant_id="merchant_a",
@@ -396,8 +430,29 @@ def test_agreement_and_draft_proposals_are_durable_and_tenant_scoped() -> None:
         assert reviewed is not None
         assert reviewed.status == "APPROVED"
         assert reviewed.version == 3
-        assert reviewed.verified_by == "analyst-a"
-        assert reviewed.approved_by == "checker-a"
+        assert reviewed.verified_by == "admin-a"
+        assert reviewed.approved_by == "admin-a"
+
+
+def test_control_proposal_approval_requires_admin_role() -> None:
+    def approver_only() -> api_router.Principal:
+        return api_router.Principal(
+            subject="reviewer-a",
+            tenant_id="merchant_a",
+            roles=frozenset({"approver"}),
+            auth_mode="oidc",
+        )
+
+    app.dependency_overrides[api_router.get_current_principal] = approver_only
+    try:
+        response = TestClient(app).post(
+            "/api/v1/control-proposals/PROP_1/approve",
+            json={"expected_version": 1},
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"] == "This action is not permitted for the current role"
+    finally:
+        app.dependency_overrides.pop(api_router.get_current_principal, None)
 
 
 def test_agreement_upload_is_content_addressed_and_idempotent(

@@ -79,6 +79,7 @@ from app.domain.models import (
 )
 from app.ingestion.csv import parse_source_csv, read_source_csv
 from app.ingestion.pdf import (
+    AgreementPdfError,
     ExtractedAgreementPage,
     extract_agreement_pages,
     infer_agreement_effective_from,
@@ -515,24 +516,8 @@ async def upload_agreement(
     content = await file.read(settings.max_upload_bytes + 1)
     if len(content) > settings.max_upload_bytes:
         raise HTTPException(status_code=413, detail="Agreement exceeds MAX_UPLOAD_BYTES")
-    pages = extract_agreement_pages(
-        content,
-        max_pages=settings.max_agreement_pages,
-        max_page_content_bytes=settings.max_pdf_page_content_bytes,
-        max_extracted_chars=settings.max_extracted_agreement_chars,
-    )
-    extracted_clauses = segment_agreement_clauses(
-        pages,
-        agreement_effective_from=infer_agreement_effective_from(
-            pages,
-            fallback=effective_from,
-        ),
-    )
-    if not extracted_clauses:
-        raise HTTPException(
-            status_code=422,
-            detail="No numbered clauses could be segmented from this agreement PDF",
-        )
+    if not content:
+        raise HTTPException(status_code=422, detail="Agreement PDF is empty")
     content_hash = sha256(content).hexdigest()
     with session_scope(tenant_id=principal.tenant_id) as session:
         existing = AgreementRepository(session).get_by_hash(
@@ -541,6 +526,27 @@ async def upload_agreement(
         )
         if existing is not None:
             return existing
+    try:
+        pages = extract_agreement_pages(
+            content,
+            max_pages=settings.max_agreement_pages,
+            max_page_content_bytes=settings.max_pdf_page_content_bytes,
+            max_extracted_chars=settings.max_extracted_agreement_chars,
+        )
+        extracted_clauses = segment_agreement_clauses(
+            pages,
+            agreement_effective_from=infer_agreement_effective_from(
+                pages,
+                fallback=effective_from,
+            ),
+        )
+    except AgreementPdfError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not extracted_clauses:
+        raise HTTPException(
+            status_code=422,
+            detail="No clauses could be segmented from the agreement PDF",
+        )
 
     agreement_id = f"AGR_{content_hash[:20].upper()}"
     artifact_id = f"ART_{agreement_id}"
@@ -566,6 +572,8 @@ async def upload_agreement(
                 clause_title=clause.clause_title,
                 source_offsets={
                     "page_number": clause.page_number,
+                    "start_page_number": clause.page_number,
+                    "end_page_number": clause.end_page_number or clause.page_number,
                     "start_offset": clause.start_offset,
                     "end_offset": clause.end_offset,
                     "offset_basis": "normalized_page_text",
@@ -662,6 +670,8 @@ def _clause_models_from_pages(
             clause_title=clause.clause_title,
             source_offsets={
                 "page_number": clause.page_number,
+                "start_page_number": clause.page_number,
+                "end_page_number": clause.end_page_number or clause.page_number,
                 "start_offset": clause.start_offset,
                 "end_offset": clause.end_offset,
                 "offset_basis": "normalized_page_text",
@@ -1115,7 +1125,7 @@ def verify_control_proposal(
 def approve_control_proposal(
     proposal_id: str,
     payload: ControlProposalApprovalRequest,
-    principal: Annotated[Principal, Depends(require_roles("approver"))],
+    principal: Annotated[Principal, Depends(require_roles("admin"))],
     request: Request,
 ) -> Control:
     if not get_settings().database_url:

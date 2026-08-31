@@ -78,6 +78,7 @@ beforeEach(() => {
   apiMocks.runs.mockResolvedValue([]);
   apiMocks.agreements.mockResolvedValue([]);
   apiMocks.agreementProposals.mockResolvedValue(proposals());
+  apiMocks.extractAgreementControls.mockResolvedValue(proposals());
   apiMocks.uploadAgreement.mockResolvedValue(agreement());
   apiMocks.addAgreementClause.mockResolvedValue(clause());
 });
@@ -145,11 +146,14 @@ describe("agreements page", () => {
     // click is blocked by constraint validation. Dispatch submit directly;
     // the React handler still reads the same FormData.
     const uploadForm = screen
-      .getByRole("button", { name: /Upload and extract PDF/ })
+      .getByRole("button", { name: /Upload and ingest PDF/ })
       .closest("form")!;
     fireEvent.submit(uploadForm);
 
     await waitFor(() => expect(apiMocks.uploadAgreement).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(apiMocks.extractAgreementControls).toHaveBeenCalledWith("AGR_UPLOADED_1"),
+    );
     const formData = apiMocks.uploadAgreement.mock.calls[0][0] as FormData;
     expect(formData.get("merchant")).toBe("Merchant B");
     expect(formData.get("title")).toBe("Durable Agreement");

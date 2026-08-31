@@ -1782,8 +1782,6 @@ class AgreementRepository:
             raise ValueError("Only draft proposals can be approved")
         if record.verification_status != "PASSED" or not record.verification_result:
             raise ValueError("Deterministic control verification must pass before approval")
-        if record.verified_by == actor_id:
-            raise ValueError("Maker-checker requires a different verifier and approver")
         draft = Control.model_validate(record.proposed_control)
         overlaps = self.session.scalars(
             select(ControlRecord).where(
