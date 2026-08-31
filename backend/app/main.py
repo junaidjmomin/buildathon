@@ -112,12 +112,13 @@ async def http_error_handler(request: Request, exc: HTTPException) -> JSONRespon
         status_code=exc.status_code,
         headers=exc.headers,
         content={
+            "detail": message,
             "error": {
                 "code": code,
                 "message": message,
                 "details": details,
                 "request_id": request_id,
-            }
+            },
         },
     )
 

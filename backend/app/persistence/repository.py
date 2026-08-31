@@ -1771,8 +1771,18 @@ class AgreementRepository:
         tenant_id: str,
         proposal_id: str,
         expected_version: int,
-        actor_id: str,
+        actor_id: str | Any | None = None,
+        actor: Any | None = None,
     ) -> Control:
+        effective_actor = actor if actor is not None else actor_id
+        if hasattr(effective_actor, "roles"):
+            roles = getattr(effective_actor, "roles", ())
+            if "admin" not in roles:
+                raise PermissionError("Only the admin role can activate a verified control")
+            actor_id_str = getattr(effective_actor, "subject", str(effective_actor))
+        else:
+            actor_id_str = str(effective_actor) if effective_actor is not None else "unknown"
+
         record = self._locked_proposal(tenant_id=tenant_id, proposal_id=proposal_id)
         if record.version != expected_version:
             raise ProposalConcurrencyError(
@@ -1802,7 +1812,7 @@ class AgreementRepository:
         RunRepository(self.session).save_controls([approved], tenant_id=tenant_id)
         record.status = "APPROVED"
         record.proposed_control = approved.model_dump(mode="json")
-        record.approved_by = actor_id
+        record.approved_by = actor_id_str
         record.approved_at = now
         record.version += 1
         record.updated_at = now

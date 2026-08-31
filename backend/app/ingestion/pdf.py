@@ -38,7 +38,7 @@ class ExtractedAgreementClause:
 
 _CLAUSE_HEADER = re.compile(
     r"^\s*(?:(?P<prefix>clause|section|article)\s+)?"
-    r"(?P<number>(?:[A-Z]\d+(?:\.\d+)*|\d+(?:\.\d+)*|[IVXLCDM]+))"
+    r"(?P<number>(?:[A-Z]\d+(?:\.\d+)*|\d+(?:\.\d+)*|[IVXLCDM]+))\b"
     r"(?P<marker>[.)])?\s*(?:(?:[:\-–—])\s*)?(?P<title>.*?)\s*$",
     re.IGNORECASE,
 )
@@ -91,10 +91,7 @@ def _remove_repeated_margins(
         kept = [
             line
             for index, line in enumerate(lines)
-            if not (
-                (index < 3 or index > last_index - 3)
-                and _margin_signature(line) in repeated
-            )
+            if not ((index < 3 or index > last_index - 3) and _margin_signature(line) in repeated)
         ]
         cleaned.append(
             ExtractedAgreementPage(page_number=page.page_number, text="\n".join(kept).strip())
@@ -104,7 +101,14 @@ def _remove_repeated_margins(
 
 def _looks_like_title(value: str) -> bool:
     title = " ".join(value.split())
-    return 1 < len(title) <= 240 and bool(re.search(r"[A-Za-z]", title))
+    if not (1 < len(title) <= 240 and bool(re.search(r"[A-Za-z]", title))):
+        return False
+    if title[0].islower():
+        return False
+    first_word = title.split()[0].lower()
+    if first_word in {"may", "shall", "will", "must", "can", "could", "is", "are"}:
+        return False
+    return True
 
 
 def _clause_headings(lines: list[str]) -> list[tuple[int, str, str]]:
@@ -118,9 +122,13 @@ def _clause_headings(lines: list[str]) -> list[tuple[int, str, str]]:
         number = match.group("number").upper()
         marker = match.group("marker")
         prefix = match.group("prefix")
+        # Pure Roman numeral letters without prefix or marker are usually words or body text.
+        if set(number).issubset(set("IVXLCDM")) and not (prefix or marker):
+            continue
+        is_roman = set(number).issubset(set("IVXLCDM"))
         # A bare integer is usually a page number or amount. Require explicit
         # legal-heading syntax before treating it as a clause.
-        if not (prefix or marker or "." in number or number[:1].isalpha()):
+        if not (prefix or marker or "." in number or (number[:1].isalpha() and not is_roman)):
             continue
         title = " ".join(match.group("title").split())
         if not title and index + 1 < len(lines) and _looks_like_title(lines[index + 1]):
@@ -284,7 +292,7 @@ def extract_agreement_pages(
     pdf_content = content[header_offset:]
     try:
         reader = PdfReader(BytesIO(pdf_content), strict=True)
-    except (PdfReadError, ValueError, TypeError) as exc:
+    except (PdfReadError, ValueError, TypeError):
         try:
             # Many digitally generated PDFs contain repairable cross-reference
             # defects. pypdf's non-strict mode recovers these without OCR.
