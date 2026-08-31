@@ -17,6 +17,7 @@ export function BrandMark({ className = "", size = 36 }: BrandMarkProps) {
       height={size}
       sizes={`${size}px`}
       src={sl3dgeMark}
+      unoptimized
       width={size}
     />
   );
@@ -45,6 +46,7 @@ export function EvidenceMap({
       placeholder="blur"
       sizes="(max-width: 768px) 100vw, 56vw"
       src={evidenceMap}
+      unoptimized
     />
   );
 }
