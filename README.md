@@ -1,7 +1,8 @@
 # sl3dge
 
 **A verification-first financial control engine for Razorpay payment lifecycles.**
-
+login email: admin@sledge.com
+login password: admin@Admin@2026
 [![CI](https://github.com/junaidjmomin/buildathon/actions/workflows/ci.yml/badge.svg)](https://github.com/junaidjmomin/buildathon/actions/workflows/ci.yml)
 
 > Reconciliation asks whether records *match*.
